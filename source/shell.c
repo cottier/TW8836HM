@@ -1,6 +1,7 @@
-#include <stdio.h>
+#include <assert.h>
+#include "hm_shell.h"
 
-void _shell_init()
-{
-  printf("song.c\n");
-}
+#define KEY_ESC (0x1BU)
+#define KEY_DEL (0x7FU)
+
+
