@@ -1,0 +1,63 @@
+C51 COMPILER V9.56.0.0   DRV_RGB                                                           08/24/2018 16:22:01 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE DRV_RGB
+OBJECT MODULE PLACED IN .\Output\DRV_RGB.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source\drv\DRV_RGB.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\O
+                    -utput\TW8836B_EVB11.ORC) BROWSE INCDIR(.\source\app;.\source\common;.\source\drv;.\source\HW;.\source\utils;.\source\tes
+                    -t) DEFINE(EVB_11,nullFn=//) DEBUG CODE PRINT(.\List\DRV_RGB.lst) TABS(2) OBJECT(.\Output\DRV_RGB.obj)
+
+line level    source
+
+   1          
+   2          #include "HWconf.h"
+   3          
+   4          void InitVGA(void )
+   5          {
+   6   1        Puts("VGA is start!\n");
+   7   1        Init8836AsDefault(1,1);
+   8   1        Puts("\nVGA is OK!\n");
+   9   1      }
+  10          
+C51 COMPILER V9.56.0.0   DRV_RGB                                                           08/24/2018 16:22:01 PAGE 2   
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION InitVGA (BEGIN)
+                                           ; SOURCE LINE # 4
+                                           ; SOURCE LINE # 5
+                                           ; SOURCE LINE # 6
+0000 7B00        R     MOV     R3,#MBYTE ?SC_0
+0002 7A00        R     MOV     R2,#HIGH ?SC_0
+0004 7900        R     MOV     R1,#LOW ?SC_0
+0006 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 7
+0009 7D01              MOV     R5,#01H
+000B 7F01              MOV     R7,#01H
+000D 110000      E     ACALL   _Init8836AsDefault
+                                           ; SOURCE LINE # 8
+0010 7B00        R     MOV     R3,#MBYTE ?SC_15
+0012 7A00        R     MOV     R2,#HIGH ?SC_15
+0014 7900        R     MOV     R1,#LOW ?SC_15
+0016 010000      E     AJMP    _Puts
+             ; FUNCTION InitVGA (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     25    ----
+   CONSTANT SIZE    =     28    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

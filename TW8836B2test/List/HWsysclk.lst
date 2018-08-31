@@ -1,0 +1,407 @@
+C51 COMPILER V9.56.0.0   HWSYSCLK                                                          08/31/2018 14:41:52 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE HWSYSCLK
+OBJECT MODULE PLACED IN .\Output\HWsysclk.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source\HW\HWsysclk.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\O
+                    -utput\TW8836B_EVB11.ORC) BROWSE INCDIR(.\source\app;.\source\common;.\source\drv;.\source\HW;.\source\utils;.\source\tes
+                    -t) DEFINE(EVB_11,nullFn=//) DEBUG CODE PRINT(.\List\HWsysclk.lst) TABS(2) OBJECT(.\Output\HWsysclk.obj)
+
+line level    source
+
+   1          /**
+   2            ******************************************************************************
+   3            * @file    HWsysclk.c
+   4            * @author  BQsong
+   5            * @version V0.0.1
+   6            * @date    21-8-2018
+   7            * @brief   Initialization clock.about pll,spi,mcu,pixel,
+   8            ******************************************************************************
+   9            * @attention
+  10          
+  11            *
+  12              ******************************************************************************
+  13            */
+  14          
+  15          /**
+  16            ******************************************************************************
+  17            * History:
+  18            ******************************************************************************
+  19            * Version 0.01
+  20            *   Initial release
+  21            *
+  22            ******************************************************************************
+  23            */
+  24          
+  25          /* Includes ------------------------------------------------------------------*/
+  26          #include "HWconf.h"
+  27          
+  28          
+  29          
+  30          /* Private constants ---------------------------------------------------------*/
+  31          /* Private types -------------------------------------------------------------*/
+  32          /* Private macro -------------------------------------------------------------*/
+  33          /* Private variables ---------------------------------------------------------*/
+  34          /* Private function prototypes -----------------------------------------------*/
+  35          /* Private functions ---------------------------------------------------------*/
+  36          /** --------------------------------------------------------------------------*
+  37            * @fn
+  38            * @brief
+  39            * @param[in]
+  40            * @return     None
+  41            * --------------------------------------------------------------------------*/
+  42            
+  43            
+  44          /* Exported functions --------------------------------------------------------*/
+  45          /** --------------------------------------------------------------------------*
+  46            * @fn         
+  47            * @brief      
+  48            * @param[in]  
+  49            * @return     None
+  50            * --------------------------------------------------------------------------*/
+  51          static void SpiClkRecover27MSource(void)
+  52          {
+  53   1        BYTE temp;
+C51 COMPILER V9.56.0.0   HWSYSCLK                                                          08/31/2018 14:41:52 PAGE 2   
+
+  54   1      
+  55   1          //Clock
+  56   1        temp = ReadTW88(REG4E1);        //设置SPICLK 为27Mhz
+  57   1        if(temp & 0x30)
+  58   1        {
+  59   2          WriteTW88(REG4E1, temp & ~0x30);
+  60   2        }
+  61   1        temp = ReadTW88(REG4F0);        //设置MCUCLK = SPICLK DIV 1;
+  62   1        if(temp & 0xF0)
+  63   1        {
+  64   2          WriteTW88(REG4F0, temp& ~0xF0);
+  65   2        }
+  66   1        Puts(" 27MHz");
+  67   1      }
+  68          static void Sspllinit(SSPLL num,WORD nKhz)
+  69          {
+  70   1        if(SSPLL1 == num)
+  71   1        {
+  72   2          WriteTW88(REG0FD,0x34);// POST = 0，pump = 4，VCO=3
+  73   2          WriteTW88(REG0F8,0x02);// (108000000 * FPLL)/2^17 /2^POST
+  74   2          WriteTW88(REG0F9,0x00);
+  75   2          WriteTW88(REG0FA,0x00);
+  76   2          WriteTW88(REG0FC,ReadTW88(REG0FC)& ~0x80);
+  77   2        } 
+  78   1        else if(SSPLL2 == num)
+  79   1        {
+  80   2          WriteTW88(REG0ED,0x34);// POST = 0，pump = 4，VCO=3
+  81   2          WriteTW88(REG0E8,0x02);//
+  82   2          WriteTW88(REG0E9,0x00);
+  83   2          WriteTW88(REG0EA,0x00);
+  84   2          WriteTW88(REG0EC,ReadTW88(REG0EC)& ~0x80);
+  85   2        }
+  86   1      }
+*** WARNING C280 IN LINE 68 OF source\HW\HWsysclk.c: 'nKhz': unreferenced local variable
+  87           void Pclkinit(SSPLL num,BYTE div)
+  88          {
+  89   1        if(num == SSPLL1)
+  90   1        {
+  91   2          WriteTW88(REG04B,ReadTW88(REG04B)|0x10); //bit4 = 1
+  92   2        }
+  93   1        else if(num ==SSPLL2)
+  94   1        {
+  95   2          WriteTW88(REG04B,ReadTW88(REG04B)&~0x10);//bit4 = 0
+  96   2        }
+  97   1        WriteTW88(REG0F6,0x00);                    //DIV = 0
+  98   1      }
+*** WARNING C280 IN LINE 87 OF source\HW\HWsysclk.c: 'div': unreferenced local variable
+  99          HAL_StatusTypeDef SysclkInit(void )
+ 100          {
+ 101   1        BYTE temp = 0;
+ 102   1        SSPLL pll;
+ 103   1        SpiClkRecover27MSource();            //系统时钟
+ 104   1        pll = SSPLL1;
+ 105   1        Sspllinit(pll,10800);                  //sspll1 = 108Mhz
+ 106   1        pll = SSPLL2;
+ 107   1        Sspllinit(pll,10800);                  //sspll2 = 108Mhz
+ 108   1        pll = SSPLL2;
+ 109   1        Pclkinit(pll,0);                             
+ 110   1        Puts("clock is ok!\n");
+ 111   1        return HAL_OK;
+ 112   1      }
+ 113          
+C51 COMPILER V9.56.0.0   HWSYSCLK                                                          08/31/2018 14:41:52 PAGE 3   
+
+ 114          
+ 115          /**
+ 116            *****************************************************************************
+ 117            * END OF FILE                                                               *
+ 118            *****************************************************************************
+ 119            */
+C51 COMPILER V9.56.0.0   HWSYSCLK                                                          08/31/2018 14:41:52 PAGE 4   
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com000E (BEGIN)
+0000         L?0015:
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 244B              ADD     A,#04BH
+0007         L?0016:
+0007 F582              MOV     DPL,A
+0009 E4                CLR     A
+000A 3500        E     ADDC    A,regTW88
+000C F583              MOV     DPH,A
+000E 759300      E     MOV     DPX,#?C?XDATASEG
+0011 22                RET     
+0012         L?0017:
+0012 759300      E     MOV     DPX,#?C?XDATASEG
+0015 E500        E     MOV     A,regTW88+01H
+0017 24E1              ADD     A,#0E1H
+0019         L?0018:
+0019 F582              MOV     DPL,A
+001B E500        E     MOV     A,regTW88
+001D 3404              ADDC    A,#04H
+001F F583              MOV     DPH,A
+0021 759300      E     MOV     DPX,#?C?XDATASEG
+0024 22                RET     
+0025         L?0019:
+0025         L?0020:
+0025 E4                CLR     A
+0026         L?0021:
+0026 F0                MOVX    @DPTR,A
+0027 759300      E     MOV     DPX,#?C?XDATASEG
+002A E500        E     MOV     A,regTW88+01H
+002C 22                RET     
+             ; FUNCTION Com000E (END)
+
+             ; FUNCTION SpiClkRecover27MSource (BEGIN)
+                                           ; SOURCE LINE # 51
+                                           ; SOURCE LINE # 52
+                                           ; SOURCE LINE # 56
+0000 110000      R     ACALL   L?0017
+0003 E0                MOVX    A,@DPTR
+0004 FF                MOV     R7,A
+;---- Variable 'temp' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 57
+0005 5430              ANL     A,#030H
+0007 6009              JZ      ?C0001
+                                           ; SOURCE LINE # 58
+                                           ; SOURCE LINE # 59
+0009 EF                MOV     A,R7
+000A 54CF              ANL     A,#0CFH
+000C FE                MOV     R6,A
+000D 110000      R     ACALL   L?0017
+0010 EE                MOV     A,R6
+0011 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 60
+0012         ?C0001:
+                                           ; SOURCE LINE # 61
+0012 759300      E     MOV     DPX,#?C?XDATASEG
+0015 E500        E     MOV     A,regTW88+01H
+0017 24F0              ADD     A,#0F0H
+0019 110000      R     ACALL   L?0018
+C51 COMPILER V9.56.0.0   HWSYSCLK                                                          08/31/2018 14:41:52 PAGE 5   
+
+001C E0                MOVX    A,@DPTR
+001D FF                MOV     R7,A
+                                           ; SOURCE LINE # 62
+001E 54F0              ANL     A,#0F0H
+0020 6010              JZ      ?C0002
+                                           ; SOURCE LINE # 63
+                                           ; SOURCE LINE # 64
+0022 EF                MOV     A,R7
+0023 540F              ANL     A,#0FH
+0025 FF                MOV     R7,A
+0026 759300      E     MOV     DPX,#?C?XDATASEG
+0029 E500        E     MOV     A,regTW88+01H
+002B 24F0              ADD     A,#0F0H
+002D 110000      R     ACALL   L?0018
+0030 EF                MOV     A,R7
+0031 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 65
+0032         ?C0002:
+                                           ; SOURCE LINE # 66
+0032 7B00        R     MOV     R3,#MBYTE ?SC_0
+0034 7A00        R     MOV     R2,#HIGH ?SC_0
+0036 7900        R     MOV     R1,#LOW ?SC_0
+0038 010000      E     AJMP    _Puts
+             ; FUNCTION SpiClkRecover27MSource (END)
+
+             ; FUNCTION _Sspllinit (BEGIN)
+                                           ; SOURCE LINE # 68
+0000 90000000    R     MOV     DPTR,#nKhz
+0004 EC                MOV     A,R4
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 ED                MOV     A,R5
+0008 F0                MOVX    @DPTR,A
+;---- Variable 'num' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 69
+                                           ; SOURCE LINE # 70
+0009 EF                MOV     A,R7
+000A 6401              XRL     A,#01H
+000C 702D              JNZ     ?C0004
+                                           ; SOURCE LINE # 71
+                                           ; SOURCE LINE # 72
+000E 759300      E     MOV     DPX,#?C?XDATASEG
+0011 E500        E     MOV     A,regTW88+01H
+0013 24FD              ADD     A,#0FDH
+0015 110000      R     ACALL   L?0016
+0018 7434              MOV     A,#034H
+                                           ; SOURCE LINE # 73
+001A 110000      R     ACALL   L?0021
+001D 24F8              ADD     A,#0F8H
+001F 110000      R     ACALL   L?0016
+0022 7402              MOV     A,#02H
+                                           ; SOURCE LINE # 74
+0024 110000      R     ACALL   L?0021
+0027 24F9              ADD     A,#0F9H
+0029 110000      R     ACALL   L?0016
+                                           ; SOURCE LINE # 75
+002C 110000      R     ACALL   L?0019
+002F 24FA              ADD     A,#0FAH
+0031 110000      R     ACALL   L?0016
+                                           ; SOURCE LINE # 76
+0034 110000      R     ACALL   L?0019
+0037 24FC              ADD     A,#0FCH
+C51 COMPILER V9.56.0.0   HWSYSCLK                                                          08/31/2018 14:41:52 PAGE 6   
+
+                                           ; SOURCE LINE # 77
+0039 8030              SJMP    ?C0013
+003B         ?C0004:
+                                           ; SOURCE LINE # 78
+003B EF                MOV     A,R7
+003C 6402              XRL     A,#02H
+003E 7032              JNZ     ?C0007
+                                           ; SOURCE LINE # 79
+                                           ; SOURCE LINE # 80
+0040 759300      E     MOV     DPX,#?C?XDATASEG
+0043 E500        E     MOV     A,regTW88+01H
+0045 24ED              ADD     A,#0EDH
+0047 110000      R     ACALL   L?0016
+004A 7434              MOV     A,#034H
+                                           ; SOURCE LINE # 81
+004C 110000      R     ACALL   L?0021
+004F 24E8              ADD     A,#0E8H
+0051 110000      R     ACALL   L?0016
+0054 7402              MOV     A,#02H
+                                           ; SOURCE LINE # 82
+0056 110000      R     ACALL   L?0021
+0059 24E9              ADD     A,#0E9H
+005B 110000      R     ACALL   L?0016
+                                           ; SOURCE LINE # 83
+005E 110000      R     ACALL   L?0020
+0061 24EA              ADD     A,#0EAH
+0063 110000      R     ACALL   L?0016
+                                           ; SOURCE LINE # 84
+0066 110000      R     ACALL   L?0020
+0069 24EC              ADD     A,#0ECH
+006B         ?C0013:
+006B 110000      R     ACALL   L?0016
+006E E0                MOVX    A,@DPTR
+006F 547F              ANL     A,#07FH
+0071 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 85
+                                           ; SOURCE LINE # 86
+0072         ?C0007:
+0072 22                RET     
+             ; FUNCTION _Sspllinit (END)
+
+             ; FUNCTION _Pclkinit (BEGIN)
+                                           ; SOURCE LINE # 87
+0000 90000000    R     MOV     DPTR,#div
+0004 ED                MOV     A,R5
+0005 F0                MOVX    @DPTR,A
+;---- Variable 'num' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 88
+                                           ; SOURCE LINE # 89
+0006 EF                MOV     A,R7
+0007 B40109            CJNE    A,#01H,?C0008
+                                           ; SOURCE LINE # 90
+                                           ; SOURCE LINE # 91
+000A 110000      R     ACALL   L?0015
+000D E0                MOVX    A,@DPTR
+000E 4410              ORL     A,#010H
+0010 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 92
+0011 800B              SJMP    ?C0009
+0013         ?C0008:
+                                           ; SOURCE LINE # 93
+0013 EF                MOV     A,R7
+C51 COMPILER V9.56.0.0   HWSYSCLK                                                          08/31/2018 14:41:52 PAGE 7   
+
+0014 B40207            CJNE    A,#02H,?C0009
+                                           ; SOURCE LINE # 94
+                                           ; SOURCE LINE # 95
+0017 110000      R     ACALL   L?0015
+001A E0                MOVX    A,@DPTR
+001B 54EF              ANL     A,#0EFH
+001D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 96
+001E         ?C0009:
+                                           ; SOURCE LINE # 97
+001E 759300      E     MOV     DPX,#?C?XDATASEG
+0021 E500        E     MOV     A,regTW88+01H
+0023 24F6              ADD     A,#0F6H
+0025 110000      R     ACALL   L?0016
+0028 E4                CLR     A
+0029 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 98
+002A 22                RET     
+             ; FUNCTION _Pclkinit (END)
+
+             ; FUNCTION SysclkInit (BEGIN)
+                                           ; SOURCE LINE # 99
+                                           ; SOURCE LINE # 100
+                                           ; SOURCE LINE # 101
+0000 E4                CLR     A
+0001 90000000    R     MOV     DPTR,#temp
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 103
+0006 110000      R     ACALL   SpiClkRecover27MSource
+                                           ; SOURCE LINE # 104
+;---- Variable 'pll' assigned to Register 'R7' ----
+0009 7F01              MOV     R7,#01H
+                                           ; SOURCE LINE # 105
+000B 7D30              MOV     R5,#030H
+000D 7C2A              MOV     R4,#02AH
+000F 110000      R     ACALL   _Sspllinit
+                                           ; SOURCE LINE # 106
+0012 0F                INC     R7
+                                           ; SOURCE LINE # 107
+0013 110000      R     ACALL   _Sspllinit
+                                           ; SOURCE LINE # 108
+                                           ; SOURCE LINE # 109
+0016 E4                CLR     A
+0017 FD                MOV     R5,A
+0018 110000      R     ACALL   _Pclkinit
+                                           ; SOURCE LINE # 110
+001B 7B00        R     MOV     R3,#MBYTE ?SC_7
+001D 7A00        R     MOV     R2,#HIGH ?SC_7
+001F 7900        R     MOV     R1,#LOW ?SC_7
+0021 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 111
+0024 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 112
+0026         ?C0012:
+0026 22                RET     
+             ; FUNCTION SysclkInit (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    301    ----
+   CONSTANT SIZE    =     21    ----
+C51 COMPILER V9.56.0.0   HWSYSCLK                                                          08/31/2018 14:41:52 PAGE 8   
+
+   XDATA SIZE       =   ----       4
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  2 WARNING(S),  0 ERROR(S)

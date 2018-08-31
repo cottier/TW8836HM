@@ -1,0 +1,220 @@
+C51 COMPILER V9.56.0.0   INTERRUPT                                                         08/31/2018 14:41:52 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE INTERRUPT
+OBJECT MODULE PLACED IN .\Output\interrupt.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source\app\interrupt.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.
+                    -\Output\TW8836B_EVB11.ORC) BROWSE INCDIR(.\source\app;.\source\common;.\source\drv;.\source\HW;.\source\utils;.\source\t
+                    -est) DEFINE(EVB_11,nullFn=//) DEBUG CODE PRINT(.\List\interrupt.lst) TABS(2) OBJECT(.\Output\interrupt.obj)
+
+line level    source
+
+   1          #include "HWconf.h"
+   2          #include "interrupt.h"
+   3          
+   4          
+   5          void timer0_int(void) interrupt 1 using 0 //10ms
+   6          {
+   7   1        Count10MS++;
+   8   1      }
+   9          
+  10          
+  11          void timer1_int(void) interrupt 3 using 1 //1ms
+  12          {
+  13   1        tic_pc++;
+  14   1        Count1MS++;
+  15   1      }
+  16          
+  17          /**
+  18          * UART0 interrupt service routine
+  19          * 
+  20          * enable SFR_ES0
+  21          */
+  22          void uart0_int(void) interrupt 4 using 2
+  23          {
+  24   1        BYTE  count;
+  25   1      
+  26   1      #ifdef DEBUG_ISR
+                MCU_INT_STATUS |= 0x0010;
+                INTR_counter[4]++;
+              #endif
+  30   1      
+  31   1        if( SFRB_RI ) {         //--- Receive interrupt ----
+  32   2          SFRB_RI = 0;
+  33   2          //if ( SFR_UART0FIFO & 0x80 ) {   // is it use fifo?
+  34   2            count = SFR_UART0FIFO & 0x1F;
+  35   2            if ( count & 0x10) {
+  36   3              SFR_UART0FIFO = 0x90;   // overflowed, buffer clear
+  37   3      #ifdef DEBUG_UART
+                      UART0_OVERFLOW_counter++;
+              #endif
+  40   3            }
+  41   2            else {
+  42   3      #ifdef DEBUG_UART
+                      if(UART0_MAX_counter < count)
+                        UART0_MAX_counter = count;
+              #endif
+  46   3              while (count) {
+  47   4                RS_buf[RS_in++] = SFR_SBUF;
+  48   4                if( RS_in>=RS_BUF_MAX ) RS_in = 0;
+  49   4                count--;
+  50   4              };
+  51   3            }
+  52   2          //}
+  53   2          //else {
+C51 COMPILER V9.56.0.0   INTERRUPT                                                         08/31/2018 14:41:52 PAGE 2   
+
+  54   2          //  RS_buf[RS_in++] = SFR_SBUF;
+  55   2          //  if( RS_in>=RS_BUF_MAX ) RS_in = 0;
+  56   2          //}
+  57   2        }
+  58   1      
+  59   1        if( SFRB_TI ) {         //--- Transmit interrupt ----
+  60   2          SFRB_TI = 0;
+  61   2          RS_Xbusy=0;
+  62   2        }
+  63   1      }
+  64          
+C51 COMPILER V9.56.0.0   INTERRUPT                                                         08/31/2018 14:41:52 PAGE 3   
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION timer0_int (BEGIN)
+0000 C0E0              PUSH    ACC
+0002 C093              PUSH    DPX
+0004 C083              PUSH    DPH
+0006 C082              PUSH    DPL
+                                           ; SOURCE LINE # 5
+                                           ; SOURCE LINE # 7
+0008 90000000    E     MOV     DPTR,#Count10MS+01H
+000C E0                MOVX    A,@DPTR
+000D 04                INC     A
+000E F0                MOVX    @DPTR,A
+000F 7007              JNZ     ?C0011
+0011 90000000    E     MOV     DPTR,#Count10MS
+0015 E0                MOVX    A,@DPTR
+0016 04                INC     A
+0017 F0                MOVX    @DPTR,A
+0018         ?C0011:
+                                           ; SOURCE LINE # 8
+0018 D082              POP     DPL
+001A D083              POP     DPH
+001C D093              POP     DPX
+001E D0E0              POP     ACC
+0020 32                RETI    
+             ; FUNCTION timer0_int (END)
+
+             ; FUNCTION timer1_int (BEGIN)
+0000 C0E0              PUSH    ACC
+0002 C093              PUSH    DPX
+0004 C083              PUSH    DPH
+0006 C082              PUSH    DPL
+                                           ; SOURCE LINE # 11
+                                           ; SOURCE LINE # 13
+0008 0500        E     INC     tic_pc+01H
+000A E500        E     MOV     A,tic_pc+01H
+000C 7002              JNZ     ?C0012
+000E 0500        E     INC     tic_pc
+0010         ?C0012:
+                                           ; SOURCE LINE # 14
+0010 90000000    E     MOV     DPTR,#Count1MS+01H
+0014 E0                MOVX    A,@DPTR
+0015 04                INC     A
+0016 F0                MOVX    @DPTR,A
+0017 7007              JNZ     ?C0013
+0019 90000000    E     MOV     DPTR,#Count1MS
+001D E0                MOVX    A,@DPTR
+001E 04                INC     A
+001F F0                MOVX    @DPTR,A
+0020         ?C0013:
+                                           ; SOURCE LINE # 15
+0020 D082              POP     DPL
+0022 D083              POP     DPH
+0024 D093              POP     DPX
+0026 D0E0              POP     ACC
+0028 32                RETI    
+             ; FUNCTION timer1_int (END)
+
+             ; FUNCTION uart0_int (BEGIN)
+0000 C0E0              PUSH    ACC
+0002 C0D0              PUSH    PSW
+C51 COMPILER V9.56.0.0   INTERRUPT                                                         08/31/2018 14:41:52 PAGE 4   
+
+0004 75D010            MOV     PSW,#010H
+                                           ; SOURCE LINE # 22
+                                           ; SOURCE LINE # 31
+0007 309829            JNB     SFRB_RI,?C0003
+                                           ; SOURCE LINE # 32
+000A C298              CLR     SFRB_RI
+                                           ; SOURCE LINE # 34
+000C E59E              MOV     A,SFR_UART0FIFO
+000E 541F              ANL     A,#01FH
+0010 FF                MOV     R7,A
+;---- Variable 'count' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 35
+0011 30E405            JNB     ACC.4,?C0006
+                                           ; SOURCE LINE # 36
+0014 759E90            MOV     SFR_UART0FIFO,#090H
+                                           ; SOURCE LINE # 40
+0017 801A              SJMP    ?C0003
+                                           ; SOURCE LINE # 41
+0019         ?C0006:
+                                           ; SOURCE LINE # 46
+0019 EF                MOV     A,R7
+001A 6017              JZ      ?C0003
+                                           ; SOURCE LINE # 47
+001C AE00        E     MOV     R6,RS_in
+001E 0500        E     INC     RS_in
+0020 7400        E     MOV     A,#LOW RS_buf
+0022 2E                ADD     A,R6
+0023 F8                MOV     R0,A
+0024 A699              MOV     @R0,SFR_SBUF
+                                           ; SOURCE LINE # 48
+0026 E500        E     MOV     A,RS_in
+0028 C3                CLR     C
+0029 9420              SUBB    A,#020H
+002B 4003              JC      ?C0008
+002D 750000      E     MOV     RS_in,#00H
+0030         ?C0008:
+                                           ; SOURCE LINE # 49
+0030 1F                DEC     R7
+                                           ; SOURCE LINE # 50
+0031 80E6              SJMP    ?C0006
+                                           ; SOURCE LINE # 51
+                                           ; SOURCE LINE # 57
+0033         ?C0003:
+                                           ; SOURCE LINE # 59
+0033 309904            JNB     SFRB_TI,?C0010
+                                           ; SOURCE LINE # 60
+0036 C299              CLR     SFRB_TI
+                                           ; SOURCE LINE # 61
+0038 C200        E     CLR     RS_Xbusy
+                                           ; SOURCE LINE # 62
+                                           ; SOURCE LINE # 63
+003A         ?C0010:
+003A D0D0              POP     PSW
+003C D0E0              POP     ACC
+003E 32                RETI    
+             ; FUNCTION uart0_int (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    146    ----
+   CONSTANT SIZE    =   ----    ----
+C51 COMPILER V9.56.0.0   INTERRUPT                                                         08/31/2018 14:41:52 PAGE 5   
+
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

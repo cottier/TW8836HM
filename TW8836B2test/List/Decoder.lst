@@ -1,0 +1,1579 @@
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE DECODER
+OBJECT MODULE PLACED IN .\Output\Decoder.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source36\Decoder.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\Out
+                    -put\TW8836B_EVB11.ORC) BROWSE INCDIR(SiI-SW;SiI-SW\HAL;SiI-SW\DEBUG;SiI-SW\CEC;.\Source36\LIB) DEFINE(EVB_11,nullFn=//) 
+                    -DEBUG CODE PRINT(.\List\Decoder.lst) TABS(2) OBJECT(.\Output\Decoder.obj)
+
+line level    source
+
+   1          /**
+   2           * @file
+   3           * DECODER.c 
+   4           * @author Brian Kang
+   5           * @version 1.0
+   6           * @section LICENSE
+   7           *  Copyright (C) 2011~2012 Intersil Corporation
+   8           * @section DESCRIPTION
+   9           *  Internal Decoder module 
+  10           ******************************************************************************
+  11           */
+  12          /*
+  13          Disclaimer: THIS INFORMATION IS PROVIDED 'AS-IS' FOR EVALUATION PURPOSES ONLY.  
+  14          INTERSIL CORPORATION AND ITS SUBSIDIARIES ('INTERSIL') DISCLAIM ALL WARRANTIES, 
+  15          INCLUDING WITHOUT LIMITATION FITNESS FOR A PARTICULAR PURPOSE AND MERCHANTABILITY.  
+  16          Intersil provides evaluation platforms to help our customers to develop products. 
+  17          However, factors beyond Intersil's control could significantly affect Intersil 
+  18          product performance. 
+  19          It remains the customers' responsibility to verify the actual system performance.
+  20          */
+  21          #include "Config.h"
+  22          #include "reg.h"
+  23          #include "typedefs.h"
+  24          #include "TW8836.h"
+  25          #include "Global.h"
+  26          
+  27          #include "main.h"
+  28          #include "Printf.h"
+  29          #include "Monitor.h"
+  30          #include "I2C.h"
+  31          #include "CPU.h"
+  32          #include "Scaler.h"
+  33          #include "InputCtrl.h"
+  34          #include "util.h"
+  35          
+  36          #include "EEPROM.h"
+  37          #include "Decoder.h"
+  38          
+  39          #include "FOsd.h"
+  40          
+  41          //-----------------------------------------------------------------------------
+  42          /*
+  43            Decoder Signal.
+  44          
+  45          NTSC
+  46          ITU-R BT.470-7
+  47                Total   Active  Blank   ScanLine
+  48                Samples
+  49          NTSC    858   720   138     525@60Hz
+  50          PAL     864   720   144     625@50Hz
+  51          
+  52          */
+  53          //-----------------------------------------------------------------------------
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 2   
+
+  54          
+  55          
+  56          //-----------------------------------------------------------------------------
+  57          /**
+  58          * check Video Loss
+  59          *
+  60          * @param n: wait counter
+  61          * @return
+  62          * 0:Video detected
+  63          * 1:Video not present. Video Loss
+  64          *
+  65          * register
+  66          * R101[0]
+  67          */ 
+  68          BYTE DecoderCheckVDLOSS( BYTE n )
+  69          {
+  70   1        volatile BYTE mode;
+  71   1        BYTE start;
+  72   1      
+  73   1      #ifdef DEBUG_DEC
+                dPrintf("\n\rDecoderCheckVDLOSS(%d) start",(WORD)n);
+              #endif
+  76   1        start = n;
+  77   1      
+  78   1        while (n--) {
+  79   2          mode = ReadTW88(REG101);    //read Chip Status
+  80   2          if (( mode & 0x80 ) == 0 ) {
+  81   3      #ifdef DEBUG_DEC
+                    dPrintf("->end%bd",start - n);
+              #endif
+  84   3            return ( 0 );       //check video detect flag
+  85   3          }
+  86   2          delay1ms(10);
+  87   2        }
+  88   1      #ifdef DEBUG_DEC
+                ePrintf("\n\rDecoderCheckVDLOSS->fail");
+              #endif
+  91   1        return ( 1 );           //fail. We loss the Video
+  92   1      }
+  93          
+  94          
+  95          //-----------------------------------------------------------------------------
+  96          /**
+  97          * desc 
+  98          *   set output crop for Decoder
+  99          *
+ 100          *
+ 101          * register
+ 102          * vDelay    R107[7:6]R108[7:0]
+ 103          * vActive   R107[5:4]R109[7:0]
+ 104          * hDelay    R107[3:2]R10A[7:0]
+ 105          * hActive   R107[1:0]R10B[7:0]
+ 106          *
+ 107          *   hDelay hActive  vDelay vActive
+ 108          * NTSC  8   720   21    240
+ 109          * PAL 6   720   23    288 
+ 110          *
+ 111          */
+ 112          void DecoderSetOutputCrop(WORD hDelay, WORD hActive, WORD vDelay, WORD vActive)
+ 113          {
+ 114   1        BYTE bTemp;
+ 115   1        bTemp  = vDelay >> 8; bTemp <<= 2;
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 3   
+
+ 116   1        bTemp |= vActive >> 8;  bTemp <<= 2;
+ 117   1        bTemp |= hDelay >> 8; bTemp <<= 2;
+ 118   1        bTemp |= hActive >> 8;
+ 119   1        WriteTW88(REG107, bTemp);
+ 120   1        WriteTW88(REG108, (BYTE)vDelay);
+ 121   1        WriteTW88(REG109, (BYTE)vActive);
+ 122   1        WriteTW88(REG10A, (BYTE)hDelay);
+ 123   1        WriteTW88(REG10B, (BYTE)hActive);
+ 124   1      }
+ 125          
+ 126          
+ 127          /* read decoder outputcrop value */
+ 128          #ifdef DEBUG_SCALER_OVERWRITE_TABLE
+              WORD DecoderGet_vDelay(void)
+              {
+                WORD wTemp;
+                wTemp = ReadTW88(REG107) & 0xC0;
+                wTemp <<= 2;
+                wTemp |= ReadTW88(REG108);
+                return wTemp;
+              }
+              WORD DecoderGet_vActive(void)
+              {
+                WORD wTemp;
+                wTemp = ReadTW88(REG107) & 0x30;
+                wTemp <<= 4;
+                wTemp |= ReadTW88(REG109);
+                return wTemp;
+              }
+              WORD DecoderGet_hDelay(void)
+              {
+                WORD wTemp;
+                wTemp = ReadTW88(REG107) & 0x0C;
+                wTemp <<= 6;
+                wTemp |= ReadTW88(REG10A);
+                return wTemp;
+              }
+              WORD DecoderGet_hActive(void)
+              {
+                WORD wTemp;
+                wTemp = ReadTW88(REG107) & 0x03;
+                wTemp <<= 8;
+                wTemp |= ReadTW88(REG10B);
+                return wTemp;
+              }
+              #endif
+ 162          
+ 163          //-----------------------------------------------------------------------------
+ 164          /**
+ 165          * read detected decoder mode
+ 166          *
+ 167          * register
+ 168          * R11C[7]   0:idle, 1:detection in progress
+ 169          * R11C[6:4] 000: NTSC
+ 170          *       001: PAL
+ 171          *       ...
+ 172          *       111:N/A
+ 173          */
+ 174          BYTE DecoderReadDetectedMode(void)
+ 175          {
+ 176   1        BYTE mode;
+ 177   1        mode = ReadTW88(REG11C);
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 4   
+
+ 178   1        mode >>= 4;
+ 179   1        return mode;
+ 180   1      }
+ 181          
+ 182          //-----------------------------------------------------------------------------
+ 183          /**
+ 184          * check detected decoder video input standard
+ 185          *
+ 186          * To get a stable the correct REG11C[6:4] value,
+ 187          *   read REG101[6] and REG130[7:5] also.
+ 188          * I saw the following values(BK110303)
+ 189          *     E7 E7 67 67 87 87 87 87 ..... 87 87 87 87 87 87 87 87 87 07 07 07 .... 
+ 190          *     B7 B7 B7 37 37 87 87 87 ..... 87 87 87 87 87 87 87 87 87 07 07 07 07 07 07 07
+ 191          *
+ 192          * oldname: CheckDecoderSTD
+ 193          *
+ 194          * register
+ 195          * R11C[6:4].
+ 196          *   R101[6].
+ 197          * R130[7:5].
+ 198          * @return
+ 199          * 0x80: filed.
+ 200          * other: detected standard value.
+ 201          */
+ 202          BYTE DecoderCheckSTD( BYTE n )
+ 203          {
+ 204   1        volatile BYTE r11c,r101,r130;
+ 205   1        BYTE start=n;
+ 206   1        BYTE count;
+ 207   1      #ifdef DEBUG_DEC
+                ePrintf("\n\rDecoderCheckSTD(%d) start",(WORD)n);
+              #endif
+ 210   1        
+ 211   1        count=0;
+ 212   1        while (n--) {
+ 213   2          r11c = ReadTW88(REG11C);
+ 214   2          if (( r11c & 0x80 ) == 0 ) {
+ 215   3            r101 = ReadTW88(REG101);
+ 216   3            r130 = ReadTW88(REG130);
+ 217   3      #ifdef DEBUG_DEC
+                    dPrintf("\n\r%02bx:%02bx-%02bx-%02bx ",start-n, r11c, r101,r130);
+              #endif
+ 220   3            if((r101 & 0x40) && ((r130 & 0xE0)==0)) {
+ 221   4      #ifdef DEBUG_DEC
+                      ePrintf("->success:%d",(WORD)start-n);
+              #endif
+ 224   4              if(count > 4)
+ 225   4                return (r11c);
+ 226   4              count++;
+ 227   4            }
+ 228   3          }
+ 229   2          delay1ms(5);
+ 230   2        }
+ 231   1      #ifdef DEBUG_DEC
+                ePrintf("->fail");
+              #endif
+ 234   1      
+ 235   1        //This is only for pattern generator.
+ 236   1        if((r101 & 0xC1) == 0x41) //PAL ? 
+ 237   1          return (r11c);
+ 238   1      
+ 239   1        return ( 0x80 );
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 5   
+
+ 240   1      }
+ 241          
+ 242          //-----------------------------------------------------------------------------
+ 243          /**
+ 244          * set decoder freerun mode
+ 245          *
+ 246          * example
+ 247          *   DecoderFreerun(DECODER_FREERUN_60HZ);
+ 248          *
+ 249          * R133[7:6]
+ 250          * @param
+ 251          * mode  0:AutoMode
+ 252          *     1:AutoMode
+ 253          *     2:60Hz
+ 254          *     3:50Hz
+ 255          */
+ 256          void DecoderFreerun(BYTE mode)
+ 257          {
+ 258   1        WriteTW88(REG133, (ReadTW88(REG133) & 0x3F) | (mode<<6));
+ 259   1      }
+ 260          
+ 261          static void StrCatDecoderModeName(BYTE mode)
+ 262          {
+ 263   1        switch(mode) {
+ 264   2        case 0:   TWstrcat(FOsdMsgBuff," NTSC");    break;
+ 265   2        case 1:   TWstrcat(FOsdMsgBuff," PAL");   break;
+ 266   2        case 2:   TWstrcat(FOsdMsgBuff," SECAM");   break;
+ 267   2        case 3:   TWstrcat(FOsdMsgBuff," NTSC4");   break;
+ 268   2        case 4:   TWstrcat(FOsdMsgBuff," PAL-M");   break;
+ 269   2        case 5:   TWstrcat(FOsdMsgBuff," PAL-CN");  break;
+ 270   2        case 6:   TWstrcat(FOsdMsgBuff," PAL-60");  break;
+ 271   2        default:  TWstrcat(FOsdMsgBuff," Unknown"); break;  
+ 272   2        }
+ 273   1      }
+ 274          
+ 275          
+ 276          //=============================================================================
+ 277          // Change to DECODER. (CVBS & SVIDEO)
+ 278          //=============================================================================
+ 279          
+ 280          
+ 281          //-----------------------------------------------------------------------------
+ 282          /**
+ 283          * check and set the decoder input
+ 284          *
+ 285          * @return
+ 286          * 0: success
+ 287          * 1: VDLOSS
+ 288          * 2: No Standard
+ 289          * 3: Not Support Mode
+ 290          *
+ 291          * extern
+ 292          * InputSubMode
+ 293          *
+ 294          * measure result
+ 295          *
+ 296          * NTSC                  PAL   
+ 297          * vTotal:262 vFreq:59           vTotal:313 vFreq:49.99
+ 298          * hSync:1 vSync:0             hSync:1 vSync:0
+ 299          *
+ 300          * hActive     vActive
+ 301          * 2,73      1,1             2,65    1,1
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 6   
+
+ 302          * 1713,1711   261,262         1725,1086 311,312
+ 303          * ---------   -------         ----    ----
+ 304          * 1712      261           1724    311
+ 305          *
+ 306          * H Rise to Act End:1           1                   
+ 307          * VS Rise Pos. in on e H:1317       1327  
+ 308          * FIFO Read Start :0            0
+ 309          *
+ 310          *   1440x480i 1716,38,124,114       1440x576i 1728,24,126,138
+ 311          *       262,4,3,15                312,2,3,19
+ 312          *
+ 313          * DecInputCrop
+ 314          *   8,720,21,240            6,720,23,288
+ 315          */
+ 316          extern code struct DEC_VIDEO_TIME_TABLE_s TW8836_DEC_TABLE[];
+ 317          
+ 318          
+ 319          BYTE CheckAndSetDecoderScaler( void )
+ 320          {
+ 321   1        BYTE mode;  //0 = NTSC(M), 1 = PAL (B,D,G,H,I), ...
+ 322   1        struct DEC_VIDEO_TIME_TABLE_s *pVideoTable;
+ 323   1        struct SCALER_TIME_TABLE_s *pScaler;
+ 324   1        WORD hActive,vActive;
+ 325   1        BYTE hStart, vStart;
+ 326   1        BYTE fScale;
+ 327   1      
+ 328   1        /*check video signal */
+ 329   1        if ( DecoderCheckVDLOSS(100) ) {
+ 330   2          ePuts("\n\rCheckAndSetDecoderScaler VDLOSS");
+ 331   2          DecoderFreerun(DECODER_FREERUN_60HZ);
+ 332   2          return( 1 );
+ 333   2        }
+ 334   1        /*get standard */
+ 335   1        mode = DecoderCheckSTD(100);
+ 336   1        if ( mode == 0x80 ) {
+ 337   2            ePrintf("\n\rCheckAndSetDecoderScaler NoSTD");
+ 338   2          DecoderFreerun(DECODER_FREERUN_60HZ);
+ 339   2          return( 2 );
+ 340   2        }
+ 341   1        mode >>= 4;
+ 342   1        InputSubMode = mode; //save sub mode.
+ 343   1        if(mode >= 7) {
+ 344   2          DecoderFreerun(DECODER_FREERUN_60HZ);
+ 345   2          return 3;
+ 346   2        }
+ 347   1      
+ 348   1        /* link table */
+ 349   1        pVideoTable = &TW8836_DEC_TABLE[mode];
+ 350   1        /* read scale mode. 0:overscan(default), 1:full */
+ 351   1        fScale = EE_Read(EEP_INPUT_DEC);
+ 352   1      
+ 353   1          //dPrintf("\n\rCheckAndSetDecoderScaler mode:%bd",mode);
+ 354   1        //dPrintf("  %dx%d", pVideoTable->hActive,pVideoTable->vActive);
+ 355   1        //dPrintf(" hDelay:%bd vDelay:%bd", pVideoTable->hDelay,pVideoTable->vDelay);
+ 356   1        //if(fScale==0)/*ANALOG_OVERSCAN*/
+ 357   1        //  dPrintf(" hOverScan:%bd vOverScan:%bd", pVideoTable->hOverScan,pVideoTable->vOverScan);
+ 358   1      
+ 359   1        hStart  = pVideoTable->hDelay;
+ 360   1        hActive = pVideoTable->hActive;
+ 361   1        vStart  = pVideoTable->vDelay;
+ 362   1        vActive = pVideoTable->vActive;
+ 363   1      
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 7   
+
+ 364   1        if(fScale==0) { /*ANALOG_OVERSCAN*/
+ 365   2          hStart  += pVideoTable->hOverScan;
+ 366   2          hActive -= (pVideoTable->hOverScan*2);
+ 367   2          vStart  += pVideoTable->vOverScan;
+ 368   2          vActive -= (pVideoTable->vOverScan *2);
+ 369   2        }
+ 370   1        /* set decoder output crop */
+ 371   1        DecoderSetOutputCrop(hStart,hActive,vStart,vActive);
+ 372   1      
+ 373   1        /* set scaler */
+ 374   1        ScalerSetLineBufferSize(hActive);
+ 375   1        ScalerSetHScale(hActive);
+ 376   1        ScalerSetVScale(vActive);
+ 377   1        ScalerSet_vDE_value(vStart);
+ 378   1      
+ 379   1      #if 0  //BK150717
+                scaler_set_output(hActive,vActive,vStart,0);
+              #endif  
+ 382   1      
+ 383   1        /*scaler input clock polarity */
+ 384   1        InputSetClockPolarity(pVideoTable->pol);
+ 385   1      
+ 386   1        /*black level for NTSC */
+ 387   1        if(mode==0) WriteTW88(REG10C, ReadTW88(REG10C) | 0x10);
+ 388   1        else    WriteTW88(REG10C, ReadTW88(REG10C) & ~0x10);
+ 389   1      
+ 390   1        /* search scaler table. If success, overwrite */
+ 391   1      #ifdef SUPPORT_SCALER_OVERWRITE_TABLE
+ 392   1        pScaler = FindScalerTable(InputMain, pVideoTable->hActive,pVideoTable->vActive,pVideoTable->vFreq, 0,1);
+ 393   1        if(pScaler != NULL)
+ 394   1          OverWriteScalerWithTable(pScaler,1,1);
+ 395   1      #endif
+ 396   1      
+ 397   1        //prepare info string
+ 398   1        FOsdSetInputMainString2FOsdMsgBuff();                   
+ 399   1        StrCatDecoderModeName(mode);
+ 400   1          
+ 401   1        return(0);
+ 402   1      }
+ 403          
+ 404          #if defined(SUPPORT_FAST_INPUT_TOGGLE)
+              XDATA REG_IDX_DATA_t Fast_Cvbs_Buff[] = {
+                {REG040, 0x00},
+                {REG041, 0xC0},
+                
+                {REG203, 0x00},
+                {REG204, 0x00},
+                {REG205, 0x00},
+                {REG206, 0x00},
+                {REG207, 0x00},
+                {REG208, 0x00},
+                {REG209, 0x00},
+                {REG20A, 0x00},
+                {REG20B, 0x00},
+                {REG20C, 0x00},
+                {REG20D, 0x00},
+                {REG20E, 0x00},
+                {REG20F, 0x00},
+                {REG210, 0x00},
+                {REG211, 0x00},
+                {REG212, 0x00},
+                {REG213, 0x00},
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 8   
+
+                {REG214, 0x00},
+                {REG215, 0x00},
+              
+                {0x000, 0x00}
+              };
+              #endif
+ 432          
+ 433          //-----------------------------------------------------------------------------
+ 434          /**
+ 435          * Change to Decoder
+ 436          *
+ 437          * extern
+ 438          * InputMain
+ 439          * InputSubMode
+ 440          * @param
+ 441          * fSVIDEO   0:CVBS, 1:SVIDEO
+ 442          * @return
+ 443          * - 0: success
+ 444          * - 1: No Update happen
+ 445          * - 2: No Signal or unknown video sidnal.
+ 446          * - 3: NO STD
+ 447          * @see InitInputAsDefault
+ 448          * @see CheckAndSetDecoderScaler
+ 449          * @see VInput_enableOutput
+ 450          * @see VInput_gotoFreerun
+ 451          */
+ 452          static BYTE ChangeDecoder(BYTE fSVIDEO)
+ 453          {
+ 454   1        BYTE ret;
+ 455   1      
+ 456   1      #if defined(SUPPORT_FAST_INPUT_TOGGLE)
+                if(g_cvbs_checked) {
+                  InputMain = INPUT_CVBS;
+              
+                  ChangeFastInputMain();
+              
+                  //check vdloss.
+                  if(DecoderCheckVDLOSS(100) ==0) {
+                    WORD hTotal, vTotal;
+                    ScalerCalcFreerunValue(&hTotal,&vTotal);
+                    ScalerWriteFreerunTotal(hTotal,vTotal);       
+                    return 0;
+                  }
+                  //If vdloss, we have to use the normal routines...
+                }
+              #endif
+ 472   1      
+ 473   1        if(fSVIDEO) {
+ 474   2          if ( InputMain == INPUT_SVIDEO ) {
+ 475   3      #ifdef DEBUG_DEC
+                    dPrintf("\n\rSkip ChangeSVIDEO");
+              #endif
+ 478   3            return(1);
+ 479   3          }
+ 480   2          InputMain = INPUT_SVIDEO;
+ 481   2        }
+ 482   1        else {
+ 483   2          if ( InputMain == INPUT_CVBS ) {
+ 484   3      #ifdef DEBUG_DEC
+                    dPrintf("\n\rSkip ChangeCVBS");
+              #endif
+ 487   3            return(1);
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 9   
+
+ 488   3          }
+ 489   2          InputMain = INPUT_CVBS;
+ 490   2        }
+ 491   1        InputSubMode = 7; //clear.
+ 492   1      
+ 493   1        if(GetInputMainEE() != InputMain)   
+ 494   1          SaveInputMainEE( InputMain );
+ 495   1      
+ 496   1        //----------------
+ 497   1        // initialize video input
+ 498   1        InitInputAsDefault();
+ 499   1      
+ 500   1      
+ 501   1        //BKFYI: We need a delay before call DecoderCheckVDLOSS() on CheckAndSetDecoderScaler()
+ 502   1        //But, if fRCDMode, InputMode comes from others, not CVBS, not SVIDEO. We don't need a delay. 
+ 503   1        delay1ms(350);
+ 504   1      
+ 505   1        //
+ 506   1        // Check and Set 
+ 507   1        //
+ 508   1        ret = CheckAndSetDecoderScaler();
+ 509   1        if(ret==ERR_SUCCESS) {
+ 510   2          //success
+ 511   2          VInput_enableOutput(0);
+ 512   2      #if defined(SUPPORT_FAST_INPUT_TOGGLE)
+                  ReadTW88Reg2Buff(Fast_VIDEO_Toggle_info,Fast_CVBS_Toggle_Buff);
+                  g_cvbs_checked = 1;
+              #endif
+ 516   2          return 0;
+ 517   2        }
+ 518   1        //------------------
+ 519   1        // NO SIGNAL
+ 520   1        //------------------
+ 521   1        VInput_gotoFreerun(ret-1);  //1->0:NoSignal 2->1:NO STD
+ 522   1      #if defined(SUPPORT_FAST_INPUT_TOGGLE)
+                g_cvbs_checked = 0;
+              #endif
+ 525   1        return (ret+1);       //2:NoSignal 3:NO STD
+ 526   1      }
+ 527          
+ 528          //-----------------------------------------------------------------------------
+ 529          /**
+ 530          * Change to CVBS
+ 531          *
+ 532          * @return
+ 533          * - 0: success
+ 534          * - 1: No Update happen
+ 535          * - 2: No Signal or unknown video sidnal.
+ 536          * - 3: NO STD
+ 537          * @see ChangeDecoder
+ 538          */
+ 539          BYTE ChangeCVBS( void )
+ 540          {
+ 541   1        return ChangeDecoder(0);
+ 542   1      }
+ 543          
+ 544          //-----------------------------------------------------------------------------
+ 545          /**
+ 546          * Change to SVIDEO
+ 547          *
+ 548          * @return
+ 549          * - 0: success
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 10  
+
+ 550          * - 1: No Update happen
+ 551          * - 2: No Signal or unknown video sidnal.
+ 552          * - 3: NO STD
+ 553          * @see ChangeDecoder
+ 554          */
+ 555          BYTE  ChangeSVIDEO( void )
+ 556          {
+ 557   1        return ChangeDecoder(1);
+ 558   1      }
+ 559          
+ 560          
+ 561          #ifdef SUPPORT_FOSD_MENU
+              //=============================================================================
+              // for FontOSD MENU
+              //=============================================================================
+              //-----------------------------------------------------------------------------
+              /**
+              * Is it a video Loss State
+              *
+              * @return
+              * - 1:If no Input
+              * - 0:Found Input
+              */
+              BYTE DecoderIsNoInput(void)
+              {
+                BYTE ret;
+                
+                ret = TW8835_R101;  
+                if(ret & 0x80)
+                  return 1; //No Input
+                return 0;   //found Input
+              }
+              //-----------------------------------------------------------------------------
+              /**
+              * read video input standard
+              *
+              * BKTODO120201 Pls, remove this
+              */
+              BYTE DecoderReadVInputSTD(void)
+              {
+                BYTE std, ret;
+              
+                if( DecoderIsNoInput() ) ret = 1; // Noinput!!  BUGBUG
+              
+                std = DecoderReadDetectedMode();
+                if(std & 0x08) 
+                  ret = 0xff; // Detection in progress..
+                else
+                  ret = std + 1;
+              
+                return (ret);
+              }
+              #endif
+ 603          
+ 604          
+ 605          
+ 606          
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 11  
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com0035 (BEGIN)
+0000         L?0054:
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 2401              ADD     A,#01H
+0007         L?0055:
+0007 F582              MOV     DPL,A
+0009 E500        E     MOV     A,regTW88
+000B 3401              ADDC    A,#01H
+000D F583              MOV     DPH,A
+000F 759300      E     MOV     DPX,#?C?XDATASEG
+0012 22                RET     
+0013         L?0056:
+0013         L?0057:
+0013 90000000    R     MOV     DPTR,#pVideoTable
+0017         L?0058:
+0017 E0                MOVX    A,@DPTR
+0018 FB                MOV     R3,A
+0019 A3                INC     DPTR
+001A E0                MOVX    A,@DPTR
+001B FA                MOV     R2,A
+001C A3                INC     DPTR
+001D E0                MOVX    A,@DPTR
+001E 22                RET     
+001F         L?0059:
+001F 90000000    E     MOV     DPTR,#?_TWstrcat?BYTE+03H
+0023 F0                MOVX    @DPTR,A
+0024 A3                INC     DPTR
+0025 22                RET     
+0026         L?0060:
+0026         L?0061:
+0026 F9                MOV     R1,A
+0027 E4                CLR     A
+0028 3A                ADDC    A,R2
+0029 FA                MOV     R2,A
+002A 010000      E     AJMP    ?C?CLDPTR
+002D         L?0062:
+002D         L?0063:
+002D F0                MOVX    @DPTR,A
+002E         L?0064:
+002E 90000000    R     MOV     DPTR,#pVideoTable
+0032 A3                INC     DPTR
+0033 E0                MOVX    A,@DPTR
+0034 FA                MOV     R2,A
+0035 A3                INC     DPTR
+0036 E0                MOVX    A,@DPTR
+0037 22                RET     
+0038         L?0065:
+0038 90000000    E     MOV     DPTR,#?_TWstrcat?BYTE+03H
+003C F0                MOVX    @DPTR,A
+003D A3                INC     DPTR
+003E 22                RET     
+003F         L?0066:
+003F         L?0067:
+003F A3                INC     DPTR
+0040 E0                MOVX    A,@DPTR
+0041         L?0068:
+0041 FF                MOV     R7,A
+0042 759300      E     MOV     DPX,#?C?XDATASEG
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 12  
+
+0045 E500        E     MOV     A,regTW88+01H
+0047 22                RET     
+0048         L?0069:
+0048 FF                MOV     R7,A
+0049 E0                MOVX    A,@DPTR
+004A 2F                ADD     A,R7
+004B F0                MOVX    @DPTR,A
+004C EF                MOV     A,R7
+004D 75F002            MOV     B,#02H
+0050 A4                MUL     AB
+0051 FF                MOV     R7,A
+0052 AEF0              MOV     R6,B
+0054 C3                CLR     C
+0055 22                RET     
+0056         L?0070:
+0056 90000000    E     MOV     DPTR,#?_TWstrcat?BYTE+03H
+005A F0                MOVX    @DPTR,A
+005B A3                INC     DPTR
+005C 22                RET     
+005D         L?0071:
+005D 25E0              ADD     A,ACC
+005F 25E0              ADD     A,ACC
+0061 FD                MOV     R5,A
+0062 E0                MOVX    A,@DPTR
+0063 4D                ORL     A,R5
+0064 22                RET     
+0065         L?0072:
+0065 2402              ADD     A,#02H
+0067 F9                MOV     R1,A
+0068 E4                CLR     A
+0069 3A                ADDC    A,R2
+006A FA                MOV     R2,A
+006B 010000      E     AJMP    ?C?ILDPTR
+006E         L?0073:
+006E 90000000    R     MOV     DPTR,#hActive
+0072 E0                MOVX    A,@DPTR
+0073 FE                MOV     R6,A
+0074 A3                INC     DPTR
+0075 E0                MOVX    A,@DPTR
+0076 FF                MOV     R7,A
+0077 22                RET     
+             ; FUNCTION Com0035 (END)
+
+             ; FUNCTION _DecoderCheckVDLOSS (BEGIN)
+                                           ; SOURCE LINE # 68
+0000 90000000    R     MOV     DPTR,#n
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 69
+                                           ; SOURCE LINE # 76
+0006 90000000    R     MOV     DPTR,#start
+000A F0                MOVX    @DPTR,A
+000B         ?C0001:
+                                           ; SOURCE LINE # 78
+000B 90000000    R     MOV     DPTR,#n
+000F E0                MOVX    A,@DPTR
+0010 FF                MOV     R7,A
+0011 14                DEC     A
+0012 F0                MOVX    @DPTR,A
+0013 EF                MOV     A,R7
+0014 6019              JZ      ?C0002
+                                           ; SOURCE LINE # 79
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 13  
+
+0016 110000      R     ACALL   L?0054
+0019 E0                MOVX    A,@DPTR
+001A 90000000    R     MOV     DPTR,#mode
+001E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 80
+001F E0                MOVX    A,@DPTR
+0020 20E703            JB      ACC.7,?C0003
+                                           ; SOURCE LINE # 84
+0023 7F00              MOV     R7,#00H
+0025 22                RET     
+                                           ; SOURCE LINE # 85
+0026         ?C0003:
+                                           ; SOURCE LINE # 86
+0026 7F0A              MOV     R7,#0AH
+0028 7E00              MOV     R6,#00H
+002A 110000      E     ACALL   _delay1ms
+                                           ; SOURCE LINE # 87
+002D 80DC              SJMP    ?C0001
+002F         ?C0002:
+                                           ; SOURCE LINE # 91
+002F 7F01              MOV     R7,#01H
+                                           ; SOURCE LINE # 92
+0031         ?C0004:
+0031 22                RET     
+             ; FUNCTION _DecoderCheckVDLOSS (END)
+
+             ; FUNCTION _DecoderSetOutputCrop (BEGIN)
+                                           ; SOURCE LINE # 112
+0000 90000000    R     MOV     DPTR,#hDelay
+0004 EE                MOV     A,R6
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 EF                MOV     A,R7
+0008 F0                MOVX    @DPTR,A
+0009 A3                INC     DPTR
+000A EC                MOV     A,R4
+000B F0                MOVX    @DPTR,A
+000C A3                INC     DPTR
+000D ED                MOV     A,R5
+000E F0                MOVX    @DPTR,A
+;---- Variable 'vDelay' assigned to Register 'R2/R3' ----
+                                           ; SOURCE LINE # 113
+                                           ; SOURCE LINE # 115
+000F EA                MOV     A,R2
+;---- Variable 'bTemp' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 116
+0010 90000000    R     MOV     DPTR,#vActive
+0014 110000      R     ACALL   L?0071
+                                           ; SOURCE LINE # 117
+0017 90000000    R     MOV     DPTR,#hDelay
+001B 110000      R     ACALL   L?0071
+001E 25E0              ADD     A,ACC
+0020 25E0              ADD     A,ACC
+0022 FD                MOV     R5,A
+                                           ; SOURCE LINE # 118
+0023 90000000    R     MOV     DPTR,#hActive
+0027 E0                MOVX    A,@DPTR
+0028 4D                ORL     A,R5
+                                           ; SOURCE LINE # 119
+0029 110000      R     ACALL   L?0068
+002C 2407              ADD     A,#07H
+002E 110000      R     ACALL   L?0055
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 14  
+
+0031 EF                MOV     A,R7
+0032 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 120
+0033 AF03              MOV     R7,AR3
+0035 759300      E     MOV     DPX,#?C?XDATASEG
+0038 E500        E     MOV     A,regTW88+01H
+003A 2408              ADD     A,#08H
+003C 110000      R     ACALL   L?0055
+003F EF                MOV     A,R7
+0040 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 121
+0041 90000000    R     MOV     DPTR,#vActive
+0045 110000      R     ACALL   L?0066
+0048 2409              ADD     A,#09H
+004A 110000      R     ACALL   L?0055
+004D EF                MOV     A,R7
+004E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 122
+004F 90000000    R     MOV     DPTR,#hDelay
+0053 110000      R     ACALL   L?0066
+0056 240A              ADD     A,#0AH
+0058 110000      R     ACALL   L?0055
+005B EF                MOV     A,R7
+005C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 123
+005D 90000000    R     MOV     DPTR,#hActive
+0061 110000      R     ACALL   L?0067
+0064 240B              ADD     A,#0BH
+0066 110000      R     ACALL   L?0055
+0069 EF                MOV     A,R7
+006A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 124
+006B 22                RET     
+             ; FUNCTION _DecoderSetOutputCrop (END)
+
+             ; FUNCTION DecoderReadDetectedMode (BEGIN)
+                                           ; SOURCE LINE # 174
+                                           ; SOURCE LINE # 175
+                                           ; SOURCE LINE # 177
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 241C              ADD     A,#01CH
+0007 110000      R     ACALL   L?0055
+000A E0                MOVX    A,@DPTR
+;---- Variable 'mode' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 178
+000B C4                SWAP    A
+000C 540F              ANL     A,#0FH
+000E FF                MOV     R7,A
+                                           ; SOURCE LINE # 179
+                                           ; SOURCE LINE # 180
+000F         ?C0006:
+000F 22                RET     
+             ; FUNCTION DecoderReadDetectedMode (END)
+
+             ; FUNCTION _DecoderCheckSTD (BEGIN)
+                                           ; SOURCE LINE # 202
+0000 90000000    R     MOV     DPTR,#n
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 203
+                                           ; SOURCE LINE # 205
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 15  
+
+0006 90000000    R     MOV     DPTR,#start
+000A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 211
+000B E4                CLR     A
+000C A3                INC     DPTR
+000D F0                MOVX    @DPTR,A
+000E         ?C0007:
+                                           ; SOURCE LINE # 212
+000E 90000000    R     MOV     DPTR,#n
+0012 E0                MOVX    A,@DPTR
+0013 FF                MOV     R7,A
+0014 14                DEC     A
+0015 F0                MOVX    @DPTR,A
+0016 EF                MOV     A,R7
+0017 6057              JZ      ?C0008
+                                           ; SOURCE LINE # 213
+0019 759300      E     MOV     DPX,#?C?XDATASEG
+001C E500        E     MOV     A,regTW88+01H
+001E 241C              ADD     A,#01CH
+0020 110000      R     ACALL   L?0055
+0023 E0                MOVX    A,@DPTR
+0024 90000000    R     MOV     DPTR,#r11c
+0028 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 214
+0029 E0                MOVX    A,@DPTR
+002A 20E73A            JB      ACC.7,?C0009
+                                           ; SOURCE LINE # 215
+002D 110000      R     ACALL   L?0054
+0030 E0                MOVX    A,@DPTR
+0031 90000000    R     MOV     DPTR,#r101
+0035 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 216
+0036 759300      E     MOV     DPX,#?C?XDATASEG
+0039 E500        E     MOV     A,regTW88+01H
+003B 2430              ADD     A,#030H
+003D 110000      R     ACALL   L?0055
+0040 E0                MOVX    A,@DPTR
+0041 90000000    R     MOV     DPTR,#r130
+0045 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 220
+0046 90000000    R     MOV     DPTR,#r101
+004A E0                MOVX    A,@DPTR
+004B 30E619            JNB     ACC.6,?C0009
+004E A3                INC     DPTR
+004F E0                MOVX    A,@DPTR
+0050 54E0              ANL     A,#0E0H
+0052 7013              JNZ     ?C0009
+                                           ; SOURCE LINE # 224
+0054 90000000    R     MOV     DPTR,#count
+0058 E0                MOVX    A,@DPTR
+0059 D3                SETB    C
+005A 9404              SUBB    A,#04H
+005C 4002              JC      ?C0011
+                                           ; SOURCE LINE # 225
+005E 801B              SJMP    ?C0045
+0060         ?C0011:
+                                           ; SOURCE LINE # 226
+0060 90000000    R     MOV     DPTR,#count
+0064 E0                MOVX    A,@DPTR
+0065 04                INC     A
+0066 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 227
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 16  
+
+                                           ; SOURCE LINE # 228
+0067         ?C0009:
+                                           ; SOURCE LINE # 229
+0067 7F05              MOV     R7,#05H
+0069 7E00              MOV     R6,#00H
+006B 110000      E     ACALL   _delay1ms
+                                           ; SOURCE LINE # 230
+006E 809E              SJMP    ?C0007
+0070         ?C0008:
+                                           ; SOURCE LINE # 236
+0070 90000000    R     MOV     DPTR,#r101
+0074 E0                MOVX    A,@DPTR
+0075 54C1              ANL     A,#0C1H
+0077 FF                MOV     R7,A
+0078 BF4107            CJNE    R7,#041H,?C0013
+                                           ; SOURCE LINE # 237
+007B         ?C0045:
+007B 90000000    R     MOV     DPTR,#r11c
+007F E0                MOVX    A,@DPTR
+0080 FF                MOV     R7,A
+0081 22                RET     
+0082         ?C0013:
+                                           ; SOURCE LINE # 239
+0082 7F80              MOV     R7,#080H
+                                           ; SOURCE LINE # 240
+0084         ?C0012:
+0084 22                RET     
+             ; FUNCTION _DecoderCheckSTD (END)
+
+             ; FUNCTION _DecoderFreerun (BEGIN)
+                                           ; SOURCE LINE # 256
+;---- Variable 'mode' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 257
+                                           ; SOURCE LINE # 258
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 2433              ADD     A,#033H
+0007 110000      R     ACALL   L?0055
+000A E0                MOVX    A,@DPTR
+000B 543F              ANL     A,#03FH
+000D FE                MOV     R6,A
+000E EF                MOV     A,R7
+000F C4                SWAP    A
+0010 33                RLC     A
+0011 33                RLC     A
+0012 54C0              ANL     A,#0C0H
+0014 4E                ORL     A,R6
+0015 FF                MOV     R7,A
+0016 759300      E     MOV     DPX,#?C?XDATASEG
+0019 E500        E     MOV     A,regTW88+01H
+001B 2433              ADD     A,#033H
+001D 110000      R     ACALL   L?0055
+0020 EF                MOV     A,R7
+0021 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 259
+0022 22                RET     
+             ; FUNCTION _DecoderFreerun (END)
+
+             ; FUNCTION _StrCatDecoderModeName (BEGIN)
+                                           ; SOURCE LINE # 261
+;---- Variable 'mode' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 262
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 17  
+
+                                           ; SOURCE LINE # 263
+0000 EF                MOV     A,R7
+0001 B40700            CJNE    A,#07H,?C0042
+0004         ?C0042:
+0004 507B              JNC     ?C0023
+0006 90000000    R     MOV     DPTR,#?C0043
+000A F8                MOV     R0,A
+000B 28                ADD     A,R0
+000C 28                ADD     A,R0
+000D 73                JMP     @A+DPTR
+000E         ?C0043:
+000E 010000      R     AJMP    ?C0016
+0011 010000      R     AJMP    ?C0017
+0014 010000      R     AJMP    ?C0018
+0017 010000      R     AJMP    ?C0019
+001A 010000      R     AJMP    ?C0020
+001D 010000      R     AJMP    ?C0021
+0020 010000      R     AJMP    ?C0022
+                                           ; SOURCE LINE # 264
+0023         ?C0016:
+0023 7400        R     MOV     A,#MBYTE ?SC_0
+0025 110000      R     ACALL   L?0059
+0028 7400        R     MOV     A,#HIGH ?SC_0
+002A F0                MOVX    @DPTR,A
+002B A3                INC     DPTR
+002C 7400        R     MOV     A,#LOW ?SC_0
+002E 805F              SJMP    ?C0052
+                                           ; SOURCE LINE # 265
+0030         ?C0017:
+0030 7400        R     MOV     A,#MBYTE ?SC_6
+0032 110000      R     ACALL   L?0059
+0035 7400        R     MOV     A,#HIGH ?SC_6
+0037 F0                MOVX    @DPTR,A
+0038 A3                INC     DPTR
+0039 7400        R     MOV     A,#LOW ?SC_6
+003B         ?C0046:
+003B 8052              SJMP    ?C0052
+                                           ; SOURCE LINE # 266
+003D         ?C0018:
+003D 7400        R     MOV     A,#MBYTE ?SC_11
+003F 110000      R     ACALL   L?0065
+0042 7400        R     MOV     A,#HIGH ?SC_11
+0044 F0                MOVX    @DPTR,A
+0045 A3                INC     DPTR
+0046 7400        R     MOV     A,#LOW ?SC_11
+0048         ?C0047:
+0048 8045              SJMP    ?C0052
+                                           ; SOURCE LINE # 267
+004A         ?C0019:
+004A 7400        R     MOV     A,#MBYTE ?SC_18
+004C 110000      R     ACALL   L?0065
+004F 7400        R     MOV     A,#HIGH ?SC_18
+0051 F0                MOVX    @DPTR,A
+0052 A3                INC     DPTR
+0053 7400        R     MOV     A,#LOW ?SC_18
+0055         ?C0048:
+0055 8038              SJMP    ?C0052
+                                           ; SOURCE LINE # 268
+0057         ?C0020:
+0057 7400        R     MOV     A,#MBYTE ?SC_25
+0059 110000      R     ACALL   L?0070
+005C 7400        R     MOV     A,#HIGH ?SC_25
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 18  
+
+005E F0                MOVX    @DPTR,A
+005F A3                INC     DPTR
+0060 7400        R     MOV     A,#LOW ?SC_25
+0062         ?C0049:
+0062 802B              SJMP    ?C0052
+                                           ; SOURCE LINE # 269
+0064         ?C0021:
+0064 7400        R     MOV     A,#MBYTE ?SC_32
+0066 110000      R     ACALL   L?0070
+0069 7400        R     MOV     A,#HIGH ?SC_32
+006B F0                MOVX    @DPTR,A
+006C A3                INC     DPTR
+006D 7400        R     MOV     A,#LOW ?SC_32
+006F         ?C0050:
+006F 801E              SJMP    ?C0052
+                                           ; SOURCE LINE # 270
+0071         ?C0022:
+0071 90000000    E     MOV     DPTR,#?_TWstrcat?BYTE+03H
+0075 7400        R     MOV     A,#MBYTE ?SC_40
+0077 F0                MOVX    @DPTR,A
+0078 A3                INC     DPTR
+0079 7400        R     MOV     A,#HIGH ?SC_40
+007B F0                MOVX    @DPTR,A
+007C A3                INC     DPTR
+007D 7400        R     MOV     A,#LOW ?SC_40
+007F         ?C0051:
+007F 800E              SJMP    ?C0052
+                                           ; SOURCE LINE # 271
+0081         ?C0023:
+0081 90000000    E     MOV     DPTR,#?_TWstrcat?BYTE+03H
+0085 7400        R     MOV     A,#MBYTE ?SC_48
+0087 F0                MOVX    @DPTR,A
+0088 A3                INC     DPTR
+0089 7400        R     MOV     A,#HIGH ?SC_48
+008B F0                MOVX    @DPTR,A
+008C A3                INC     DPTR
+008D 7400        R     MOV     A,#LOW ?SC_48
+008F         ?C0052:
+008F F0                MOVX    @DPTR,A
+0090 7B00        E     MOV     R3,#MBYTE FOsdMsgBuff
+0092 7A00        E     MOV     R2,#HIGH FOsdMsgBuff
+0094 7900        E     MOV     R1,#LOW FOsdMsgBuff
+0096 110000      E     ACALL   _TWstrcat
+                                           ; SOURCE LINE # 272
+                                           ; SOURCE LINE # 273
+0099         ?C0024:
+0099 22                RET     
+             ; FUNCTION _StrCatDecoderModeName (END)
+
+             ; FUNCTION CheckAndSetDecoderScaler (BEGIN)
+                                           ; SOURCE LINE # 319
+                                           ; SOURCE LINE # 320
+                                           ; SOURCE LINE # 329
+0000 7F64              MOV     R7,#064H
+0002 110000      R     ACALL   _DecoderCheckVDLOSS
+0005 EF                MOV     A,R7
+0006 6011              JZ      ?C0025
+                                           ; SOURCE LINE # 330
+0008 7B00        R     MOV     R3,#MBYTE ?SC_57
+000A 7A00        R     MOV     R2,#HIGH ?SC_57
+000C 7900        R     MOV     R1,#LOW ?SC_57
+000E 110000      E     ACALL   _ePuts
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 19  
+
+                                           ; SOURCE LINE # 331
+0011 7F02              MOV     R7,#02H
+0013 110000      R     ACALL   _DecoderFreerun
+                                           ; SOURCE LINE # 332
+0016 7F01              MOV     R7,#01H
+0018 22                RET     
+                                           ; SOURCE LINE # 333
+0019         ?C0025:
+                                           ; SOURCE LINE # 335
+0019 7F64              MOV     R7,#064H
+001B 110000      R     ACALL   _DecoderCheckSTD
+001E 90000000    R     MOV     DPTR,#mode
+0022 EF                MOV     A,R7
+0023 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 336
+0024 BF8011            CJNE    R7,#080H,?C0027
+                                           ; SOURCE LINE # 337
+0027 7B00        R     MOV     R3,#MBYTE ?SC_91
+0029 7A00        R     MOV     R2,#HIGH ?SC_91
+002B 7900        R     MOV     R1,#LOW ?SC_91
+002D 110000      E     ACALL   _ePrintf
+                                           ; SOURCE LINE # 338
+0030 7F02              MOV     R7,#02H
+0032 110000      R     ACALL   _DecoderFreerun
+                                           ; SOURCE LINE # 339
+0035 7F02              MOV     R7,#02H
+0037 22                RET     
+                                           ; SOURCE LINE # 340
+0038         ?C0027:
+                                           ; SOURCE LINE # 341
+0038 90000000    R     MOV     DPTR,#mode
+003C E0                MOVX    A,@DPTR
+003D C4                SWAP    A
+003E 540F              ANL     A,#0FH
+0040 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 342
+0041 90000000    E     MOV     DPTR,#InputSubMode
+0045 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 343
+0046 C3                CLR     C
+0047 9407              SUBB    A,#07H
+0049 4008              JC      ?C0028
+                                           ; SOURCE LINE # 344
+004B 7F02              MOV     R7,#02H
+004D 110000      R     ACALL   _DecoderFreerun
+                                           ; SOURCE LINE # 345
+0050 7F03              MOV     R7,#03H
+0052 22                RET     
+                                           ; SOURCE LINE # 346
+0053         ?C0028:
+                                           ; SOURCE LINE # 349
+0053 90000000    R     MOV     DPTR,#mode
+0057 E0                MOVX    A,@DPTR
+0058 75F00B            MOV     B,#0BH
+005B A4                MUL     AB
+005C 2400        E     ADD     A,#LOW TW8836_DEC_TABLE
+005E F9                MOV     R1,A
+005F 7400        E     MOV     A,#HIGH TW8836_DEC_TABLE
+0061 35F0              ADDC    A,B
+0063 FA                MOV     R2,A
+0064 A3                INC     DPTR
+0065 7400        E     MOV     A,#MBYTE TW8836_DEC_TABLE
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 20  
+
+0067 F0                MOVX    @DPTR,A
+0068 A3                INC     DPTR
+0069 EA                MOV     A,R2
+006A F0                MOVX    @DPTR,A
+006B A3                INC     DPTR
+006C E9                MOV     A,R1
+006D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 351
+006E 7F11              MOV     R7,#011H
+0070 7E00              MOV     R6,#00H
+0072 110000      E     ACALL   _E3P_Read
+;---- Variable 'fScale' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 359
+0075 110000      R     ACALL   L?0056
+0078 2405              ADD     A,#05H
+007A 110000      R     ACALL   L?0060
+007D 90000000    R     MOV     DPTR,#hStart
+                                           ; SOURCE LINE # 360
+0081 110000      R     ACALL   L?0062
+0084 F9                MOV     R1,A
+0085 110000      E     ACALL   ?C?ILDPTR
+0088 FD                MOV     R5,A
+0089 90000000    R     MOV     DPTR,#hActive
+008D E5F0              MOV     A,B
+008F F0                MOVX    @DPTR,A
+0090 A3                INC     DPTR
+0091 ED                MOV     A,R5
+0092 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 361
+0093 E9                MOV     A,R1
+0094 2406              ADD     A,#06H
+0096 110000      R     ACALL   L?0060
+0099 90000000    R     MOV     DPTR,#vStart
+                                           ; SOURCE LINE # 362
+009D 110000      R     ACALL   L?0062
+00A0 110000      R     ACALL   L?0072
+00A3 FD                MOV     R5,A
+00A4 90000000    R     MOV     DPTR,#vActive
+00A8 E5F0              MOV     A,B
+00AA F0                MOVX    @DPTR,A
+00AB A3                INC     DPTR
+00AC ED                MOV     A,R5
+00AD F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 364
+00AE EF                MOV     A,R7
+00AF 7039              JNZ     ?C0029
+                                           ; SOURCE LINE # 365
+00B1 110000      R     ACALL   L?0064
+00B4 2408              ADD     A,#08H
+00B6 110000      R     ACALL   L?0061
+00B9 90000000    R     MOV     DPTR,#hStart
+                                           ; SOURCE LINE # 366
+00BD 110000      R     ACALL   L?0069
+00C0 90000000    R     MOV     DPTR,#hActive+01H
+00C4 E0                MOVX    A,@DPTR
+00C5 9F                SUBB    A,R7
+00C6 F0                MOVX    @DPTR,A
+00C7 90000000    R     MOV     DPTR,#hActive
+00CB E0                MOVX    A,@DPTR
+00CC 9E                SUBB    A,R6
+                                           ; SOURCE LINE # 367
+00CD 110000      R     ACALL   L?0063
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 21  
+
+00D0 2409              ADD     A,#09H
+00D2 110000      R     ACALL   L?0061
+00D5 90000000    R     MOV     DPTR,#vStart
+                                           ; SOURCE LINE # 368
+00D9 110000      R     ACALL   L?0069
+00DC 90000000    R     MOV     DPTR,#vActive+01H
+00E0 E0                MOVX    A,@DPTR
+00E1 9F                SUBB    A,R7
+00E2 F0                MOVX    @DPTR,A
+00E3 90000000    R     MOV     DPTR,#vActive
+00E7 E0                MOVX    A,@DPTR
+00E8 9E                SUBB    A,R6
+00E9 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 369
+00EA         ?C0029:
+                                           ; SOURCE LINE # 371
+00EA 90000000    R     MOV     DPTR,#hStart
+00EE E0                MOVX    A,@DPTR
+00EF FF                MOV     R7,A
+00F0 7E00              MOV     R6,#00H
+00F2 C007              PUSH    AR7
+00F4 90000000    R     MOV     DPTR,#hActive
+00F8 E0                MOVX    A,@DPTR
+00F9 FC                MOV     R4,A
+00FA A3                INC     DPTR
+00FB E0                MOVX    A,@DPTR
+00FC FD                MOV     R5,A
+00FD 90000000    R     MOV     DPTR,#vStart
+0101 E0                MOVX    A,@DPTR
+0102 FB                MOV     R3,A
+0103 7A00              MOV     R2,#00H
+0105 90000000    R     MOV     DPTR,#vActive
+0109 E0                MOVX    A,@DPTR
+010A FF                MOV     R7,A
+010B A3                INC     DPTR
+010C E0                MOVX    A,@DPTR
+010D 90000000    R     MOV     DPTR,#?_DecoderSetOutputCrop?BYTE+06H
+0111 CF                XCH     A,R7
+0112 F0                MOVX    @DPTR,A
+0113 A3                INC     DPTR
+0114 EF                MOV     A,R7
+0115 F0                MOVX    @DPTR,A
+0116 D007              POP     AR7
+0118 110000      R     ACALL   _DecoderSetOutputCrop
+                                           ; SOURCE LINE # 374
+011B 110000      R     ACALL   L?0073
+011E 110000      E     ACALL   _ScalerSetLineBufferSize
+                                           ; SOURCE LINE # 375
+0121 110000      R     ACALL   L?0073
+0124 110000      E     ACALL   _ScalerSetHScale
+                                           ; SOURCE LINE # 376
+0127 90000000    R     MOV     DPTR,#vActive
+012B E0                MOVX    A,@DPTR
+012C FE                MOV     R6,A
+012D A3                INC     DPTR
+012E E0                MOVX    A,@DPTR
+012F FF                MOV     R7,A
+0130 110000      E     ACALL   _ScalerSetVScale
+                                           ; SOURCE LINE # 377
+0133 90000000    R     MOV     DPTR,#vStart
+0137 E0                MOVX    A,@DPTR
+0138 FF                MOV     R7,A
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 22  
+
+0139 110000      E     ACALL   _ScalerSet_vDE_value
+                                           ; SOURCE LINE # 384
+013C 110000      R     ACALL   L?0056
+013F 240A              ADD     A,#0AH
+0141 110000      R     ACALL   L?0061
+0144 FF                MOV     R7,A
+0145 110000      E     ACALL   _InputSetClockPolarity
+                                           ; SOURCE LINE # 387
+0148 90000000    R     MOV     DPTR,#mode
+014C E0                MOVX    A,@DPTR
+014D 7010              JNZ     ?C0030
+014F 759300      E     MOV     DPX,#?C?XDATASEG
+0152 E500        E     MOV     A,regTW88+01H
+0154 240C              ADD     A,#0CH
+0156 110000      R     ACALL   L?0055
+0159 E0                MOVX    A,@DPTR
+015A 4410              ORL     A,#010H
+015C F0                MOVX    @DPTR,A
+015D 800E              SJMP    ?C0031
+015F         ?C0030:
+                                           ; SOURCE LINE # 388
+015F 759300      E     MOV     DPX,#?C?XDATASEG
+0162 E500        E     MOV     A,regTW88+01H
+0164 240C              ADD     A,#0CH
+0166 110000      R     ACALL   L?0055
+0169 E0                MOVX    A,@DPTR
+016A 54EF              ANL     A,#0EFH
+016C F0                MOVX    @DPTR,A
+016D         ?C0031:
+                                           ; SOURCE LINE # 392
+016D 90000000    E     MOV     DPTR,#InputMain
+0171 E0                MOVX    A,@DPTR
+0172 FF                MOV     R7,A
+0173 110000      R     ACALL   L?0057
+0176 F9                MOV     R1,A
+0177 110000      E     ACALL   ?C?ILDPTR
+017A FD                MOV     R5,A
+017B ACF0              MOV     R4,B
+017D E9                MOV     A,R1
+017E 110000      R     ACALL   L?0072
+0181 FB                MOV     R3,A
+0182 AAF0              MOV     R2,B
+0184 C002              PUSH    AR2
+0186 C003              PUSH    AR3
+0188 110000      R     ACALL   L?0057
+018B 2404              ADD     A,#04H
+018D 110000      R     ACALL   L?0061
+0190 90000000    E     MOV     DPTR,#?_FindScalerTable?BYTE+05H
+0194 F0                MOVX    @DPTR,A
+0195 E4                CLR     A
+0196 A3                INC     DPTR
+0197 F0                MOVX    @DPTR,A
+0198 A3                INC     DPTR
+0199 04                INC     A
+019A F0                MOVX    @DPTR,A
+019B D003              POP     AR3
+019D D002              POP     AR2
+019F 110000      E     ACALL   _FindScalerTable
+01A2 90000000    R     MOV     DPTR,#pScaler
+01A6 EB                MOV     A,R3
+01A7 F0                MOVX    @DPTR,A
+01A8 A3                INC     DPTR
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 23  
+
+01A9 EA                MOV     A,R2
+01AA F0                MOVX    @DPTR,A
+01AB A3                INC     DPTR
+01AC E9                MOV     A,R1
+01AD F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 393
+01AE 90000000    R     MOV     DPTR,#pScaler
+01B2 110000      R     ACALL   L?0058
+01B5 4A                ORL     A,R2
+01B6 4B                ORL     A,R3
+01B7 6013              JZ      ?C0032
+                                           ; SOURCE LINE # 394
+01B9 90000000    R     MOV     DPTR,#pScaler
+01BD A3                INC     DPTR
+01BE A3                INC     DPTR
+01BF E0                MOVX    A,@DPTR
+01C0 F9                MOV     R1,A
+01C1 90000000    E     MOV     DPTR,#?_OverWriteScalerWithTable?BYTE+04H
+01C5 7401              MOV     A,#01H
+01C7 F0                MOVX    @DPTR,A
+01C8 FD                MOV     R5,A
+01C9 110000      E     ACALL   _OverWriteScalerWithTable
+01CC         ?C0032:
+                                           ; SOURCE LINE # 398
+01CC 110000      E     ACALL   FOsdSetInputMainString2FOsdMsgBuff
+                                           ; SOURCE LINE # 399
+01CF 90000000    R     MOV     DPTR,#mode
+01D3 E0                MOVX    A,@DPTR
+01D4 FF                MOV     R7,A
+01D5 110000      R     ACALL   _StrCatDecoderModeName
+                                           ; SOURCE LINE # 401
+01D8 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 402
+01DA         ?C0026:
+01DA 22                RET     
+             ; FUNCTION CheckAndSetDecoderScaler (END)
+
+             ; FUNCTION _ChangeDecoder (BEGIN)
+                                           ; SOURCE LINE # 452
+;---- Variable 'fSVIDEO' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 453
+                                           ; SOURCE LINE # 473
+0000 EF                MOV     A,R7
+0001 6014              JZ      ?C0033
+                                           ; SOURCE LINE # 474
+0003 90000000    E     MOV     DPTR,#InputMain
+0007 E0                MOVX    A,@DPTR
+0008 B40103            CJNE    A,#01H,?C0034
+                                           ; SOURCE LINE # 478
+000B 7F01              MOV     R7,#01H
+000D 22                RET     
+                                           ; SOURCE LINE # 479
+000E         ?C0034:
+                                           ; SOURCE LINE # 480
+000E 90000000    E     MOV     DPTR,#InputMain
+0012 7401              MOV     A,#01H
+0014 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 481
+0015 8010              SJMP    ?C0036
+0017         ?C0033:
+                                           ; SOURCE LINE # 482
+                                           ; SOURCE LINE # 483
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 24  
+
+0017 90000000    E     MOV     DPTR,#InputMain
+001B E0                MOVX    A,@DPTR
+001C 7003              JNZ     ?C0037
+                                           ; SOURCE LINE # 487
+001E 7F01              MOV     R7,#01H
+0020 22                RET     
+                                           ; SOURCE LINE # 488
+0021         ?C0037:
+                                           ; SOURCE LINE # 489
+0021 E4                CLR     A
+0022 90000000    E     MOV     DPTR,#InputMain
+0026 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 490
+0027         ?C0036:
+                                           ; SOURCE LINE # 491
+0027 90000000    E     MOV     DPTR,#InputSubMode
+002B 7407              MOV     A,#07H
+002D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 493
+002E 110000      E     ACALL   GetInputMainEE
+0031 AE07              MOV     R6,AR7
+0033 90000000    E     MOV     DPTR,#InputMain
+0037 E0                MOVX    A,@DPTR
+0038 FF                MOV     R7,A
+0039 6E                XRL     A,R6
+003A 6003              JZ      ?C0038
+                                           ; SOURCE LINE # 494
+003C 110000      E     ACALL   _SaveInputMainEE
+003F         ?C0038:
+                                           ; SOURCE LINE # 498
+003F 110000      E     ACALL   InitInputAsDefault
+                                           ; SOURCE LINE # 503
+0042 7F5E              MOV     R7,#05EH
+0044 7E01              MOV     R6,#01H
+0046 110000      E     ACALL   _delay1ms
+                                           ; SOURCE LINE # 508
+0049 110000      R     ACALL   CheckAndSetDecoderScaler
+004C 90000000    R     MOV     DPTR,#ret
+0050 EF                MOV     A,R7
+0051 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 509
+0052 7007              JNZ     ?C0039
+                                           ; SOURCE LINE # 511
+0054 FF                MOV     R7,A
+0055 110000      E     ACALL   _VInput_enableOutput
+                                           ; SOURCE LINE # 516
+0058 7F00              MOV     R7,#00H
+005A 22                RET     
+                                           ; SOURCE LINE # 517
+005B         ?C0039:
+                                           ; SOURCE LINE # 521
+005B 90000000    R     MOV     DPTR,#ret
+005F E0                MOVX    A,@DPTR
+0060 C3                CLR     C
+0061 9401              SUBB    A,#01H
+0063 FF                MOV     R7,A
+0064 110000      E     ACALL   _VInput_gotoFreerun
+                                           ; SOURCE LINE # 525
+0067 90000000    R     MOV     DPTR,#ret
+006B E0                MOVX    A,@DPTR
+006C 04                INC     A
+006D FF                MOV     R7,A
+C51 COMPILER V9.56.0.0   DECODER                                                           07/18/2018 10:44:35 PAGE 25  
+
+                                           ; SOURCE LINE # 526
+006E         ?C0035:
+006E 22                RET     
+             ; FUNCTION _ChangeDecoder (END)
+
+             ; FUNCTION ChangeCVBS (BEGIN)
+                                           ; SOURCE LINE # 539
+                                           ; SOURCE LINE # 540
+                                           ; SOURCE LINE # 541
+0000 E4                CLR     A
+0001 FF                MOV     R7,A
+0002 110000      R     ACALL   _ChangeDecoder
+                                           ; SOURCE LINE # 542
+0005         ?C0040:
+0005 22                RET     
+             ; FUNCTION ChangeCVBS (END)
+
+             ; FUNCTION ChangeSVIDEO (BEGIN)
+                                           ; SOURCE LINE # 555
+                                           ; SOURCE LINE # 556
+                                           ; SOURCE LINE # 557
+0000 7F01              MOV     R7,#01H
+0002 110000      R     ACALL   _ChangeDecoder
+                                           ; SOURCE LINE # 558
+0005         ?C0041:
+0005 22                RET     
+             ; FUNCTION ChangeSVIDEO (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1214    ----
+   CONSTANT SIZE    =    124    ----
+   XDATA SIZE       =   ----      31
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

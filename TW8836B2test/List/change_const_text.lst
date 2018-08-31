@@ -1,0 +1,67 @@
+C51 COMPILER V9.56.0.0   CHANGE_CONST_TEXT                                                 08/31/2018 14:41:53 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE CHANGE_CONST_TEXT
+OBJECT MODULE PLACED IN .\Output\change_const_text.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source\test\change_const_text.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) 
+                    -REGFILE(.\Output\TW8836B_EVB11.ORC) BROWSE INCDIR(.\source\app;.\source\common;.\source\drv;.\source\HW;.\source\utils;.
+                    -\source\test) DEFINE(EVB_11,nullFn=//) DEBUG CODE PRINT(.\List\change_const_text.lst) TABS(2) OBJECT(.\Output\change_con
+                    -st_text.obj)
+
+line level    source
+
+   1          #include "HWconf.h"
+   2          
+   3          const unsigned char TEXT[]="\
+   4            0x40, 0x01,\
+   5            0x41, 0x01,\
+   6            0x42, 0x23\
+   7          ";
+   8          void ChangeText()
+   9          {
+  10   1        Puts("\nchange start!\n\n");
+  11   1        Puts(TEXT);
+  12   1      }
+  13          //struct SCALER_TIME_TABLE_s * FindScalerTable(BYTE q, BYTE hActive,BYTE vActive, BYTE vFreq,BYTE vStart,v
+             -Pol)
+  14          //{
+  15          //  return 0;
+  16          //}
+C51 COMPILER V9.56.0.0   CHANGE_CONST_TEXT                                                 08/31/2018 14:41:53 PAGE 2   
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION ChangeText (BEGIN)
+                                           ; SOURCE LINE # 8
+                                           ; SOURCE LINE # 9
+                                           ; SOURCE LINE # 10
+0000 7B00        R     MOV     R3,#MBYTE ?SC_0
+0002 7A00        R     MOV     R2,#HIGH ?SC_0
+0004 7900        R     MOV     R1,#LOW ?SC_0
+0006 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 11
+0009 7B00        R     MOV     R3,#MBYTE TEXT
+000B 7A00        R     MOV     R2,#HIGH TEXT
+000D 7900        R     MOV     R1,#LOW TEXT
+000F 010000      E     AJMP    _Puts
+             ; FUNCTION ChangeText (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =     18    ----
+   CONSTANT SIZE    =     17    ----
+   XDATA SIZE       =     38    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

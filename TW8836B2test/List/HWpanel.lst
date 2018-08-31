@@ -1,0 +1,241 @@
+C51 COMPILER V9.56.0.0   HWPANEL                                                           08/31/2018 14:41:53 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE HWPANEL
+OBJECT MODULE PLACED IN .\Output\HWpanel.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source\HW\HWpanel.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\Ou
+                    -tput\TW8836B_EVB11.ORC) BROWSE INCDIR(.\source\app;.\source\common;.\source\drv;.\source\HW;.\source\utils;.\source\test
+                    -) DEFINE(EVB_11,nullFn=//) DEBUG CODE PRINT(.\List\HWpanel.lst) TABS(2) OBJECT(.\Output\HWpanel.obj)
+
+line level    source
+
+   1          /**
+   2            ******************************************************************************
+   3            * @file    TEMPLATE.c
+   4            * @author
+   5            * @version V1.0.0
+   6            * @date    31-May-2018
+   7            * @brief   Source file of TEMPLATE.
+   8            ******************************************************************************
+   9            * @attention
+  10          
+  11            *
+  12              ******************************************************************************
+  13            */
+  14          
+  15          /**
+  16            ******************************************************************************
+  17            * History:
+  18            ******************************************************************************
+  19            * Version 1.00
+  20            *   Initial release
+  21            *
+  22            ******************************************************************************
+  23            */
+  24          
+  25          /* Includes ------------------------------------------------------------------*/
+  26          #include "HWconf.h"
+  27          
+  28          /* Private constants ---------------------------------------------------------*/
+  29          /* Private types -------------------------------------------------------------*/
+  30          /* Private macro -------------------------------------------------------------*/
+  31          /* Private variables ---------------------------------------------------------*/
+  32          /* Private function prototypes -----------------------------------------------*/
+  33          /* Private functions ---------------------------------------------------------*/
+  34          /** --------------------------------------------------------------------------*
+  35            * @fn
+  36            * @brief
+  37            * @param[in]
+  38            * @return     None
+  39            * --------------------------------------------------------------------------*/
+  40          /* Exported functions --------------------------------------------------------*/
+  41          /** --------------------------------------------------------------------------*
+  42            * @fn         
+  43            * @brief      
+  44            * @param[in]  
+  45            * @return     None
+  46            * --------------------------------------------------------------------------*/
+  47          HAL_StatusTypeDef OutputPlantInit(void)
+  48          {
+  49   1        BYTE temp;
+  50   1        SSPLL num = SSPLL1;
+  51   1        WriteTW88(REG007,0x02); //panel FP_LSB
+  52   1        WriteTW88(REG008,0xC6); //!!!!is very !!!!
+  53   1        
+C51 COMPILER V9.56.0.0   HWPANEL                                                           08/31/2018 14:41:53 PAGE 2   
+
+  54   1        WriteTW88(REG084,ReadTW88(REG084)|0x01);   //GPIO4:41 output LOW
+  55   1        WriteTW88(REG08C,ReadTW88(REG08C)|0x01);
+  56   1        WriteTW88(REG094,ReadTW88(REG096)& ~0x01);
+  57   1        
+  58   1        WriteTW88(REG086,ReadTW88(REG086)|0xE0);
+  59   1        WriteTW88(REG08E,ReadTW88(REG08E)|0xE0);
+  60   1        
+  61   1        WriteTW88(REG040,0x03);                    //input LVDS
+  62   1        WriteTW88(REG041,0x01);                    //input format RGB
+  63   1        temp = ReadTW88(REG096)&0x1F;
+  64   1        WriteTW88(REG096,temp|0xA0);
+  65   1        
+  66   1        WriteTW88(REG20D,ReadTW88(REG20D)|0x02);//DIV = 3
+  67   1        WriteTW88(REG21C,ReadTW88(REG21C)|0x02);
+  68   1        WriteTW88(REG21E,ReadTW88(REG21E)|0x02);
+  69   1      
+  70   1        return HAL_OK;
+  71   1      }
+  72          /**
+  73            *****************************************************************************
+  74            * END OF FILE                                                               *
+  75            *****************************************************************************
+  76            */
+C51 COMPILER V9.56.0.0   HWPANEL                                                           08/31/2018 14:41:53 PAGE 3   
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com0002 (BEGIN)
+0000         L?0003:
+0000 F0                MOVX    @DPTR,A
+0001         L?0004:
+0001 759300      E     MOV     DPX,#?C?XDATASEG
+0004 E500        E     MOV     A,regTW88+01H
+0006 2496              ADD     A,#096H
+0008         L?0005:
+0008 F582              MOV     DPL,A
+000A E4                CLR     A
+000B 3500        E     ADDC    A,regTW88
+000D F583              MOV     DPH,A
+000F 759300      E     MOV     DPX,#?C?XDATASEG
+0012 22                RET     
+0013         L?0006:
+0013 F582              MOV     DPL,A
+0015 E500        E     MOV     A,regTW88
+0017 3402              ADDC    A,#02H
+0019 F583              MOV     DPH,A
+001B 759300      E     MOV     DPX,#?C?XDATASEG
+001E E0                MOVX    A,@DPTR
+001F 4402              ORL     A,#02H
+0021         L?0007:
+0021 F0                MOVX    @DPTR,A
+0022 759300      E     MOV     DPX,#?C?XDATASEG
+0025 E500        E     MOV     A,regTW88+01H
+0027 22                RET     
+             ; FUNCTION Com0002 (END)
+
+             ; FUNCTION OutputPlantInit (BEGIN)
+                                           ; SOURCE LINE # 47
+                                           ; SOURCE LINE # 48
+                                           ; SOURCE LINE # 50
+0000 90000000    R     MOV     DPTR,#num
+0004 7401              MOV     A,#01H
+0006 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 51
+0007 759300      E     MOV     DPX,#?C?XDATASEG
+000A E500        E     MOV     A,regTW88+01H
+000C 2407              ADD     A,#07H
+000E 110000      R     ACALL   L?0005
+0011 7402              MOV     A,#02H
+                                           ; SOURCE LINE # 52
+0013 110000      R     ACALL   L?0007
+0016 2408              ADD     A,#08H
+0018 110000      R     ACALL   L?0005
+001B 74C6              MOV     A,#0C6H
+                                           ; SOURCE LINE # 54
+001D 110000      R     ACALL   L?0007
+0020 2484              ADD     A,#084H
+0022 110000      R     ACALL   L?0005
+0025 E0                MOVX    A,@DPTR
+0026 4401              ORL     A,#01H
+                                           ; SOURCE LINE # 55
+0028 110000      R     ACALL   L?0007
+002B 248C              ADD     A,#08CH
+002D 110000      R     ACALL   L?0005
+0030 E0                MOVX    A,@DPTR
+0031 4401              ORL     A,#01H
+C51 COMPILER V9.56.0.0   HWPANEL                                                           08/31/2018 14:41:53 PAGE 4   
+
+                                           ; SOURCE LINE # 56
+0033 110000      R     ACALL   L?0003
+0036 E0                MOVX    A,@DPTR
+0037 54FE              ANL     A,#0FEH
+0039 FF                MOV     R7,A
+003A 759300      E     MOV     DPX,#?C?XDATASEG
+003D E500        E     MOV     A,regTW88+01H
+003F 2494              ADD     A,#094H
+0041 110000      R     ACALL   L?0005
+0044 EF                MOV     A,R7
+                                           ; SOURCE LINE # 58
+0045 110000      R     ACALL   L?0007
+0048 2486              ADD     A,#086H
+004A 110000      R     ACALL   L?0005
+004D E0                MOVX    A,@DPTR
+004E 44E0              ORL     A,#0E0H
+                                           ; SOURCE LINE # 59
+0050 110000      R     ACALL   L?0007
+0053 248E              ADD     A,#08EH
+0055 110000      R     ACALL   L?0005
+0058 E0                MOVX    A,@DPTR
+0059 44E0              ORL     A,#0E0H
+                                           ; SOURCE LINE # 61
+005B 110000      R     ACALL   L?0007
+005E 2440              ADD     A,#040H
+0060 110000      R     ACALL   L?0005
+0063 7403              MOV     A,#03H
+                                           ; SOURCE LINE # 62
+0065 110000      R     ACALL   L?0007
+0068 2441              ADD     A,#041H
+006A 110000      R     ACALL   L?0005
+006D 7401              MOV     A,#01H
+                                           ; SOURCE LINE # 63
+006F 110000      R     ACALL   L?0003
+0072 E0                MOVX    A,@DPTR
+0073 541F              ANL     A,#01FH
+;---- Variable 'temp' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 64
+0075 44A0              ORL     A,#0A0H
+0077 FF                MOV     R7,A
+0078 110000      R     ACALL   L?0004
+007B EF                MOV     A,R7
+                                           ; SOURCE LINE # 66
+007C 110000      R     ACALL   L?0007
+007F 240D              ADD     A,#0DH
+                                           ; SOURCE LINE # 67
+0081 110000      R     ACALL   L?0006
+0084 241C              ADD     A,#01CH
+                                           ; SOURCE LINE # 68
+0086 110000      R     ACALL   L?0006
+0089 241E              ADD     A,#01EH
+008B F582              MOV     DPL,A
+008D E500        E     MOV     A,regTW88
+008F 3402              ADDC    A,#02H
+0091 F583              MOV     DPH,A
+0093 759300      E     MOV     DPX,#?C?XDATASEG
+0096 E0                MOVX    A,@DPTR
+0097 4402              ORL     A,#02H
+0099 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 70
+009A 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 71
+C51 COMPILER V9.56.0.0   HWPANEL                                                           08/31/2018 14:41:53 PAGE 5   
+
+009C         ?C0001:
+009C 22                RET     
+             ; FUNCTION OutputPlantInit (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    197    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----       1
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

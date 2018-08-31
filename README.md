@@ -18,4 +18,8 @@
 
 程序规范：
 类型定义
-
+typedef struct _shell_context_struct{
+    char* prompt;
+    enum _funkey_status stat;
+    char line
+}

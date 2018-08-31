@@ -1,0 +1,2556 @@
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE HID
+OBJECT MODULE PLACED IN .\Output\HID.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source36\HID.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\Output\
+                    -TW8836B_EVB11.ORC) BROWSE INCDIR(SiI-SW;SiI-SW\HAL;SiI-SW\DEBUG;SiI-SW\CEC;.\Source36\LIB) DEFINE(EVB_11,nullFn=//) DEBU
+                    -G CODE PRINT(.\List\HID.lst) TABS(2) OBJECT(.\Output\HID.obj)
+
+line level    source
+
+   1          /**
+   2           * @file
+   3           * HID.c 
+   4           * @author Brian Kang
+   5           * @version 1.0
+   6           * @section LICENSE
+   7           *  Copyright (C) 2011~2012 Intersil Corporation
+   8           * @section DESCRIPTION
+   9           *  Human Interface Device
+  10           *  support Keypad, touch, remocon
+  11          */
+  12          /*
+  13          Disclaimer: THIS INFORMATION IS PROVIDED 'AS-IS' FOR EVALUATION PURPOSES ONLY.  
+  14          INTERSIL CORPORATION AND ITS SUBSIDIARIES ('INTERSIL') DISCLAIM ALL WARRANTIES, 
+  15          INCLUDING WITHOUT LIMITATION FITNESS FOR A PARTICULAR PURPOSE AND MERCHANTABILITY.  
+  16          Intersil provides evaluation platforms to help our customers to develop products. 
+  17          However, factors beyond Intersil's control could significantly affect Intersil 
+  18          product performance. 
+  19          It remains the customers' responsibility to verify the actual system performance.
+  20          */
+  21          #include "config.h"
+  22          #include "reg.h"
+  23          #include "typedefs.h"
+  24          #include "TW8836.h"
+  25          
+  26          #include "global.h"
+  27          #include "CPU.h"
+  28          #include "printf.h"
+  29          
+  30          #include "I2C.h"
+  31          
+  32          #include "main.h"
+  33          #include "Remo.h"
+  34          #include "TouchKey.h"
+  35          #include "HID.h"
+  36          
+  37          #include "SOsd.h"
+  38          #include "FOsd.h"
+  39          #include "SOsdMenu.h" //NAVI_KEY_
+  40          #include "eeprom.h"
+  41          #include "InputCtrl.h"
+  42          
+  43          #ifdef SUPPORT_FOSD_MENU
+              #include "FOsdString.h"
+              #include "FOsdMenu.h"
+              #include "FOsdDisplay.h"
+              extern    bit     OnChangingValue;
+              #endif
+  49          
+  50          #define CAPTURE_MAX   10
+  51          
+  52          BYTE previous_key0 = 0;
+  53          BYTE previous_key1 = 0;
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 2   
+
+  54          
+  55          #if defined(SUPPORT_HDMI_EP907M)
+  56          /*
+  57          *
+  58          * @return
+  59          * if it ate, return 0xFF;
+  60          * or, return _RemoDataCode.
+  61          */
+  62          #define EP907_EAT_KEY   0xFF
+  63          BYTE ActionRemoEP907M(BYTE _RemoDataCode, BYTE AutoKey)
+  64          {
+  65   1        BYTE value=AutoKey;
+  66   1        BYTE ret=_RemoDataCode;
+  67   1      
+  68   1      
+  69   1        if(global_CEC_flag==0)
+  70   1          return ret;
+  71   1        value=ReadI2C_multi(0x68,0x21, 0x0900);
+  72   1        if((value & 0x03) != 0x03) {
+  73   2          Printf("\n\rglobal_CEC_flag ON, but SYS_Status:%bx",value);
+  74   2          return ret;
+  75   2        }
+  76   1      
+  77   1        switch(_RemoDataCode) {
+  78   2      
+  79   2        case REMO_SELECT: //0x00;Select
+  80   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x00);
+  81   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+  82   2          ret = EP907_EAT_KEY;
+  83   2          break;
+  84   2        case REMO_CHNUP: //0x01:Up
+  85   2            dPuts("\n\rREMO1_CHNUP pressed!!!");
+  86   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x01);
+  87   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+  88   2          ret = EP907_EAT_KEY;
+  89   2          break;
+  90   2        case REMO_CHNDN: //0x02:Down
+  91   2            dPuts("\n\rREMO1_CHNDN pressed!!!");
+  92   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x02);
+  93   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+  94   2          ret = EP907_EAT_KEY;
+  95   2          break;
+  96   2        case REMO_VOLDN: //0x03:Left
+  97   2            dPuts("\n\rREMO1_VOLDN pressed!!!");
+  98   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x03);
+  99   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 100   2          ret = EP907_EAT_KEY;
+ 101   2          break;
+ 102   2        case REMO_VOLUP: //0x04:Right
+ 103   2            dPuts("\n\rREMO1_VOLUP pressed!!!");
+ 104   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x04);
+ 105   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 106   2          ret = EP907_EAT_KEY;
+ 107   2          break;
+ 108   2        //0x05:Right-Up
+ 109   2        //0x06:Right-Down
+ 110   2        //0x07:Left-Up
+ 111   2        //0x08:Left-Down
+ 112   2        //
+ 113   2        case REMO_EXIT: //0x09:Root Menu
+ 114   2            dPuts("\n\rREMO_EXIT pressed!!!");
+ 115   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x09);
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 3   
+
+ 116   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 117   2          ret = EP907_EAT_KEY;
+ 118   2          break;
+ 119   2        //0x0A Setup Menu
+ 120   2        //0x0B: Contents Menu
+ 121   2        //0x0C: Favoriate Menu
+ 122   2        //0x0D: Exit
+ 123   2        case REMO_NUM0:
+ 124   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x20);
+ 125   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 126   2          ret = EP907_EAT_KEY;
+ 127   2          break;
+ 128   2        case REMO_NUM1:
+ 129   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x21);
+ 130   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 131   2          ret = EP907_EAT_KEY;
+ 132   2          break;
+ 133   2        case REMO_NUM2:
+ 134   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x22);
+ 135   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 136   2          ret = EP907_EAT_KEY;
+ 137   2          break;
+ 138   2        case REMO_NUM3:
+ 139   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x23);
+ 140   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 141   2          ret = EP907_EAT_KEY;
+ 142   2          break;
+ 143   2        case REMO_NUM4:
+ 144   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x24);
+ 145   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 146   2          ret = EP907_EAT_KEY;
+ 147   2          break;
+ 148   2        case REMO_NUM5:
+ 149   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x25);
+ 150   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 151   2          ret = EP907_EAT_KEY;
+ 152   2          break;
+ 153   2        case REMO_NUM6:
+ 154   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x26);
+ 155   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 156   2          ret = EP907_EAT_KEY;
+ 157   2          break;
+ 158   2        case REMO_NUM7:
+ 159   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x27);
+ 160   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 161   2          ret = EP907_EAT_KEY;
+ 162   2          break;
+ 163   2        case REMO_NUM8:
+ 164   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x28);
+ 165   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 166   2          ret = EP907_EAT_KEY;
+ 167   2          break;
+ 168   2        case REMO_NUM9:
+ 169   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x29);
+ 170   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 171   2          ret = EP907_EAT_KEY;
+ 172   2          break;
+ 173   2        //0x2A Dot
+ 174   2        //0x2B Enter
+ 175   2        //0x2C Clear
+ 176   2        //0x30 Channel Up
+ 177   2        //0x31 Channel Down
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 4   
+
+ 178   2        //0x32 Previous Channel
+ 179   2        //0x33 Sound Select
+ 180   2        case REMO_INPUT: // 0x34 Input Select
+ 181   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x34);
+ 182   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 183   2          ret = EP907_EAT_KEY;
+ 184   2          break;
+ 185   2        case REMO_INFO:    //0x35 Show Information
+ 186   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x35);
+ 187   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 188   2          ret = EP907_EAT_KEY;
+ 189   2          break;
+ 190   2        //0x36 Help
+ 191   2        //0x37 Page Up
+ 192   2        //0x38 Page Down
+ 193   2        //0x41 Volume Up
+ 194   2        //0x42 Volume Down
+ 195   2        case REMO_MUTE: //0x43 Mute
+ 196   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x43);
+ 197   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 198   2          ret = EP907_EAT_KEY;
+ 199   2          break;
+ 200   2        //0x44 Play
+ 201   2        //0x45 Stop
+ 202   2        //0x46 Pause
+ 203   2        //0x47 Record
+ 204   2        //0x48 Rewind
+ 205   2        //0x49 Fast Forward
+ 206   2        //0x4A Eject
+ 207   2        //0x4B Forward
+ 208   2        //0x4C Backward
+ 209   2        //0x50 Angle
+ 210   2        //0x51 Subtitle
+ 211   2        //0x06 Play_Function
+ 212   2        //0x61 Pause_Play_Function
+ 213   2        //0x62 Record_Function
+ 214   2        //0x63 Pause_Record_Function
+ 215   2        //0x64 Stop_Function
+ 216   2        //0x65 Mute_Function
+ 217   2        //0x66 Restore_Volume_Function
+ 218   2        //0x67 Tune_Function
+ 219   2        //0x68 Select_Media_Function
+ 220   2        case REMO_TTXCYAN:  //0x71 F1 (Blue)
+ 221   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x71);
+ 222   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 223   2          ret = EP907_EAT_KEY;
+ 224   2          break;
+ 225   2        case REMO_TTXRED: //0x72 F2 (Red)
+ 226   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x72);
+ 227   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 228   2          ret = EP907_EAT_KEY;
+ 229   2          break;
+ 230   2        case REMO_TTXGREEN:  //0x73 F3 (Green)
+ 231   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x73);
+ 232   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 233   2          ret = EP907_EAT_KEY;
+ 234   2          break;
+ 235   2        case REMO_TTXYELLOW: //0x74 F4 (Yellow)
+ 236   2          WriteI2C_multi(0x68,0x21, 0xA01, 0x74);
+ 237   2          WriteI2C_multi(0x68,0x21, 0xA00, 0x10);
+ 238   2          ret = EP907_EAT_KEY;
+ 239   2          break;
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 5   
+
+ 240   2        //0x75 F5
+ 241   2        //0x7E Vendor_Specific
+ 242   2      
+ 243   2        //==============================================
+ 244   2        case REMO_STANDBY:        // power
+ 245   2          //return 0;         // power off
+ 246   2          break;
+ 247   2        case REMO_MENU:
+ 248   2          break;
+ 249   2        case REMO_PIPON:
+ 250   2      #if defined(SUPPORT_HDMI_EP907M)
+ 251   2          //dPuts("\n\rPIP Display mode change");
+ 252   2          dPuts("\n\rCEC_AUTO OFF");
+ 253   2          //WriteI2C_multi(0x68,0x21, 0x800, 0x00);
+ 254   2          global_CEC_flag = 0;
+ 255   2      
+ 256   2          ret = EP907_EAT_KEY;
+ 257   2      #endif
+ 258   2          break;       
+ 259   2        case REMO_STILL:
+ 260   2          break;
+ 261   2        case REMO_SWAP:
+ 262   2          //dPrintf("\n\r=====SWAP InputMode:%bd",InputMain);
+ 263   2          break;
+ 264   2      
+ 265   2        case REMO_PIPINPUT:
+ 266   2          dPuts("\n\rPIP input mode change");
+ 267   2          break;
+ 268   2      
+ 269   2        case REMO_AUTO:
+ 270   2          break;
+ 271   2      
+ 272   2        case REMO_ASPECT:
+ 273   2          break;
+ 274   2      
+ 275   2        }
+ 276   1        return ret;
+ 277   1      }
+ 278          #endif
+ 279          
+ 280          /*
+ 281          * @return
+ 282          * if it ate, return 0xFF;
+ 283          * or, return _RemoDataCode.
+ 284          */
+ 285          BYTE ActionGridRemo(BYTE _RemoDataCode)
+ 286          {
+ 287   1        if(_RemoDataCode == REMO_CHNUP) {
+ 288   2          TaskSetGridCmd(NAVI_KEY_UP);
+ 289   2          return 0xFF;
+ 290   2        }
+ 291   1        else if(_RemoDataCode == REMO_CHNDN) {
+ 292   2          TaskSetGridCmd(NAVI_KEY_DOWN);
+ 293   2          return 0xFF;
+ 294   2        }
+ 295   1        else if(_RemoDataCode == REMO_VOLDN) {
+ 296   2          TaskSetGridCmd(NAVI_KEY_LEFT);
+ 297   2          return 0xFF;
+ 298   2        }
+ 299   1        else if(_RemoDataCode == REMO_VOLUP) {
+ 300   2          TaskSetGridCmd(NAVI_KEY_RIGHT);
+ 301   2          return 0xFF;
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 6   
+
+ 302   2        }
+ 303   1        else if(_RemoDataCode == REMO_MENU || _RemoDataCode == REMO_EXIT) {
+ 304   2          TaskSetGridCmd(NAVI_KEY_ENTER);
+ 305   2          return 0xFF;
+ 306   2        }
+ 307   1        return _RemoDataCode;
+ 308   1      }
+ 309          
+ 310          BYTE ActionRemo_SOsdMenu(BYTE _RemoDataCode, BYTE AutoKey)
+ 311          {
+ 312   1        BYTE value=AutoKey;
+ 313   1        BYTE ret = _RemoDataCode;
+ 314   1      
+ 315   1        switch(_RemoDataCode) {
+ 316   2        case REMO_INPUT:  //ignore
+ 317   2          ret = 0xFF;
+ 318   2          break;
+ 319   2        case REMO_SELECT:
+ 320   2          MenuKeyInput(NAVI_KEY_ENTER);
+ 321   2          ret = 0xFF; 
+ 322   2          break;
+ 323   2        case REMO_CHNUP:
+ 324   2          MenuKeyInput(NAVI_KEY_UP);
+ 325   2          ret = 0xFF; 
+ 326   2          break;
+ 327   2        case REMO_CHNDN:
+ 328   2          MenuKeyInput(NAVI_KEY_DOWN);
+ 329   2          ret = 0xFF; 
+ 330   2          break;
+ 331   2        case REMO_VOLUP:
+ 332   2          MenuKeyInput(NAVI_KEY_RIGHT);
+ 333   2          ret = 0xFF; 
+ 334   2          break;
+ 335   2        case REMO_VOLDN:
+ 336   2          MenuKeyInput(NAVI_KEY_LEFT);
+ 337   2          ret = 0xFF; 
+ 338   2          break;
+ 339   2        case REMO_MENU:
+ 340   2          MenuKeyInput(NAVI_KEY_ENTER); 
+ 341   2          ret = 0xFF; 
+ 342   2          break;
+ 343   2        case REMO_EXIT:
+ 344   2          if(MenuGetLevel() > 1)
+ 345   2            proc_menu_list_return();  //only one level...
+ 346   2          else
+ 347   2            MenuEnd();
+ 348   2          ret = 0xFF; 
+ 349   2          break;
+ 350   2        }
+ 351   1        return ret;
+ 352   1      }
+ 353          
+ 354          /**
+ 355          * action for remocon
+ 356          *
+ 357          * if press the menu keypad on the SUPPORT_FOSD_MENU,
+ 358          * it will starts the FontOSD menu.
+ 359          * if press the menu remocon, it will start SpiOSD menu.
+ 360          * if press the PIP_ON, it will toggle CEC_AUTO feature.
+ 361          */
+ 362          BYTE ActionRemo(BYTE _RemoDataCode, BYTE AutoKey)
+ 363          {
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 7   
+
+ 364   1        BYTE value;
+ 365   1      
+ 366   1        UpdateOsdTimerClock();
+ 367   1      
+ 368   1        //
+ 369   1        if(TaskGetGrid()) {
+ 370   2          value = ActionGridRemo(_RemoDataCode);
+ 371   2          if(value==0xFF)
+ 372   2            return 0;
+ 373   2          //else passthru..
+ 374   2        }
+ 375   1      #if defined(SUPPORT_HDMI_EP907M)
+ 376   1        //It have to work only when the CEC was enabled...
+ 377   1        if(MenuGetLevel()==0 && _RemoDataCode != REMO_MENU ) {
+ 378   2          //return ActionRemoEP907M(_RemoDataCode, AutoKey);
+ 379   2          value = ActionRemoEP907M(_RemoDataCode, AutoKey);
+ 380   2          if(value == 0xFF)
+ 381   2            return 0;
+ 382   2          //else passthru..
+ 383   2        }
+ 384   1      #endif
+ 385   1        if(MenuGetLevel()) {
+ 386   2          //SPI SETUP MENU
+ 387   2          value = ActionRemo_SOsdMenu(_RemoDataCode, AutoKey);
+ 388   2          if(value == 0xFF)
+ 389   2            return 0;
+ 390   2          //else passthru..
+ 391   2        }
+ 392   1      
+ 393   1        switch(_RemoDataCode) {
+ 394   2      
+ 395   2        case REMO_STANDBY:        // power
+ 396   2          if( AutoKey )       // need repeat key. 
+ 397   2            return REQUEST_POWER_OFF;
+ 398   2          return 0;         // power off
+ 399   2      
+ 400   2        case REMO_MUTE:
+ 401   2      #ifdef SUPPORT_FOSD_MENU
+                  if( AutoKey ) return 1;
+              //    ToggleAudioMute();
+                  if( IsAudioMuteOn() )   DisplayMuteInfo();
+                  else{           
+                    ClearMuteInfo();
+                    if( DisplayInputHold ) FOsdDisplayInput();
+                  }
+              #endif
+ 410   2          break;
+ 411   2      
+ 412   2        case REMO_INPUT:
+ 413   2      #ifdef SUPPORT_FOSD_MENU
+                  InputModeNext();
+              #else
+ 416   2          //increase input mode..
+ 417   2          InputModeNext();
+ 418   2      #endif
+ 419   2          break;
+ 420   2        case REMO_INFO:
+ 421   2          if(MenuGetLevel()==0) {
+ 422   3            //toggle current video information.
+ 423   3            if(TaskNoSignal_getCmd()==TASK_CMD_DONE) {
+ 424   4      #ifdef SUPPORT_FOSD_MENU
+                      FOsdDisplayInput(); 
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 8   
+
+              #else
+ 427   4              if((ReadTW88(REG310) & 0x80)==0) {
+ 428   5                FOsdCopyMsgBuff2Osdram(OFF);
+ 429   5              }
+ 430   4              FOsdWinToggleEnable(0); //win0
+ 431   4      #endif
+ 432   4            }       
+ 433   3          }
+ 434   2          return 1;
+ 435   2        
+ 436   2        case REMO_NUM0:
+ 437   2        case REMO_NUM1:
+ 438   2        case REMO_NUM2:
+ 439   2        case REMO_NUM3:
+ 440   2        case REMO_NUM4:
+ 441   2        case REMO_NUM5:
+ 442   2        case REMO_NUM6:
+ 443   2        case REMO_NUM7:
+ 444   2        case REMO_NUM8:
+ 445   2        case REMO_NUM9:
+ 446   2          break;
+ 447   2      
+ 448   2        
+ 449   2        case REMO_SELECT:
+ 450   2      #ifdef SUPPORT_FOSD_MENU
+                  if( AutoKey ) return 1;
+                  if(  DisplayedOSD & FOSD_MENU  )
+                    FOsdMenuProcSelectKey();
+              #endif
+ 455   2          break;
+ 456   2      
+ 457   2        case REMO_CHNUP:
+ 458   2      #ifdef SUPPORT_FOSD_MENU
+                  if(DisplayedOSD & FOSD_MENU)
+                    FOsdMenuMoveCursor(FOSD_UP);
+              #else
+ 462   2            dPuts("\n\rREMO_CHNUP pressed!!!");
+ 463   2      #endif
+ 464   2          break;
+ 465   2        case REMO_CHNDN:
+ 466   2      #ifdef SUPPORT_FOSD_MENU
+                  if(DisplayedOSD & FOSD_MENU)
+                    FOsdMenuMoveCursor(FOSD_DN);
+              #else
+ 470   2            dPuts("\n\rREMO_CHNDN pressed!!!");
+ 471   2      #endif
+ 472   2          break;
+ 473   2        case REMO_VOLUP:
+ 474   2      #ifdef SUPPORT_FOSD_MENU
+                  if(  DisplayedOSD & FOSD_MENU  ) {
+                    if( OnChangingValue )   FOsdMenuValueUpDn(FOSD_UP );
+                    else          FOsdMenuProcSelectKey();      
+                  }
+                  else 
+                  {
+                    ChangeVol(1);
+                    DisplayVol();
+                  }
+              #else
+ 485   2            dPuts("\n\rREMO_VOLUP pressed!!!");
+ 486   2      #endif
+ 487   2          break;
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 9   
+
+ 488   2        case REMO_VOLDN:
+ 489   2      #ifdef SUPPORT_FOSD_MENU
+                  if(  DisplayedOSD & FOSD_MENU  ) {
+                    if( OnChangingValue ) FOsdMenuValueUpDn(FOSD_DN );
+                    else FOsdHighMenu();  
+                  }
+                  else 
+                  {
+                    ChangeVol(-1);
+                    DisplayVol();
+                  }
+              #else
+ 500   2            dPuts("\n\rREMO_VOLDN pressed!!!");
+ 501   2      #endif
+ 502   2          break;
+ 503   2        case REMO_MENU:
+ 504   2            dPuts("\n\rREMO_MENU pressed!!!");
+ 505   2      //#ifdef SUPPORT_FOSD_MENU
+ 506   2      //    if(DisplayedOSD & FOSD_MENU)
+ 507   2      //      FOsdHighMenu();
+ 508   2      //    else {
+ 509   2      //      if(GetOSDLangEE()==OSDLANG_KR)
+ 510   2      //        InitFontRamByNum(FONT_NUM_PLUS_RAMFONT, 0);
+ 511   2      //      else 
+ 512   2      //        InitFontRamByNum(FONT_NUM_DEF12X18, 0); //FOsdDownloadFont(0);  //12x18 default font
+ 513   2      //      FOsdRamSetFifo(ON, 1);
+ 514   2      //      FOsdMenuOpen();   
+ 515   2      //    }
+ 516   2      //#else
+ 517   2          if(MenuGetLevel()==0)
+ 518   2            MenuStart();  
+ 519   2      //#endif
+ 520   2          break;
+ 521   2      
+ 522   2      
+ 523   2        case REMO_EXIT:
+ 524   2            dPuts("\n\rREMO_EXIT pressed!!!");
+ 525   2      #ifdef SUPPORT_FOSD_MENU
+                  if(  DisplayedOSD & FOSD_MENU  )    
+                    FOsdMenuDoAction(EXITMENU);
+              #else
+ 529   2      #endif
+ 530   2          break;
+ 531   2      
+ 532   2        case REMO_PIPON:
+ 533   2          dPuts("\n\rPIP Display mode change");
+ 534   2      #if defined(SUPPORT_HDMI_EP907M)
+ 535   2          if(InputMain==INPUT_HDMIPC ||  InputMain==INPUT_HDMITV) {
+ 536   3            dPuts("\n\rCEC_AUTO ON");
+ 537   3            //BK130402
+ 538   3            //WriteI2C_multi(0x68,0x21, 0x800, 0x01);
+ 539   3            global_CEC_flag = 1;
+ 540   3          }
+ 541   2      #endif
+ 542   2          break;
+ 543   2               
+ 544   2        case REMO_STILL:
+ 545   2          break;
+ 546   2        case REMO_SWAP:
+ 547   2          //Printf("\n\r=====SWAP InputMode:%bd",InputMain);
+ 548   2          if(InputMain==INPUT_BT656) {
+ 549   3            value = ReadTW88(REG006);
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 10  
+
+ 550   3            if(value & 0x40)  WriteTW88(REG006, value & ~0x40);
+ 551   3            else        WriteTW88(REG006, value | 0x40);
+ 552   3          }     
+ 553   2          break;
+ 554   2      
+ 555   2        case REMO_PIPINPUT:
+ 556   2          dPuts("\n\rPIP input mode change");
+ 557   2          break;
+ 558   2      
+ 559   2        case REMO_TTXRED:
+ 560   2          break;
+ 561   2      
+ 562   2      
+ 563   2        case REMO_TTXYELLOW:
+ 564   2          break;
+ 565   2      
+ 566   2        case REMO_TTXGREEN: 
+ 567   2          break;
+ 568   2        
+ 569   2        case REMO_TTXCYAN:    
+ 570   2          break;
+ 571   2      
+ 572   2        case REMO_AUTO:
+ 573   2          break;
+ 574   2      
+ 575   2        case REMO_ASPECT:
+ 576   2          break;
+ 577   2      
+ 578   2        }
+ 579   1        return 1;
+ 580   1      }
+ 581          
+ 582          #ifdef SUPPORT_TOUCH
+ 583          //extern BYTE TouchStatus;
+ 584          extern WORD PosX,PosY;
+ 585          /**
+ 586          * action for Touch
+ 587          */
+ 588          BYTE ActionTouch(void)
+ 589          {
+ 590   1        BYTE TscStatus;
+ 591   1        BYTE ret;
+ 592   1        WORD  xpos, ypos;
+ 593   1      
+ 594   1      #ifdef DEBUG_TOUCH_SW
+                dPrintf("\n\r==>Tsc Action");
+              #endif
+ 597   1      
+ 598   1        UpdateOsdTimerClock();
+ 599   1      
+ 600   1        TscStatus = TouchStatus;
+ 601   1        xpos = PosX;
+ 602   1        ypos = PosY;
+ 603   1      
+ 604   1        if(MenuGetLevel()==0) {
+ 605   2       
+ 606   2          if(TaskGetGrid()) {
+ 607   3            if(TscStatus == TOUCHCLICK || TscStatus == TOUCHDOUBLECLICK)
+ 608   3            {
+ 609   4              TaskSetGridCmd(NAVI_KEY_ENTER);
+ 610   4              return 0;
+ 611   4            }
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 11  
+
+ 612   3          }
+ 613   2          if(TscStatus == TOUCHDOUBLECLICK) {
+ 614   3            MenuStart();
+ 615   3            SetTouchStatus(TOUCHEND); //BK111108
+ 616   3          }
+ 617   2          else if(TscStatus == TOUCHPRESS || TscStatus >= TOUCHMOVE) {
+ 618   3          }
+ 619   2          else if(TscStatus == TOUCHMOVED) {
+ 620   3            SetTouchStatus(TOUCHEND); //END
+ 621   3          }
+ 622   2          else if(TscStatus == TOUCHCLICK) {
+ 623   3            SetTouchStatus(TOUCHEND); //END
+ 624   3          }
+ 625   2      
+ 626   2          return 0; 
+ 627   2        }
+ 628   1      
+ 629   1        //in the menu
+ 630   1        if(TscStatus == TOUCHPRESS || (TscStatus >= TOUCHMOVE)) {
+ 631   2          //serial input mode.
+ 632   2          ret = MenuIsTouchCalibMode();
+ 633   2          if(ret) {
+ 634   3            CalibTouch(ret-1);
+ 635   3      
+ 636   3            MenuKeyInput(NAVI_KEY_ENTER); //goto next "+"
+ 637   3            //wait until TOUCH_END
+ 638   3            WaitTouchButtonUp();
+ 639   3            SetTouchStatus(TOUCHEND);
+ 640   3          }
+ 641   2      //    else if(MenuIsSlideMode()) {
+ 642   2      //      //need MOVE for slider bar
+ 643   2      //      MenuCheckTouchInput(TscStatus, xpos, ypos);
+ 644   2      //      //note: do not call SetTouchStatus(0);
+ 645   2      //    }
+ 646   2          else {
+ 647   3            //
+ 648   3            //update focus.
+ 649   3            //
+ 650   3            MenuCheckTouchInput(TscStatus, xpos, ypos);
+ 651   3            //note: do not call SetTouchStatus(0);
+ 652   3          }
+ 653   2          return 0;
+ 654   2        }
+ 655   1        //else if(TscStatus == TOUCHMOVE) {
+ 656   1        //  //if lost focus, do something.
+ 657   1        //}
+ 658   1        else if(TscStatus == TOUCHCLICK || TscStatus == TOUCHDOUBLECLICK || TscStatus == TOUCHLONGCLICK || TscSta
+             -tus == TOUCHMOVED) {
+ 659   2          //action mode
+ 660   2      
+ 661   2          if(TscStatus == TOUCHLONGCLICK) {
+ 662   3            if(MenuGetLevel()==1 || MenuIsSystemPage()) {
+ 663   4              //special.
+ 664   4              //use default value.
+ 665   4              MenuTouchCalibStart();
+ 666   4              SetTouchStatus(TOUCHEND);
+ 667   4              return 0;
+ 668   4            }
+ 669   3          }
+ 670   2      
+ 671   2          if(TscStatus == TOUCHMOVED)
+ 672   2            TscStatus = TOUCHCLICK;
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 12  
+
+ 673   2      
+ 674   2          MenuCheckTouchInput(TscStatus,xpos, ypos);
+ 675   2          SetTouchStatus(TOUCHEND);  //BK110601
+ 676   2          return 0;
+ 677   2        }
+ 678   1        ePrintf("\n\rUnknown TscStatus :%bd", TscStatus);
+ 679   1      
+ 680   1        return 1;
+ 681   1      }
+ 682          #endif
+ 683          
+ 684          
+ 685          /**
+ 686          * check Key input
+ 687          *
+ 688          * keypad: LEFT, RIGHT, DOWN, UP, MENU, MODE
+ 689          */
+ 690          BYTE CheckKeyIn( void ) 
+ 691          {
+ 692   1        BYTE  key;
+ 693   1      
+ 694   1      //#ifdef SUPPORT_TOUCH
+ 695   1      //  //if we support the touch, we need to init TscAdc again
+ 696   1      //  InitAUX(3);
+ 697   1      //#endif
+ 698   1      
+ 699   1        //key = ReadKeyPad();
+ 700   1        key = GetKey(1);
+ 701   1        if(key == 0) {
+ 702   2          //sw key
+ 703   2          if(SW_key) {
+ 704   3            key = SW_key;
+ 705   3            SW_key=0;
+ 706   3          }
+ 707   2          if( key == 0)
+ 708   2            return 0;
+ 709   2        }
+ 710   1      
+ 711   1        //if(key== KEY_MENU)           //only for William
+ 712   1        //  return REQUEST_POWER_OFF;
+ 713   1      
+ 714   1        UpdateOsdTimerClock();
+ 715   1      
+ 716   1      #ifdef DEBUG_KEYREMO
+                dPrintf("\n\rGetKey(1):%02bx ",key);
+                switch(key) {
+                  case KEY_RIGHT: dPuts("Right"); break;
+                case KEY_UP:  dPuts("Up"); break;
+                case KEY_LEFT:  dPuts("Left"); break;
+                case KEY_DOWN:  dPuts("Down"); break;
+                case KEY_INPUT: dPuts("Input"); break;
+                case KEY_MENU:  dPuts("Menu"); break;
+                default:    dPuts("unknown"); break;
+                }
+              #endif
+ 728   1      
+ 729   1        if(TaskGetGrid()) {
+ 730   2          switch(key) {
+ 731   3            case KEY_RIGHT:
+ 732   3            TaskSetGridCmd(NAVI_KEY_RIGHT);
+ 733   3            break;
+ 734   3          case KEY_UP:
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 13  
+
+ 735   3            TaskSetGridCmd(NAVI_KEY_UP);
+ 736   3            break;
+ 737   3          case KEY_LEFT:
+ 738   3            TaskSetGridCmd(NAVI_KEY_LEFT);
+ 739   3            break;
+ 740   3          case KEY_DOWN:
+ 741   3            TaskSetGridCmd(NAVI_KEY_DOWN);
+ 742   3            break;
+ 743   3          case KEY_INPUT:
+ 744   3          case KEY_MENU:
+ 745   3            TaskSetGridCmd(NAVI_KEY_ENTER);
+ 746   3            break;
+ 747   3          }
+ 748   2          return 0;
+ 749   2        }
+ 750   1      
+ 751   1      
+ 752   1        switch ( key ) {
+ 753   2          case  KEY_RIGHT:
+ 754   2      #ifdef SUPPORT_FOSD_MENU
+                  if(  DisplayedOSD & FOSD_MENU  ) {
+                    if( OnChangingValue )   FOsdMenuValueUpDn(FOSD_UP );
+                    else          FOsdMenuProcSelectKey();      
+                  }
+                  else 
+              #endif
+ 761   2      #if defined(SUPPORT_SPIOSD)
+ 762   2          if(MenuGetLevel())
+ 763   2            MenuKeyInput(NAVI_KEY_RIGHT);
+ 764   2          else
+ 765   2      #endif
+ 766   2          {
+ 767   3      #if defined(SUPPORT_FOSD_MENU)
+                    ChangeVol(1);
+                    DisplayVol();
+              #endif
+ 771   3          }
+ 772   2            break;
+ 773   2      
+ 774   2          case  KEY_UP:
+ 775   2      #ifdef SUPPORT_FOSD_MENU
+                  if(DisplayedOSD & FOSD_MENU)
+                    FOsdMenuMoveCursor(FOSD_UP);
+                  else
+              #endif
+ 780   2      #if defined(SUPPORT_SPIOSD)
+ 781   2          if(MenuGetLevel())
+ 782   2            MenuKeyInput(NAVI_KEY_UP);
+ 783   2          else
+ 784   2      #endif
+ 785   2          {
+ 786   3            ; //do nothing
+ 787   3          }
+ 788   2            break;
+ 789   2      
+ 790   2          case  KEY_MENU:
+ 791   2      #if defined(SUPPORT_FOSD_MENU) && defined(SUPPORT_SPIOSD)
+              
+                  if((DisplayedOSD & FOSD_MENU)==0
+                  && (MenuGetLevel()==0)) {
+                    //activate menu. but, which one ?
+                    //if key was UP=>DOWN=>MENU, i will executes FontOSD
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 14  
+
+                    if(previous_key0 == KEY_UP
+                    && previous_key1 == KEY_DOWN) {
+                      if(GetOSDLangEE()==OSDLANG_KR)
+                        InitFontRamByNum(FONT_NUM_PLUS_RAMFONT, 0);
+                      else 
+                        InitFontRamByNum(FONT_NUM_DEF12X18, 0); //FOsdDownloadFont(0);  //12x18 default font
+                      FOsdRamSetFifo(ON, 1);
+                      FOsdMenuOpen();   
+                    }
+                    else {
+                      MenuStart();
+                    }
+                  }
+                  else if(DisplayedOSD & FOSD_MENU) {
+                    FOsdHighMenu();
+                  }
+                  else //assume  MenuGetLevel() != 0.
+                    MenuKeyInput(NAVI_KEY_ENTER);
+              #elif defined(SUPPORT_FOSD_MENU)
+                  if(DisplayedOSD & FOSD_MENU)
+                    FOsdHighMenu(); 
+                  else {
+                    if(GetOSDLangEE()==OSDLANG_KR)
+                      InitFontRamByNum(FONT_NUM_PLUS_RAMFONT, 0);
+                    else 
+                      InitFontRamByNum(FONT_NUM_DEF12X18, 0); //FOsdDownloadFont(0);  //12x18 default font
+                    FOsdRamSetFifo(ON, 1);
+                    FOsdMenuOpen();   
+                  }
+              #else
+ 827   2          if(MenuGetLevel()==0)
+ 828   2            MenuStart();  
+ 829   2          else
+ 830   2            MenuKeyInput(NAVI_KEY_ENTER); 
+ 831   2      #endif
+ 832   2            break;
+ 833   2      
+ 834   2          case  KEY_LEFT:
+ 835   2      #ifdef SUPPORT_FOSD_MENU
+                  if(  DisplayedOSD & FOSD_MENU  ) {
+                    if( OnChangingValue ) FOsdMenuValueUpDn(FOSD_DN );
+                    else FOsdHighMenu();  
+                  }
+                  else 
+              #endif
+ 842   2      #if defined(SUPPORT_SPIOSD)
+ 843   2          if(MenuGetLevel())
+ 844   2            MenuKeyInput(NAVI_KEY_LEFT);
+ 845   2          else
+ 846   2      #endif
+ 847   2          {
+ 848   3      #if defined(SUPPORT_FOSD_MENU)
+                    ChangeVol(-1);
+                    DisplayVol();
+              #endif
+ 852   3          }
+ 853   2            break;
+ 854   2      
+ 855   2          case  KEY_DOWN:
+ 856   2      #ifdef SUPPORT_FOSD_MENU
+                  if(DisplayedOSD & FOSD_MENU)
+                    FOsdMenuMoveCursor(FOSD_DN);
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 15  
+
+                  else
+              #endif
+ 861   2      #if defined(SUPPORT_SPIOSD)
+ 862   2          if(MenuGetLevel())
+ 863   2            MenuKeyInput(NAVI_KEY_DOWN);
+ 864   2          else
+ 865   2      #endif
+ 866   2          {
+ 867   3            ; //do nothing
+ 868   3          }
+ 869   2            break;
+ 870   2      
+ 871   2          case  KEY_INPUT:
+ 872   2          if(MenuGetLevel())
+ 873   2            MenuEnd();
+ 874   2          else
+ 875   2            InputModeNext();
+ 876   2            break;
+ 877   2        }
+ 878   1        previous_key0 = previous_key1;              
+ 879   1        previous_key1 = key;
+ 880   1      
+ 881   1        return 0; //for William
+ 882   1      }
+ 883          
+ 884          
+ 885          //=============================================================================
+ 886          //    BYTE CheckHumanInputs( void )
+ 887          //=============================================================================
+ 888          /**
+ 889          * check Human Inputs. (Keypad, touch, remocon, UART0)
+ 890          *
+ 891          * Just Check, NO Action.
+ 892          * extern BYTE TouchChanged;
+ 893          * @return
+ 894          * -0: No Input
+ 895          * -other: input type
+ 896          */
+ 897          BYTE  CheckHumanInputs( BYTE skip_tsc )
+ 898          {
+ 899   1      #ifdef SUPPORT_TOUCH
+ 900   1      #else
+                BYTE temp = skip_tsc;
+              #endif
+ 903   1      
+ 904   1        //
+ 905   1        //check remo input
+ 906   1        //
+ 907   1        //if(CheckRemo())
+ 908   1        //  return 1;
+ 909   1      #if 0
+                if(RemoDataReady)
+                  return HINPUT_REMO;
+              
+              #else
+ 914   1        BYTE AutoKey,  _RemoDataCode;
+ 915   1        BYTE ret=0;
+ 916   1      
+ 917   1        if( IsRemoDataReady(&_RemoDataCode, &AutoKey) ) {
+ 918   2          //ret = ActionRemo( _RemoDataCode, (BYTE)AutoKey) ;
+ 919   2      
+ 920   2      //#ifdef DEBUG_KEYREMO
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 16  
+
+ 921   2          //dPrintf("\n\r**** Remo: %02bx, %02bx ", _RemoDataCode, (BYTE)AutoKey);
+ 922   2          //dPrintf("\n\r%02bx,%02bx ", _RemoDataCode, AutoKey);
+ 923   2      //#endif
+ 924   2          return HINPUT_REMO;
+ 925   2        }
+ 926   1      #endif
+ 927   1      
+ 928   1      
+ 929   1      
+ 930   1      
+ 931   1      
+ 932   1        //
+ 933   1        //check keypad
+ 934   1        //
+ 935   1      //#ifdef SUPPORT_ANALOG_SENSOR_NEED_VERIFY
+ 936   1      //  //CheckKeyIn();
+ 937   1        if ( ReadKeyPad() ) {
+ 938   2          //dPuts("\n\rGet Key data");
+ 939   2          return ( HINPUT_KEY );    // input!!!
+ 940   2        }
+ 941   1      //#endif
+ 942   1        //
+ 943   1        //check touch
+ 944   1        //  
+ 945   1      #ifdef SUPPORT_TOUCH
+ 946   1        if(skip_tsc==0) {
+ 947   2          //it is too sensitive...use GetTouch2()
+ 948   2          //if ( CpuTouchPressed || CpuTouchChanged ) {
+ 949   2          //  dPrintf("\n\rSenseTouch CpuTouchPressed:%bd CpuTouchChanged:%bd",CpuTouchPressed,CpuTouchChanged);
+ 950   2          //  return ( HINPUT_TSC );    // input!!!
+ 951   2          //}
+ 952   2          ret = GetTouch2();
+ 953   2          if(ret)
+ 954   2            return ( HINPUT_TSC );    // input!!!
+ 955   2        }
+ 956   1      #endif
+ 957   1      
+ 958   1        //
+ 959   1        //check RS232 monitor input
+ 960   1        //  
+ 961   1        if (RS_ready()) {
+ 962   2          //dPuts("\n\rGet serial data");
+ 963   2          return ( HINPUT_SERIAL );   // input!!!
+ 964   2        }
+ 965   1        return (HINPUT_NO);
+ 966   1      }
+ 967          
+ 968          
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 17  
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com00DF (BEGIN)
+0000         L?0224:
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 2406              ADD     A,#06H
+0007 F582              MOV     DPL,A
+0009 E4                CLR     A
+000A 3500        E     ADDC    A,regTW88
+000C F583              MOV     DPH,A
+000E 759300      E     MOV     DPX,#?C?XDATASEG
+0011 22                RET     
+0012         L?0225:
+0012         L?0226:
+0012 90000000    R     MOV     DPTR,#TscStatus
+0016 E0                MOVX    A,@DPTR
+0017 FF                MOV     R7,A
+0018 22                RET     
+0019         L?0227:
+0019 FE                MOV     R6,A
+001A FD                MOV     R5,A
+001B FC                MOV     R4,A
+001C 90000000    E     MOV     DPTR,#?_WriteI2C_multi?BYTE+04H
+0020 010000      E     AJMP    ?C?LSTXDATA
+0023         L?0228:
+0023 7B00              MOV     R3,#00H
+0025 7D21              MOV     R5,#021H
+0027 7F68              MOV     R7,#068H
+0029 22                RET     
+002A         L?0229:
+002A         L?0230:
+002A 90000000    R     MOV     DPTR,#_RemoDataCode
+002E E0                MOVX    A,@DPTR
+002F FF                MOV     R7,A
+0030 22                RET     
+0031         L?0231:
+0031         L?0232:
+0031 90000000    R     MOV     DPTR,#value
+0035 EF                MOV     A,R7
+0036 F0                MOVX    @DPTR,A
+0037 22                RET     
+             ; FUNCTION Com00DF (END)
+
+             ; FUNCTION _ActionRemoEP907M (BEGIN)
+                                           ; SOURCE LINE # 63
+;---- Variable 'AutoKey' assigned to Register 'R5' ----
+0000 90000000    R     MOV     DPTR,#_RemoDataCode
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 64
+                                           ; SOURCE LINE # 65
+0006 AE05              MOV     R6,AR5
+;---- Variable 'value' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 66
+0008 A3                INC     DPTR
+0009 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 69
+000A 90000000    E     MOV     DPTR,#global_CEC_flag
+000E E0                MOVX    A,@DPTR
+000F 7003              JNZ     ?C0001
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 18  
+
+                                           ; SOURCE LINE # 70
+0011 010000      R     AJMP    ?C0169
+0014         ?C0001:
+                                           ; SOURCE LINE # 71
+0014 7A09              MOV     R2,#09H
+0016 110000      R     ACALL   L?0228
+0019 110000      E     ACALL   _ReadI2C_multi
+001C AE07              MOV     R6,AR7
+                                           ; SOURCE LINE # 72
+001E EE                MOV     A,R6
+001F 5403              ANL     A,#03H
+0021 6403              XRL     A,#03H
+0023 6012              JZ      ?C0003
+                                           ; SOURCE LINE # 73
+0025 7B00        R     MOV     R3,#MBYTE ?SC_0
+0027 7A00        R     MOV     R2,#HIGH ?SC_0
+0029 7900        R     MOV     R1,#LOW ?SC_0
+002B 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+002F EF                MOV     A,R7
+0030 F0                MOVX    @DPTR,A
+0031 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 74
+0034 010000      R     AJMP    ?C0170
+                                           ; SOURCE LINE # 75
+0037         ?C0003:
+                                           ; SOURCE LINE # 77
+0037 90000000    R     MOV     DPTR,#_RemoDataCode
+003B E0                MOVX    A,@DPTR
+003C 110000      E     ACALL   ?C?CCASE
+003F 0000        R     DW      ?C0011
+0041 00                DB      00H
+0042 0000        R     DW      ?C0012
+0044 01                DB      01H
+0045 0000        R     DW      ?C0013
+0047 02                DB      02H
+0048 0000        R     DW      ?C0014
+004A 03                DB      03H
+004B 0000        R     DW      ?C0015
+004D 04                DB      04H
+004E 0000        R     DW      ?C0016
+0050 05                DB      05H
+0051 0000        R     DW      ?C0017
+0053 06                DB      06H
+0054 0000        R     DW      ?C0018
+0056 07                DB      07H
+0057 0000        R     DW      ?C0019
+0059 08                DB      08H
+005A 0000        R     DW      ?C0020
+005C 09                DB      09H
+005D 0000        R     DW      ?C0023
+005F 0D                DB      0DH
+0060 0000        R     DW      ?C0009
+0062 10                DB      010H
+0063 0000        R     DW      ?C0008
+0065 11                DB      011H
+0066 0000        R     DW      ?C0005
+0068 15                DB      015H
+0069 0000        R     DW      ?C0010
+006B 16                DB      016H
+006C 0000        R     DW      ?C0006
+006E 20                DB      020H
+006F 0000        R     DW      ?C0007
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 19  
+
+0071 21                DB      021H
+0072 0000        R     DW      ?C0030
+0074 25                DB      025H
+0075 0000        R     DW      ?C0033
+0077 28                DB      028H
+0078 0000        R     DW      ?C0027
+007A 32                DB      032H
+007B 0000        R     DW      ?C0024
+007D 34                DB      034H
+007E 0000        R     DW      ?C0026
+0080 36                DB      036H
+0081 0000        R     DW      ?C0025
+0083 37                DB      037H
+0084 0000        R     DW      ?C0021
+0086 38                DB      038H
+0087 0000        R     DW      ?C0022
+0089 3A                DB      03AH
+008A 0000              DW      00H
+008C 0000        R     DW      ?C0004
+                                           ; SOURCE LINE # 79
+008E         ?C0005:
+                                           ; SOURCE LINE # 80
+008E E4                CLR     A
+008F FF                MOV     R7,A
+                                           ; SOURCE LINE # 81
+                                           ; SOURCE LINE # 82
+                                           ; SOURCE LINE # 83
+0090 010000      R     AJMP    ?C0192
+                                           ; SOURCE LINE # 84
+0093         ?C0006:
+                                           ; SOURCE LINE # 85
+0093 7B00        R     MOV     R3,#MBYTE ?SC_41
+0095 7A00        R     MOV     R2,#HIGH ?SC_41
+0097 7900        R     MOV     R1,#LOW ?SC_41
+0099 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 86
+009C E4                CLR     A
+009D 7F01              MOV     R7,#01H
+009F         ?C0171:
+                                           ; SOURCE LINE # 87
+                                           ; SOURCE LINE # 88
+                                           ; SOURCE LINE # 89
+009F 010000      R     AJMP    ?C0192
+                                           ; SOURCE LINE # 90
+00A2         ?C0007:
+                                           ; SOURCE LINE # 91
+00A2 7B00        R     MOV     R3,#MBYTE ?SC_66
+00A4 7A00        R     MOV     R2,#HIGH ?SC_66
+00A6 7900        R     MOV     R1,#LOW ?SC_66
+00A8 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 92
+00AB E4                CLR     A
+00AC 7F02              MOV     R7,#02H
+00AE         ?C0172:
+                                           ; SOURCE LINE # 93
+                                           ; SOURCE LINE # 94
+                                           ; SOURCE LINE # 95
+00AE 807D              SJMP    ?C0192
+                                           ; SOURCE LINE # 96
+00B0         ?C0008:
+                                           ; SOURCE LINE # 97
+00B0 7B00        R     MOV     R3,#MBYTE ?SC_91
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 20  
+
+00B2 7A00        R     MOV     R2,#HIGH ?SC_91
+00B4 7900        R     MOV     R1,#LOW ?SC_91
+00B6 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 98
+00B9 E4                CLR     A
+00BA 7F03              MOV     R7,#03H
+00BC         ?C0173:
+                                           ; SOURCE LINE # 99
+                                           ; SOURCE LINE # 100
+                                           ; SOURCE LINE # 101
+00BC 806F              SJMP    ?C0192
+                                           ; SOURCE LINE # 102
+00BE         ?C0009:
+                                           ; SOURCE LINE # 103
+00BE 7B00        R     MOV     R3,#MBYTE ?SC_116
+00C0 7A00        R     MOV     R2,#HIGH ?SC_116
+00C2 7900        R     MOV     R1,#LOW ?SC_116
+00C4 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 104
+00C7 E4                CLR     A
+00C8 7F04              MOV     R7,#04H
+00CA         ?C0174:
+                                           ; SOURCE LINE # 105
+                                           ; SOURCE LINE # 106
+                                           ; SOURCE LINE # 107
+00CA 8061              SJMP    ?C0192
+                                           ; SOURCE LINE # 113
+00CC         ?C0010:
+                                           ; SOURCE LINE # 114
+00CC 7B00        R     MOV     R3,#MBYTE ?SC_141
+00CE 7A00        R     MOV     R2,#HIGH ?SC_141
+00D0 7900        R     MOV     R1,#LOW ?SC_141
+00D2 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 115
+00D5 E4                CLR     A
+00D6 7F09              MOV     R7,#09H
+00D8         ?C0175:
+                                           ; SOURCE LINE # 116
+                                           ; SOURCE LINE # 117
+                                           ; SOURCE LINE # 118
+00D8 8053              SJMP    ?C0192
+                                           ; SOURCE LINE # 123
+00DA         ?C0011:
+                                           ; SOURCE LINE # 124
+00DA E4                CLR     A
+00DB 7F20              MOV     R7,#020H
+00DD         ?C0176:
+                                           ; SOURCE LINE # 125
+                                           ; SOURCE LINE # 126
+                                           ; SOURCE LINE # 127
+00DD 804E              SJMP    ?C0192
+                                           ; SOURCE LINE # 128
+00DF         ?C0012:
+                                           ; SOURCE LINE # 129
+00DF E4                CLR     A
+00E0 7F21              MOV     R7,#021H
+00E2         ?C0177:
+                                           ; SOURCE LINE # 130
+                                           ; SOURCE LINE # 131
+                                           ; SOURCE LINE # 132
+00E2 8049              SJMP    ?C0192
+                                           ; SOURCE LINE # 133
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 21  
+
+00E4         ?C0013:
+                                           ; SOURCE LINE # 134
+00E4 E4                CLR     A
+00E5 7F22              MOV     R7,#022H
+00E7         ?C0178:
+                                           ; SOURCE LINE # 135
+                                           ; SOURCE LINE # 136
+                                           ; SOURCE LINE # 137
+00E7 8044              SJMP    ?C0192
+                                           ; SOURCE LINE # 138
+00E9         ?C0014:
+                                           ; SOURCE LINE # 139
+00E9 E4                CLR     A
+00EA 7F23              MOV     R7,#023H
+00EC         ?C0179:
+                                           ; SOURCE LINE # 140
+                                           ; SOURCE LINE # 141
+                                           ; SOURCE LINE # 142
+00EC 803F              SJMP    ?C0192
+                                           ; SOURCE LINE # 143
+00EE         ?C0015:
+                                           ; SOURCE LINE # 144
+00EE E4                CLR     A
+00EF 7F24              MOV     R7,#024H
+00F1         ?C0180:
+                                           ; SOURCE LINE # 145
+                                           ; SOURCE LINE # 146
+                                           ; SOURCE LINE # 147
+00F1 803A              SJMP    ?C0192
+                                           ; SOURCE LINE # 148
+00F3         ?C0016:
+                                           ; SOURCE LINE # 149
+00F3 E4                CLR     A
+00F4 7F25              MOV     R7,#025H
+00F6         ?C0181:
+                                           ; SOURCE LINE # 150
+                                           ; SOURCE LINE # 151
+                                           ; SOURCE LINE # 152
+00F6 8035              SJMP    ?C0192
+                                           ; SOURCE LINE # 153
+00F8         ?C0017:
+                                           ; SOURCE LINE # 154
+00F8 E4                CLR     A
+00F9 7F26              MOV     R7,#026H
+00FB         ?C0182:
+                                           ; SOURCE LINE # 155
+                                           ; SOURCE LINE # 156
+                                           ; SOURCE LINE # 157
+00FB 8030              SJMP    ?C0192
+                                           ; SOURCE LINE # 158
+00FD         ?C0018:
+                                           ; SOURCE LINE # 159
+00FD E4                CLR     A
+00FE 7F27              MOV     R7,#027H
+0100         ?C0183:
+                                           ; SOURCE LINE # 160
+                                           ; SOURCE LINE # 161
+                                           ; SOURCE LINE # 162
+0100 802B              SJMP    ?C0192
+                                           ; SOURCE LINE # 163
+0102         ?C0019:
+                                           ; SOURCE LINE # 164
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 22  
+
+0102 E4                CLR     A
+0103 7F28              MOV     R7,#028H
+0105         ?C0184:
+                                           ; SOURCE LINE # 165
+                                           ; SOURCE LINE # 166
+                                           ; SOURCE LINE # 167
+0105 8026              SJMP    ?C0192
+                                           ; SOURCE LINE # 168
+0107         ?C0020:
+                                           ; SOURCE LINE # 169
+0107 E4                CLR     A
+0108 7F29              MOV     R7,#029H
+010A         ?C0185:
+                                           ; SOURCE LINE # 170
+                                           ; SOURCE LINE # 171
+                                           ; SOURCE LINE # 172
+010A 8021              SJMP    ?C0192
+                                           ; SOURCE LINE # 180
+010C         ?C0021:
+                                           ; SOURCE LINE # 181
+010C E4                CLR     A
+010D 7F34              MOV     R7,#034H
+010F         ?C0186:
+                                           ; SOURCE LINE # 182
+                                           ; SOURCE LINE # 183
+                                           ; SOURCE LINE # 184
+010F 801C              SJMP    ?C0192
+                                           ; SOURCE LINE # 185
+0111         ?C0022:
+                                           ; SOURCE LINE # 186
+0111 E4                CLR     A
+0112 7F35              MOV     R7,#035H
+0114         ?C0187:
+                                           ; SOURCE LINE # 187
+                                           ; SOURCE LINE # 188
+                                           ; SOURCE LINE # 189
+0114 8017              SJMP    ?C0192
+                                           ; SOURCE LINE # 195
+0116         ?C0023:
+                                           ; SOURCE LINE # 196
+0116 E4                CLR     A
+0117 7F43              MOV     R7,#043H
+0119         ?C0188:
+                                           ; SOURCE LINE # 197
+                                           ; SOURCE LINE # 198
+                                           ; SOURCE LINE # 199
+0119 8012              SJMP    ?C0192
+                                           ; SOURCE LINE # 220
+011B         ?C0024:
+                                           ; SOURCE LINE # 221
+011B E4                CLR     A
+011C 7F71              MOV     R7,#071H
+011E         ?C0189:
+                                           ; SOURCE LINE # 222
+                                           ; SOURCE LINE # 223
+                                           ; SOURCE LINE # 224
+011E 800D              SJMP    ?C0192
+                                           ; SOURCE LINE # 225
+0120         ?C0025:
+                                           ; SOURCE LINE # 226
+0120 E4                CLR     A
+0121 7F72              MOV     R7,#072H
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 23  
+
+0123         ?C0190:
+                                           ; SOURCE LINE # 227
+                                           ; SOURCE LINE # 228
+                                           ; SOURCE LINE # 229
+0123 8008              SJMP    ?C0192
+                                           ; SOURCE LINE # 230
+0125         ?C0026:
+                                           ; SOURCE LINE # 231
+0125 E4                CLR     A
+0126 7F73              MOV     R7,#073H
+0128         ?C0191:
+                                           ; SOURCE LINE # 232
+                                           ; SOURCE LINE # 233
+                                           ; SOURCE LINE # 234
+0128 8003              SJMP    ?C0192
+                                           ; SOURCE LINE # 235
+012A         ?C0027:
+                                           ; SOURCE LINE # 236
+012A E4                CLR     A
+012B 7F74              MOV     R7,#074H
+012D         ?C0192:
+012D 110000      R     ACALL   L?0227
+0130 7B01              MOV     R3,#01H
+0132 7A0A              MOV     R2,#0AH
+0134 7D21              MOV     R5,#021H
+0136 7F68              MOV     R7,#068H
+0138 110000      E     ACALL   _WriteI2C_multi
+                                           ; SOURCE LINE # 237
+013B E4                CLR     A
+013C 7F10              MOV     R7,#010H
+013E 110000      R     ACALL   L?0227
+0141 7A0A              MOV     R2,#0AH
+0143 110000      R     ACALL   L?0228
+0146 110000      E     ACALL   _WriteI2C_multi
+                                           ; SOURCE LINE # 238
+                                           ; SOURCE LINE # 239
+0149 800F              SJMP    ?C0193
+                                           ; SOURCE LINE # 244
+                                           ; SOURCE LINE # 246
+                                           ; SOURCE LINE # 247
+                                           ; SOURCE LINE # 248
+                                           ; SOURCE LINE # 249
+014B         ?C0030:
+                                           ; SOURCE LINE # 252
+014B 7B00        R     MOV     R3,#MBYTE ?SC_164
+014D 7A00        R     MOV     R2,#HIGH ?SC_164
+014F 7900        R     MOV     R1,#LOW ?SC_164
+0151 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 254
+0154 E4                CLR     A
+0155 90000000    E     MOV     DPTR,#global_CEC_flag
+0159 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 256
+015A         ?C0193:
+015A 90000000    R     MOV     DPTR,#ret
+015E 74FF              MOV     A,#0FFH
+0160 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 258
+0161 8009              SJMP    ?C0004
+                                           ; SOURCE LINE # 259
+                                           ; SOURCE LINE # 260
+                                           ; SOURCE LINE # 261
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 24  
+
+                                           ; SOURCE LINE # 263
+                                           ; SOURCE LINE # 265
+0163         ?C0033:
+                                           ; SOURCE LINE # 266
+0163 7B00        R     MOV     R3,#MBYTE ?SC_179
+0165 7A00        R     MOV     R2,#HIGH ?SC_179
+0167 7900        R     MOV     R1,#LOW ?SC_179
+0169 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 267
+                                           ; SOURCE LINE # 269
+                                           ; SOURCE LINE # 270
+                                           ; SOURCE LINE # 272
+                                           ; SOURCE LINE # 273
+                                           ; SOURCE LINE # 275
+016C         ?C0004:
+                                           ; SOURCE LINE # 276
+016C         ?C0169:
+016C         ?C0170:
+016C 90000000    R     MOV     DPTR,#ret
+0170 E0                MOVX    A,@DPTR
+0171 FF                MOV     R7,A
+                                           ; SOURCE LINE # 277
+0172         ?C0002:
+0172 22                RET     
+             ; FUNCTION _ActionRemoEP907M (END)
+
+             ; FUNCTION _ActionGridRemo (BEGIN)
+                                           ; SOURCE LINE # 285
+0000 90000000    R     MOV     DPTR,#_RemoDataCode
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 286
+                                           ; SOURCE LINE # 287
+0006 BF2004            CJNE    R7,#020H,?C0036
+                                           ; SOURCE LINE # 288
+0009 7F02              MOV     R7,#02H
+                                           ; SOURCE LINE # 289
+000B 8034              SJMP    ?C0197
+                                           ; SOURCE LINE # 290
+000D         ?C0036:
+                                           ; SOURCE LINE # 291
+000D 90000000    R     MOV     DPTR,#_RemoDataCode
+0011 E0                MOVX    A,@DPTR
+0012 B42104            CJNE    A,#021H,?C0039
+                                           ; SOURCE LINE # 292
+0015 7F03              MOV     R7,#03H
+0017         ?C0194:
+                                           ; SOURCE LINE # 293
+0017 8028              SJMP    ?C0197
+                                           ; SOURCE LINE # 294
+0019         ?C0039:
+                                           ; SOURCE LINE # 295
+0019 90000000    R     MOV     DPTR,#_RemoDataCode
+001D E0                MOVX    A,@DPTR
+001E B41104            CJNE    A,#011H,?C0041
+                                           ; SOURCE LINE # 296
+0021 7F04              MOV     R7,#04H
+0023         ?C0195:
+                                           ; SOURCE LINE # 297
+0023 801C              SJMP    ?C0197
+                                           ; SOURCE LINE # 298
+0025         ?C0041:
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 25  
+
+                                           ; SOURCE LINE # 299
+0025 90000000    R     MOV     DPTR,#_RemoDataCode
+0029 E0                MOVX    A,@DPTR
+002A B41004            CJNE    A,#010H,?C0043
+                                           ; SOURCE LINE # 300
+002D 7F05              MOV     R7,#05H
+002F         ?C0196:
+                                           ; SOURCE LINE # 301
+002F 8010              SJMP    ?C0197
+                                           ; SOURCE LINE # 302
+0031         ?C0043:
+                                           ; SOURCE LINE # 303
+0031 90000000    R     MOV     DPTR,#_RemoDataCode
+0035 E0                MOVX    A,@DPTR
+0036 FF                MOV     R7,A
+0037 643F              XRL     A,#03FH
+0039 6004              JZ      ?C0046
+003B EF                MOV     A,R7
+003C B41608            CJNE    A,#016H,?C0038
+003F         ?C0046:
+                                           ; SOURCE LINE # 304
+003F 7F01              MOV     R7,#01H
+0041         ?C0197:
+0041 110000      E     ACALL   _TaskSetGridCmd
+                                           ; SOURCE LINE # 305
+0044 7FFF              MOV     R7,#0FFH
+0046 22                RET     
+                                           ; SOURCE LINE # 306
+0047         ?C0038:
+                                           ; SOURCE LINE # 307
+0047 90000000    R     MOV     DPTR,#_RemoDataCode
+004B E0                MOVX    A,@DPTR
+004C FF                MOV     R7,A
+                                           ; SOURCE LINE # 308
+004D         ?C0037:
+004D 22                RET     
+             ; FUNCTION _ActionGridRemo (END)
+
+             ; FUNCTION _ActionRemo_SOsdMenu (BEGIN)
+                                           ; SOURCE LINE # 310
+;---- Variable '_RemoDataCode' assigned to Register 'R7' ----
+;---- Variable 'AutoKey' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 311
+                                           ; SOURCE LINE # 312
+0000 90000000    R     MOV     DPTR,#value
+0004 ED                MOV     A,R5
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 313
+0006 A3                INC     DPTR
+0007 EF                MOV     A,R7
+0008 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 315
+0009 24F0              ADD     A,#0F0H
+000B 6025              JZ      ?C0052
+000D 14                DEC     A
+000E 6026              JZ      ?C0053
+0010 24FC              ADD     A,#0FCH
+0012 6014              JZ      ?C0049
+0014 14                DEC     A
+0015 602A              JZ      ?C0055
+0017 24F6              ADD     A,#0F6H
+0019 600F              JZ      ?C0050
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 26  
+
+001B 14                DEC     A
+001C 6010              JZ      ?C0051
+001E 24E2              ADD     A,#0E2H
+0020 6006              JZ      ?C0049
+0022 2407              ADD     A,#07H
+0024 7033              JNZ     ?C0047
+                                           ; SOURCE LINE # 316
+0026         ?C0048:
+                                           ; SOURCE LINE # 317
+                                           ; SOURCE LINE # 318
+0026 802A              SJMP    ?C0198
+                                           ; SOURCE LINE # 319
+0028         ?C0049:
+                                           ; SOURCE LINE # 320
+                                           ; SOURCE LINE # 321
+                                           ; SOURCE LINE # 322
+0028 8010              SJMP    ?C0199
+                                           ; SOURCE LINE # 323
+002A         ?C0050:
+                                           ; SOURCE LINE # 324
+002A 7F02              MOV     R7,#02H
+                                           ; SOURCE LINE # 325
+                                           ; SOURCE LINE # 326
+002C 800E              SJMP    ?C0203
+                                           ; SOURCE LINE # 327
+002E         ?C0051:
+                                           ; SOURCE LINE # 328
+002E 7F03              MOV     R7,#03H
+0030         ?C0200:
+                                           ; SOURCE LINE # 329
+                                           ; SOURCE LINE # 330
+0030 800A              SJMP    ?C0203
+                                           ; SOURCE LINE # 331
+0032         ?C0052:
+                                           ; SOURCE LINE # 332
+0032 7F05              MOV     R7,#05H
+0034         ?C0201:
+                                           ; SOURCE LINE # 333
+                                           ; SOURCE LINE # 334
+0034 8006              SJMP    ?C0203
+                                           ; SOURCE LINE # 335
+0036         ?C0053:
+                                           ; SOURCE LINE # 336
+0036 7F04              MOV     R7,#04H
+0038         ?C0202:
+                                           ; SOURCE LINE # 337
+                                           ; SOURCE LINE # 338
+0038 8002              SJMP    ?C0203
+                                           ; SOURCE LINE # 339
+003A         ?C0199:
+003A 7F01              MOV     R7,#01H
+003C         ?C0203:
+003C 110000      E     ACALL   _MenuKeyInput
+                                           ; SOURCE LINE # 341
+                                           ; SOURCE LINE # 342
+003F 8011              SJMP    ?C0204
+                                           ; SOURCE LINE # 343
+0041         ?C0055:
+                                           ; SOURCE LINE # 344
+0041 110000      E     ACALL   MenuGetLevel
+0044 EF                MOV     A,R7
+0045 D3                SETB    C
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 27  
+
+0046 9401              SUBB    A,#01H
+0048 4005              JC      ?C0056
+                                           ; SOURCE LINE # 345
+004A 110000      E     ACALL   proc_menu_list_return
+004D 8003              SJMP    ?C0057
+004F         ?C0056:
+                                           ; SOURCE LINE # 347
+004F 110000      E     ACALL   MenuEnd
+0052         ?C0057:
+                                           ; SOURCE LINE # 348
+0052         ?C0198:
+0052         ?C0204:
+0052 90000000    R     MOV     DPTR,#ret
+0056 74FF              MOV     A,#0FFH
+0058 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 349
+                                           ; SOURCE LINE # 350
+0059         ?C0047:
+                                           ; SOURCE LINE # 351
+0059 90000000    R     MOV     DPTR,#ret
+005D E0                MOVX    A,@DPTR
+005E FF                MOV     R7,A
+                                           ; SOURCE LINE # 352
+005F         ?C0058:
+005F 22                RET     
+             ; FUNCTION _ActionRemo_SOsdMenu (END)
+
+             ; FUNCTION _ActionRemo (BEGIN)
+                                           ; SOURCE LINE # 362
+0000 90000000    R     MOV     DPTR,#_RemoDataCode
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 ED                MOV     A,R5
+0008 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 363
+                                           ; SOURCE LINE # 366
+0009 110000      E     ACALL   UpdateOsdTimerClock
+                                           ; SOURCE LINE # 369
+000C 110000      E     ACALL   TaskGetGrid
+000F EF                MOV     A,R7
+0010 600F              JZ      ?C0059
+                                           ; SOURCE LINE # 370
+0012 110000      R     ACALL   L?0229
+0015 110000      R     ACALL   _ActionGridRemo
+0018 110000      R     ACALL   L?0231
+                                           ; SOURCE LINE # 371
+001B BFFF03            CJNE    R7,#0FFH,?C0059
+                                           ; SOURCE LINE # 372
+001E 7F00              MOV     R7,#00H
+0020 22                RET     
+                                           ; SOURCE LINE # 374
+0021         ?C0059:
+                                           ; SOURCE LINE # 377
+0021 110000      E     ACALL   MenuGetLevel
+0024 EF                MOV     A,R7
+0025 7016              JNZ     ?C0062
+0027 110000      R     ACALL   L?0229
+002A 643F              XRL     A,#03FH
+002C 600F              JZ      ?C0062
+                                           ; SOURCE LINE # 379
+002E A3                INC     DPTR
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 28  
+
+002F E0                MOVX    A,@DPTR
+0030 FD                MOV     R5,A
+0031 110000      R     ACALL   _ActionRemoEP907M
+0034 110000      R     ACALL   L?0231
+                                           ; SOURCE LINE # 380
+0037 BFFF03            CJNE    R7,#0FFH,?C0062
+                                           ; SOURCE LINE # 381
+003A 7F00              MOV     R7,#00H
+003C 22                RET     
+                                           ; SOURCE LINE # 383
+003D         ?C0062:
+                                           ; SOURCE LINE # 385
+003D 110000      E     ACALL   MenuGetLevel
+0040 EF                MOV     A,R7
+0041 6012              JZ      ?C0064
+                                           ; SOURCE LINE # 387
+0043 110000      R     ACALL   L?0230
+0046 A3                INC     DPTR
+0047 E0                MOVX    A,@DPTR
+0048 FD                MOV     R5,A
+0049 110000      R     ACALL   _ActionRemo_SOsdMenu
+004C 110000      R     ACALL   L?0232
+                                           ; SOURCE LINE # 388
+004F BFFF03            CJNE    R7,#0FFH,?C0064
+                                           ; SOURCE LINE # 389
+0052 7F00              MOV     R7,#00H
+0054 22                RET     
+                                           ; SOURCE LINE # 391
+0055         ?C0064:
+                                           ; SOURCE LINE # 393
+0055 90000000    R     MOV     DPTR,#_RemoDataCode
+0059 E0                MOVX    A,@DPTR
+005A 110000      E     ACALL   ?C?CCASE
+005D 0000        R     DW      ?C0067
+005F 0C                DB      0CH
+0060 0000        R     DW      ?C0088
+0062 10                DB      010H
+0063 0000        R     DW      ?C0089
+0065 11                DB      011H
+0066 0000        R     DW      ?C0092
+0068 16                DB      016H
+0069 0000        R     DW      ?C0086
+006B 20                DB      020H
+006C 0000        R     DW      ?C0087
+006E 21                DB      021H
+006F 0000        R     DW      ?C0093
+0071 25                DB      025H
+0072 0000        R     DW      ?C0101
+0074 28                DB      028H
+0075 0000        R     DW      ?C0097
+0077 33                DB      033H
+0078 0000        R     DW      ?C0070
+007A 38                DB      038H
+007B 0000        R     DW      ?C0071
+007D 3A                DB      03AH
+007E 0000        R     DW      ?C0090
+0080 3F                DB      03FH
+0081 0000              DW      00H
+0083 0000        R     DW      ?C0066
+                                           ; SOURCE LINE # 395
+0085         ?C0067:
+                                           ; SOURCE LINE # 396
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 29  
+
+0085 90000000    R     MOV     DPTR,#AutoKey
+0089 E0                MOVX    A,@DPTR
+008A 7F00              MOV     R7,#00H
+008C 7003              JNZ     $ + 5H
+008E 010000      R     AJMP    ?C0061
+                                           ; SOURCE LINE # 397
+0091 7F04              MOV     R7,#04H
+0093         ?C0068:
+                                           ; SOURCE LINE # 398
+0093 22                RET     
+                                           ; SOURCE LINE # 400
+                                           ; SOURCE LINE # 410
+                                           ; SOURCE LINE # 412
+0094         ?C0070:
+                                           ; SOURCE LINE # 417
+0094 110000      E     ACALL   InputModeNext
+                                           ; SOURCE LINE # 419
+0097 010000      R     AJMP    ?C0066
+                                           ; SOURCE LINE # 420
+009A         ?C0071:
+                                           ; SOURCE LINE # 421
+009A 110000      E     ACALL   MenuGetLevel
+009D EF                MOV     A,R7
+009E 7026              JNZ     ?C0072
+                                           ; SOURCE LINE # 423
+00A0 110000      E     ACALL   TaskNoSignal_getCmd
+00A3 EF                MOV     A,R7
+00A4 7020              JNZ     ?C0072
+                                           ; SOURCE LINE # 427
+00A6 759300      E     MOV     DPX,#?C?XDATASEG
+00A9 E500        E     MOV     A,regTW88+01H
+00AB 2410              ADD     A,#010H
+00AD F582              MOV     DPL,A
+00AF E500        E     MOV     A,regTW88
+00B1 3403              ADDC    A,#03H
+00B3 F583              MOV     DPH,A
+00B5 759300      E     MOV     DPX,#?C?XDATASEG
+00B8 E0                MOVX    A,@DPTR
+00B9 20E705            JB      ACC.7,?C0074
+                                           ; SOURCE LINE # 428
+00BC E4                CLR     A
+00BD FF                MOV     R7,A
+00BE 110000      E     ACALL   _FOsdCopyMsgBuff2Osdram
+                                           ; SOURCE LINE # 429
+00C1         ?C0074:
+                                           ; SOURCE LINE # 430
+00C1 E4                CLR     A
+00C2 FF                MOV     R7,A
+00C3 110000      E     ACALL   _FOsdWinToggleEnable
+                                           ; SOURCE LINE # 432
+                                           ; SOURCE LINE # 433
+00C6         ?C0072:
+                                           ; SOURCE LINE # 434
+00C6 7F01              MOV     R7,#01H
+00C8 22                RET     
+                                           ; SOURCE LINE # 436
+                                           ; SOURCE LINE # 437
+                                           ; SOURCE LINE # 438
+                                           ; SOURCE LINE # 439
+                                           ; SOURCE LINE # 440
+                                           ; SOURCE LINE # 441
+                                           ; SOURCE LINE # 442
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 30  
+
+                                           ; SOURCE LINE # 443
+                                           ; SOURCE LINE # 444
+                                           ; SOURCE LINE # 445
+                                           ; SOURCE LINE # 446
+                                           ; SOURCE LINE # 449
+                                           ; SOURCE LINE # 455
+                                           ; SOURCE LINE # 457
+00C9         ?C0086:
+                                           ; SOURCE LINE # 462
+00C9 7B00        R     MOV     R3,#MBYTE ?SC_203
+00CB 7A00        R     MOV     R2,#HIGH ?SC_203
+00CD 7900        R     MOV     R1,#LOW ?SC_203
+                                           ; SOURCE LINE # 464
+00CF 010000      R     AJMP    ?C0210
+                                           ; SOURCE LINE # 465
+00D2         ?C0087:
+                                           ; SOURCE LINE # 470
+00D2 7B00        R     MOV     R3,#MBYTE ?SC_227
+00D4 7A00        R     MOV     R2,#HIGH ?SC_227
+00D6 7900        R     MOV     R1,#LOW ?SC_227
+00D8         ?C0206:
+                                           ; SOURCE LINE # 472
+00D8 010000      R     AJMP    ?C0210
+                                           ; SOURCE LINE # 473
+00DB         ?C0088:
+                                           ; SOURCE LINE # 485
+00DB 7B00        R     MOV     R3,#MBYTE ?SC_251
+00DD 7A00        R     MOV     R2,#HIGH ?SC_251
+00DF 7900        R     MOV     R1,#LOW ?SC_251
+00E1         ?C0207:
+                                           ; SOURCE LINE # 487
+00E1 807D              SJMP    ?C0210
+                                           ; SOURCE LINE # 488
+00E3         ?C0089:
+                                           ; SOURCE LINE # 500
+00E3 7B00        R     MOV     R3,#MBYTE ?SC_275
+00E5 7A00        R     MOV     R2,#HIGH ?SC_275
+00E7 7900        R     MOV     R1,#LOW ?SC_275
+00E9         ?C0208:
+                                           ; SOURCE LINE # 502
+00E9 8075              SJMP    ?C0210
+                                           ; SOURCE LINE # 503
+00EB         ?C0090:
+                                           ; SOURCE LINE # 504
+00EB 7B00        R     MOV     R3,#MBYTE ?SC_299
+00ED 7A00        R     MOV     R2,#HIGH ?SC_299
+00EF 7900        R     MOV     R1,#LOW ?SC_299
+00F1 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 517
+00F4 110000      E     ACALL   MenuGetLevel
+00F7 EF                MOV     A,R7
+00F8 7069              JNZ     ?C0066
+                                           ; SOURCE LINE # 518
+00FA 110000      E     ACALL   MenuStart
+                                           ; SOURCE LINE # 520
+00FD 8064              SJMP    ?C0066
+                                           ; SOURCE LINE # 523
+00FF         ?C0092:
+                                           ; SOURCE LINE # 524
+00FF 7B00        R     MOV     R3,#MBYTE ?SC_141
+0101 7A00        R     MOV     R2,#HIGH ?SC_141
+0103 7900        R     MOV     R1,#LOW ?SC_141
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 31  
+
+0105         ?C0209:
+                                           ; SOURCE LINE # 530
+0105 8059              SJMP    ?C0210
+                                           ; SOURCE LINE # 532
+0107         ?C0093:
+                                           ; SOURCE LINE # 533
+0107 7B00        R     MOV     R3,#MBYTE ?SC_322
+0109 7A00        R     MOV     R2,#HIGH ?SC_322
+010B 7900        R     MOV     R1,#LOW ?SC_322
+010D 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 535
+0110 90000000    E     MOV     DPTR,#InputMain
+0114 E0                MOVX    A,@DPTR
+0115 FF                MOV     R7,A
+0116 6405              XRL     A,#05H
+0118 6005              JZ      ?C0095
+011A EF                MOV     A,R7
+011B 6406              XRL     A,#06H
+011D 7044              JNZ     ?C0066
+011F         ?C0095:
+                                           ; SOURCE LINE # 536
+011F 7B00        R     MOV     R3,#MBYTE ?SC_348
+0121 7A00        R     MOV     R2,#HIGH ?SC_348
+0123 7900        R     MOV     R1,#LOW ?SC_348
+0125 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 539
+0128 90000000    E     MOV     DPTR,#global_CEC_flag
+012C 7401              MOV     A,#01H
+012E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 540
+                                           ; SOURCE LINE # 542
+012F 8032              SJMP    ?C0066
+                                           ; SOURCE LINE # 544
+                                           ; SOURCE LINE # 545
+                                           ; SOURCE LINE # 546
+0131         ?C0097:
+                                           ; SOURCE LINE # 548
+0131 90000000    E     MOV     DPTR,#InputMain
+0135 E0                MOVX    A,@DPTR
+0136 6407              XRL     A,#07H
+0138 7029              JNZ     ?C0066
+                                           ; SOURCE LINE # 549
+013A 110000      R     ACALL   L?0224
+013D E0                MOVX    A,@DPTR
+013E 90000000    R     MOV     DPTR,#value
+0142 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 550
+0143 E0                MOVX    A,@DPTR
+0144 30E604            JNB     ACC.6,?C0099
+0147 54BF              ANL     A,#0BFH
+0149 8007              SJMP    ?C0205
+014B         ?C0099:
+                                           ; SOURCE LINE # 551
+014B 90000000    R     MOV     DPTR,#value
+014F E0                MOVX    A,@DPTR
+0150 4440              ORL     A,#040H
+0152         ?C0205:
+0152 FF                MOV     R7,A
+0153 110000      R     ACALL   L?0224
+0156 EF                MOV     A,R7
+0157 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 552
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 32  
+
+                                           ; SOURCE LINE # 553
+0158 8009              SJMP    ?C0066
+                                           ; SOURCE LINE # 555
+015A         ?C0101:
+                                           ; SOURCE LINE # 556
+015A 7B00        R     MOV     R3,#MBYTE ?SC_179
+015C 7A00        R     MOV     R2,#HIGH ?SC_179
+015E 7900        R     MOV     R1,#LOW ?SC_179
+0160         ?C0210:
+0160 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 557
+                                           ; SOURCE LINE # 559
+                                           ; SOURCE LINE # 560
+                                           ; SOURCE LINE # 563
+                                           ; SOURCE LINE # 564
+                                           ; SOURCE LINE # 566
+                                           ; SOURCE LINE # 567
+                                           ; SOURCE LINE # 569
+                                           ; SOURCE LINE # 570
+                                           ; SOURCE LINE # 572
+                                           ; SOURCE LINE # 573
+                                           ; SOURCE LINE # 575
+                                           ; SOURCE LINE # 576
+                                           ; SOURCE LINE # 578
+0163         ?C0066:
+                                           ; SOURCE LINE # 579
+0163 7F01              MOV     R7,#01H
+                                           ; SOURCE LINE # 580
+0165         ?C0061:
+0165 22                RET     
+             ; FUNCTION _ActionRemo (END)
+
+             ; FUNCTION ActionTouch (BEGIN)
+                                           ; SOURCE LINE # 588
+                                           ; SOURCE LINE # 589
+                                           ; SOURCE LINE # 598
+0000 110000      E     ACALL   UpdateOsdTimerClock
+                                           ; SOURCE LINE # 600
+0003 90000000    E     MOV     DPTR,#TouchStatus
+0007 E0                MOVX    A,@DPTR
+0008 90000000    R     MOV     DPTR,#TscStatus
+000C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 601
+000D 90000000    E     MOV     DPTR,#PosX
+0011 E0                MOVX    A,@DPTR
+0012 FF                MOV     R7,A
+0013 A3                INC     DPTR
+0014 E0                MOVX    A,@DPTR
+0015 90000000    R     MOV     DPTR,#xpos
+0019 CF                XCH     A,R7
+001A F0                MOVX    @DPTR,A
+001B A3                INC     DPTR
+001C EF                MOV     A,R7
+001D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 602
+001E 90000000    E     MOV     DPTR,#PosY
+0022 E0                MOVX    A,@DPTR
+0023 FF                MOV     R7,A
+0024 A3                INC     DPTR
+0025 E0                MOVX    A,@DPTR
+0026 90000000    R     MOV     DPTR,#ypos
+002A CF                XCH     A,R7
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 33  
+
+002B F0                MOVX    @DPTR,A
+002C A3                INC     DPTR
+002D EF                MOV     A,R7
+002E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 604
+002F 110000      E     ACALL   MenuGetLevel
+0032 EF                MOV     A,R7
+0033 7049              JNZ     ?C0108
+                                           ; SOURCE LINE # 606
+0035 110000      E     ACALL   TaskGetGrid
+0038 EF                MOV     A,R7
+0039 6013              JZ      ?C0109
+                                           ; SOURCE LINE # 607
+003B 110000      R     ACALL   L?0225
+003E 6401              XRL     A,#01H
+0040 6004              JZ      ?C0111
+0042 EF                MOV     A,R7
+0043 B40208            CJNE    A,#02H,?C0109
+0046         ?C0111:
+                                           ; SOURCE LINE # 608
+                                           ; SOURCE LINE # 609
+0046 7F01              MOV     R7,#01H
+0048 110000      E     ACALL   _TaskSetGridCmd
+                                           ; SOURCE LINE # 610
+004B 7F00              MOV     R7,#00H
+004D 22                RET     
+                                           ; SOURCE LINE # 611
+                                           ; SOURCE LINE # 612
+004E         ?C0109:
+                                           ; SOURCE LINE # 613
+004E 90000000    R     MOV     DPTR,#TscStatus
+0052 E0                MOVX    A,@DPTR
+0053 B40205            CJNE    A,#02H,?C0113
+                                           ; SOURCE LINE # 614
+0056 110000      E     ACALL   MenuStart
+                                           ; SOURCE LINE # 615
+                                           ; SOURCE LINE # 616
+0059 801B              SJMP    ?C0212
+005B         ?C0113:
+                                           ; SOURCE LINE # 617
+005B 110000      R     ACALL   L?0225
+005E 6480              XRL     A,#080H
+0060 6019              JZ      ?C0114
+0062 EF                MOV     A,R7
+0063 C3                CLR     C
+0064 94C0              SUBB    A,#0C0H
+0066 5013              JNC     ?C0114
+                                           ; SOURCE LINE # 618
+0068         ?C0115:
+                                           ; SOURCE LINE # 619
+0068 EF                MOV     A,R7
+0069 B44002            CJNE    A,#040H,?C0118
+                                           ; SOURCE LINE # 620
+006C         ?C0211:
+                                           ; SOURCE LINE # 621
+006C 8008              SJMP    ?C0212
+006E         ?C0118:
+                                           ; SOURCE LINE # 622
+006E 90000000    R     MOV     DPTR,#TscStatus
+0072 E0                MOVX    A,@DPTR
+0073 B40105            CJNE    A,#01H,?C0114
+                                           ; SOURCE LINE # 623
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 34  
+
+0076         ?C0212:
+0076 E4                CLR     A
+0077 FF                MOV     R7,A
+0078 110000      E     ACALL   _SetTouchStatus
+                                           ; SOURCE LINE # 624
+007B         ?C0114:
+                                           ; SOURCE LINE # 626
+007B 7F00              MOV     R7,#00H
+007D 22                RET     
+                                           ; SOURCE LINE # 627
+007E         ?C0108:
+                                           ; SOURCE LINE # 630
+007E 110000      R     ACALL   L?0226
+0081 6480              XRL     A,#080H
+0083 6006              JZ      ?C0122
+0085 EF                MOV     A,R7
+0086 C3                CLR     C
+0087 94C0              SUBB    A,#0C0H
+0089 4022              JC      ?C0121
+008B         ?C0122:
+                                           ; SOURCE LINE # 632
+008B 110000      E     ACALL   MenuIsTouchCalibMode
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 633
+008E EF                MOV     A,R7
+008F 6016              JZ      ?C0123
+                                           ; SOURCE LINE # 634
+0091 C3                CLR     C
+0092 9401              SUBB    A,#01H
+0094 FF                MOV     R7,A
+0095 110000      E     ACALL   _CalibTouch
+                                           ; SOURCE LINE # 636
+0098 7F01              MOV     R7,#01H
+009A 110000      E     ACALL   _MenuKeyInput
+                                           ; SOURCE LINE # 638
+009D 110000      E     ACALL   WaitTouchButtonUp
+                                           ; SOURCE LINE # 639
+00A0 E4                CLR     A
+00A1 FF                MOV     R7,A
+00A2 110000      E     ACALL   _SetTouchStatus
+                                           ; SOURCE LINE # 640
+00A5 8003              SJMP    ?C0124
+00A7         ?C0123:
+                                           ; SOURCE LINE # 646
+                                           ; SOURCE LINE # 650
+00A7 110000      R     ACALL   L?0222
+                                           ; SOURCE LINE # 652
+00AA         ?C0124:
+                                           ; SOURCE LINE # 653
+00AA 7F00              MOV     R7,#00H
+00AC 22                RET     
+                                           ; SOURCE LINE # 654
+00AD         ?C0121:
+                                           ; SOURCE LINE # 658
+00AD 110000      R     ACALL   L?0226
+00B0 6401              XRL     A,#01H
+00B2 600F              JZ      ?C0127
+00B4 EF                MOV     A,R7
+00B5 6402              XRL     A,#02H
+00B7 600A              JZ      ?C0127
+00B9 EF                MOV     A,R7
+00BA 6404              XRL     A,#04H
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 35  
+
+00BC 6005              JZ      ?C0127
+00BE EF                MOV     A,R7
+00BF 6440              XRL     A,#040H
+00C1 7031              JNZ     ?C0125
+00C3         ?C0127:
+                                           ; SOURCE LINE # 661
+00C3 90000000    R     MOV     DPTR,#TscStatus
+00C7 E0                MOVX    A,@DPTR
+00C8 B40413            CJNE    A,#04H,?C0128
+                                           ; SOURCE LINE # 662
+00CB 110000      E     ACALL   MenuGetLevel
+00CE EF                MOV     A,R7
+00CF 6401              XRL     A,#01H
+00D1 6006              JZ      ?C0130
+00D3 110000      E     ACALL   MenuIsSystemPage
+00D6 EF                MOV     A,R7
+00D7 6005              JZ      ?C0128
+00D9         ?C0130:
+                                           ; SOURCE LINE # 665
+00D9 110000      E     ACALL   MenuTouchCalibStart
+                                           ; SOURCE LINE # 666
+                                           ; SOURCE LINE # 667
+00DC 800E              SJMP    ?C0213
+                                           ; SOURCE LINE # 668
+                                           ; SOURCE LINE # 669
+00DE         ?C0128:
+                                           ; SOURCE LINE # 671
+00DE 90000000    R     MOV     DPTR,#TscStatus
+00E2 E0                MOVX    A,@DPTR
+00E3 B44003            CJNE    A,#040H,?C0131
+                                           ; SOURCE LINE # 672
+00E6 7401              MOV     A,#01H
+00E8 F0                MOVX    @DPTR,A
+00E9         ?C0131:
+                                           ; SOURCE LINE # 674
+00E9 110000      R     ACALL   L?0222
+                                           ; SOURCE LINE # 675
+00EC         ?C0213:
+00EC E4                CLR     A
+00ED FF                MOV     R7,A
+00EE 110000      E     ACALL   _SetTouchStatus
+                                           ; SOURCE LINE # 676
+00F1 7F00              MOV     R7,#00H
+00F3 22                RET     
+                                           ; SOURCE LINE # 677
+00F4         ?C0125:
+                                           ; SOURCE LINE # 678
+00F4 7B00        R     MOV     R3,#MBYTE ?SC_362
+00F6 7A00        R     MOV     R2,#HIGH ?SC_362
+00F8 7900        R     MOV     R1,#LOW ?SC_362
+00FA 90000000    R     MOV     DPTR,#TscStatus
+00FE E0                MOVX    A,@DPTR
+00FF 90000000    E     MOV     DPTR,#?_ePrintf?BYTE+03H
+0103 F0                MOVX    @DPTR,A
+0104 110000      E     ACALL   _ePrintf
+                                           ; SOURCE LINE # 680
+0107 7F01              MOV     R7,#01H
+                                           ; SOURCE LINE # 681
+0109         ?C0112:
+0109 22                RET     
+010A         L?0222:
+010A 90000000    R     MOV     DPTR,#TscStatus
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 36  
+
+010E E0                MOVX    A,@DPTR
+010F FF                MOV     R7,A
+0110 A3                INC     DPTR
+0111 E0                MOVX    A,@DPTR
+0112 FC                MOV     R4,A
+0113 A3                INC     DPTR
+0114 E0                MOVX    A,@DPTR
+0115 FD                MOV     R5,A
+0116 A3                INC     DPTR
+0117 E0                MOVX    A,@DPTR
+0118 FA                MOV     R2,A
+0119 A3                INC     DPTR
+011A E0                MOVX    A,@DPTR
+011B FB                MOV     R3,A
+011C 110000      E     ACALL   _MenuCheckTouchInput
+011F 22                RET     
+             ; FUNCTION ActionTouch (END)
+
+             ; FUNCTION CheckKeyIn (BEGIN)
+                                           ; SOURCE LINE # 690
+                                           ; SOURCE LINE # 691
+                                           ; SOURCE LINE # 700
+0000 7F01              MOV     R7,#01H
+0002 110000      E     ACALL   _GetKey
+0005 90000000    R     MOV     DPTR,#key
+0009 EF                MOV     A,R7
+000A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 701
+000B 701C              JNZ     ?C0132
+                                           ; SOURCE LINE # 703
+000D 90000000    E     MOV     DPTR,#SW_key
+0011 E0                MOVX    A,@DPTR
+0012 FF                MOV     R7,A
+0013 600B              JZ      ?C0133
+                                           ; SOURCE LINE # 704
+0015 90000000    R     MOV     DPTR,#key
+0019 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 705
+001A E4                CLR     A
+001B 90000000    E     MOV     DPTR,#SW_key
+001F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 706
+0020         ?C0133:
+                                           ; SOURCE LINE # 707
+0020 90000000    R     MOV     DPTR,#key
+0024 E0                MOVX    A,@DPTR
+0025 7002              JNZ     ?C0132
+                                           ; SOURCE LINE # 708
+0027 FF                MOV     R7,A
+0028 22                RET     
+                                           ; SOURCE LINE # 709
+0029         ?C0132:
+                                           ; SOURCE LINE # 714
+0029 110000      E     ACALL   UpdateOsdTimerClock
+                                           ; SOURCE LINE # 729
+002C 110000      E     ACALL   TaskGetGrid
+002F EF                MOV     A,R7
+0030 6031              JZ      ?C0136
+                                           ; SOURCE LINE # 730
+0032 90000000    R     MOV     DPTR,#key
+0036 E0                MOVX    A,@DPTR
+0037 24FE              ADD     A,#0FEH
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 37  
+
+0039 6014              JZ      ?C0139
+003B 14                DEC     A
+003C 601D              JZ      ?C0143
+003E 14                DEC     A
+003F 6016              JZ      ?C0141
+0041 14                DEC     A
+0042 600F              JZ      ?C0140
+0044 14                DEC     A
+0045 6014              JZ      ?C0143
+0047 2405              ADD     A,#05H
+0049 7015              JNZ     ?C0137
+                                           ; SOURCE LINE # 731
+004B         ?C0138:
+                                           ; SOURCE LINE # 732
+004B 7F05              MOV     R7,#05H
+                                           ; SOURCE LINE # 733
+004D 800E              SJMP    ?C0217
+                                           ; SOURCE LINE # 734
+004F         ?C0139:
+                                           ; SOURCE LINE # 735
+004F 7F02              MOV     R7,#02H
+0051         ?C0214:
+                                           ; SOURCE LINE # 736
+0051 800A              SJMP    ?C0217
+                                           ; SOURCE LINE # 737
+0053         ?C0140:
+                                           ; SOURCE LINE # 738
+0053 7F04              MOV     R7,#04H
+0055         ?C0215:
+                                           ; SOURCE LINE # 739
+0055 8006              SJMP    ?C0217
+                                           ; SOURCE LINE # 740
+0057         ?C0141:
+                                           ; SOURCE LINE # 741
+0057 7F03              MOV     R7,#03H
+0059         ?C0216:
+                                           ; SOURCE LINE # 742
+0059 8002              SJMP    ?C0217
+                                           ; SOURCE LINE # 743
+                                           ; SOURCE LINE # 744
+005B         ?C0143:
+                                           ; SOURCE LINE # 745
+005B 7F01              MOV     R7,#01H
+005D         ?C0217:
+005D 110000      E     ACALL   _TaskSetGridCmd
+                                           ; SOURCE LINE # 746
+                                           ; SOURCE LINE # 747
+0060         ?C0137:
+                                           ; SOURCE LINE # 748
+0060 7F00              MOV     R7,#00H
+0062 22                RET     
+                                           ; SOURCE LINE # 749
+0063         ?C0136:
+                                           ; SOURCE LINE # 752
+0063 90000000    R     MOV     DPTR,#key
+0067 E0                MOVX    A,@DPTR
+0068 24FE              ADD     A,#0FEH
+006A 601A              JZ      ?C0148
+006C 14                DEC     A
+006D 6021              JZ      ?C0151
+006F 14                DEC     A
+0070 6037              JZ      ?C0157
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 38  
+
+0072 14                DEC     A
+0073 602A              JZ      ?C0154
+0075 14                DEC     A
+0076 603E              JZ      ?C0160
+0078 2405              ADD     A,#05H
+007A 7048              JNZ     ?C0144
+                                           ; SOURCE LINE # 753
+007C         ?C0145:
+                                           ; SOURCE LINE # 762
+007C 110000      E     ACALL   MenuGetLevel
+007F EF                MOV     A,R7
+0080 6042              JZ      ?C0144
+                                           ; SOURCE LINE # 763
+0082 7F05              MOV     R7,#05H
+0084 802B              SJMP    ?C0221
+                                           ; SOURCE LINE # 766
+                                           ; SOURCE LINE # 771
+                                           ; SOURCE LINE # 772
+                                           ; SOURCE LINE # 774
+0086         ?C0148:
+                                           ; SOURCE LINE # 781
+0086 110000      E     ACALL   MenuGetLevel
+0089 EF                MOV     A,R7
+008A 6038              JZ      ?C0144
+                                           ; SOURCE LINE # 782
+008C 7F02              MOV     R7,#02H
+008E         ?C0218:
+008E 8021              SJMP    ?C0221
+                                           ; SOURCE LINE # 785
+                                           ; SOURCE LINE # 787
+                                           ; SOURCE LINE # 788
+                                           ; SOURCE LINE # 790
+0090         ?C0151:
+                                           ; SOURCE LINE # 827
+0090 110000      E     ACALL   MenuGetLevel
+0093 EF                MOV     A,R7
+0094 7005              JNZ     ?C0152
+                                           ; SOURCE LINE # 828
+0096 110000      E     ACALL   MenuStart
+0099 8029              SJMP    ?C0144
+009B         ?C0152:
+                                           ; SOURCE LINE # 830
+009B 7F01              MOV     R7,#01H
+009D         ?C0219:
+                                           ; SOURCE LINE # 832
+009D 8012              SJMP    ?C0221
+                                           ; SOURCE LINE # 834
+009F         ?C0154:
+                                           ; SOURCE LINE # 843
+009F 110000      E     ACALL   MenuGetLevel
+00A2 EF                MOV     A,R7
+00A3 601F              JZ      ?C0144
+                                           ; SOURCE LINE # 844
+00A5 7F04              MOV     R7,#04H
+00A7         ?C0220:
+00A7 8008              SJMP    ?C0221
+                                           ; SOURCE LINE # 847
+                                           ; SOURCE LINE # 852
+                                           ; SOURCE LINE # 853
+                                           ; SOURCE LINE # 855
+00A9         ?C0157:
+                                           ; SOURCE LINE # 862
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 39  
+
+00A9 110000      E     ACALL   MenuGetLevel
+00AC EF                MOV     A,R7
+00AD 6015              JZ      ?C0144
+                                           ; SOURCE LINE # 863
+00AF 7F03              MOV     R7,#03H
+00B1         ?C0221:
+00B1 110000      E     ACALL   _MenuKeyInput
+00B4 800E              SJMP    ?C0144
+                                           ; SOURCE LINE # 866
+                                           ; SOURCE LINE # 868
+                                           ; SOURCE LINE # 869
+                                           ; SOURCE LINE # 871
+00B6         ?C0160:
+                                           ; SOURCE LINE # 872
+00B6 110000      E     ACALL   MenuGetLevel
+00B9 EF                MOV     A,R7
+00BA 6005              JZ      ?C0161
+                                           ; SOURCE LINE # 873
+00BC 110000      E     ACALL   MenuEnd
+00BF 8003              SJMP    ?C0144
+00C1         ?C0161:
+                                           ; SOURCE LINE # 875
+00C1 110000      E     ACALL   InputModeNext
+                                           ; SOURCE LINE # 876
+                                           ; SOURCE LINE # 877
+00C4         ?C0144:
+                                           ; SOURCE LINE # 878
+00C4 90000000    R     MOV     DPTR,#previous_key1
+00C8 E0                MOVX    A,@DPTR
+00C9 90000000    R     MOV     DPTR,#previous_key0
+00CD F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 879
+00CE 90000000    R     MOV     DPTR,#key
+00D2 E0                MOVX    A,@DPTR
+00D3 90000000    R     MOV     DPTR,#previous_key1
+00D7 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 881
+00D8 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 882
+00DA         ?C0135:
+00DA 22                RET     
+             ; FUNCTION CheckKeyIn (END)
+
+             ; FUNCTION _CheckHumanInputs (BEGIN)
+                                           ; SOURCE LINE # 897
+0000 90000000    R     MOV     DPTR,#skip_tsc
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 898
+                                           ; SOURCE LINE # 915
+0006 E4                CLR     A
+0007 90000000    R     MOV     DPTR,#ret
+000B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 917
+000C 90000000    E     MOV     DPTR,#?_IsRemoDataReady?BYTE+03H
+0010 7400        R     MOV     A,#MBYTE AutoKey
+0012 F0                MOVX    @DPTR,A
+0013 A3                INC     DPTR
+0014 7400        R     MOV     A,#HIGH AutoKey
+0016 F0                MOVX    @DPTR,A
+0017 A3                INC     DPTR
+0018 7400        R     MOV     A,#LOW AutoKey
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 40  
+
+001A F0                MOVX    @DPTR,A
+001B 7B00        R     MOV     R3,#MBYTE _RemoDataCode
+001D 7A00        R     MOV     R2,#HIGH _RemoDataCode
+001F 7900        R     MOV     R1,#LOW _RemoDataCode
+0021 110000      E     ACALL   _IsRemoDataReady
+0024 EF                MOV     A,R7
+0025 6003              JZ      ?C0163
+                                           ; SOURCE LINE # 924
+0027 7F01              MOV     R7,#01H
+0029 22                RET     
+                                           ; SOURCE LINE # 925
+002A         ?C0163:
+                                           ; SOURCE LINE # 937
+002A 110000      E     ACALL   ReadKeyPad
+002D EF                MOV     A,R7
+002E 6003              JZ      ?C0165
+                                           ; SOURCE LINE # 939
+0030 7F02              MOV     R7,#02H
+0032 22                RET     
+                                           ; SOURCE LINE # 940
+0033         ?C0165:
+                                           ; SOURCE LINE # 946
+0033 90000000    R     MOV     DPTR,#skip_tsc
+0037 E0                MOVX    A,@DPTR
+0038 700E              JNZ     ?C0166
+                                           ; SOURCE LINE # 952
+003A 110000      E     ACALL   GetTouch2
+003D 90000000    R     MOV     DPTR,#ret
+0041 EF                MOV     A,R7
+0042 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 953
+0043 6003              JZ      ?C0166
+                                           ; SOURCE LINE # 954
+0045 7F03              MOV     R7,#03H
+0047 22                RET     
+                                           ; SOURCE LINE # 955
+0048         ?C0166:
+                                           ; SOURCE LINE # 961
+0048 110000      E     ACALL   RS_ready
+004B EF                MOV     A,R7
+004C 7F00              MOV     R7,#00H
+004E 6002              JZ      ?C0168
+                                           ; SOURCE LINE # 963
+0050 7F04              MOV     R7,#04H
+                                           ; SOURCE LINE # 964
+0052         ?C0168:
+                                           ; SOURCE LINE # 965
+                                           ; SOURCE LINE # 966
+0052         ?C0164:
+0052 22                RET     
+             ; FUNCTION _CheckHumanInputs (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1549    ----
+   CONSTANT SIZE    =    387    ----
+   XDATA SIZE       =      2      18
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+C51 COMPILER V9.56.0.0   HID                                                               07/18/2018 10:44:37 PAGE 41  
+
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

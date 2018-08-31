@@ -1,0 +1,575 @@
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE INIT
+OBJECT MODULE PLACED IN .\Output\init.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source\app\init.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\Outp
+                    -ut\TW8836B_EVB11.ORC) BROWSE INCDIR(.\source\app;.\source\common;.\source\drv;.\source\HW;.\source\utils;.\source\test) 
+                    -DEFINE(EVB_11,nullFn=//) DEBUG CODE PRINT(.\List\init.lst) TABS(2) OBJECT(.\Output\init.obj)
+
+line level    source
+
+   1          /*
+   2          TW8836 MCU --DP80390XP compatible--
+   3          
+   4          Cache 256 Bytes
+   5          XDATA   2KByte
+   6          
+   7                                          CFFF+-----------+
+   8                                              |  Chip     |
+   9                                              |  Register |
+  10              FF+---------------------+   0C00+-----------+
+  11                | Internal |    SFR   |       |           |
+  12                |   RAM    |          |       |  unused   |
+  13              7F+----------+----------+   0800+-----------+
+  14                |     Internal        |       |  Data     |
+  15                |       RAM           |       |  Memory   |
+  16              00+---------------------+   0000+-----------+
+  17                  IDATA        DATA
+  18          
+  19          
+  20              00~07  Reg. Bank0
+  21              08~0F  Reg. Bank1
+  22              10~17  Reg. Bank2
+  23              18~1F  Reg. Bank3
+  24              20~27  Bit 00~3F
+  25              28~2F  Bit 40~7F
+  26              30~7F  General User RAM & Stack Space
+  27          
+  28          Register Bank
+  29              By default, register bank0 us used.
+  30              Interrupt use register bank1,2,3.
+  31              Tip.If Interrupt does not use, code can use these as data memory.
+  32          Bit memory
+  33              Use SETB, CLR commands
+  34          
+  35          SFR memory
+  36          
+  37          TW8836B SFR  MAP------------
+  38             -0-   -1-   -2-   -3-   -4-   -5-   -6-   -7-   
+  39          80:P0    SP    DPL0  DPH0  DPL1  DPH1  DPS   PCON  
+  40          88:TCON  TMOD  TL0   TL1   TH0   TH1   CKCON ..... 
+  41          90:P1    EXIF  _WTST _DPX0 ..... _DPX1 ..... ..... 
+  42          98:SCON0 SBUF0 BANK  ..... CACHE ACON  FIFO0 FIFO1 
+  43          A0:P2    ..... ..... ..... ..... ..... ..... ..... 
+  44          A8:IE    ..... ..... ..... ..... ..... ..... ..... 
+  45          B0:P3    ..... ..... ..... ..... ..... ..... ..... 
+  46          B8:IP    ..... ..... ..... ..... ..... ..... ..... 
+  47          C0:SCON1 SBUF1 CCL1  CCH1  CCL2  CCH2  CCL3  CCH3  
+  48          C8:T2CON T2IF  RLDL  RLDH  TL2   TH2   CCEN  ..... 
+  49          D0:PSW   ..... ..... ..... ..... ..... ..... ..... 
+  50          D8:WDCON ..... ..... ..... ..... ..... ..... ..... 
+  51          E0:ACC   ..... CAMC  ..... ..... ..... ..... ..... 
+  52          E8:EIE   STAT  _MXAX TA    ..... ..... ..... ..... 
+  53          F0:B     ..... ..... ..... ..... ..... ..... ..... 
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 2   
+
+  54          F8:EIP   ..... E2IF  E2IE  E2IP  E2IM  E2IT  .....
+  55          
+  56          StackPointer:
+  57              It starts from 07h in startup.
+  58              On start up code, it use below.
+  59                  IF PBPSTACK <> 0
+  60                  EXTRN DATA (?C_PBP)
+  61                          MOV     ?C_PBP,#LOW PBPSTACKTOP
+  62                  ENDIF
+  63                          MOV     SP,#?STACK-1
+  64                          LJMP    ?C_START
+  65              After reset, the stack pointer is initialized to 07h. The stack will 
+  66              start growing up from address 8h.
+  67              The Keil C compiler uses internal DATA memory for your variables and also 
+  68              allows you to use register banks 1, 2, and 3. If the stack pointer were not 
+  69              adjusted, calls to functions and interrupts would overwrite your variables.
+  70              Therefore, the last thing the startup code does is to set the stack pointer 
+  71              to the end of all your internal DATA variables.
+  72          
+  73          Interrupt
+  74          # bank name  enable prio   flag    Port func    description
+  75          -- -  ----   ----   ----   ----    ---- -----   -----------
+  76          0  1  EX0    IE.0   IP.0   IE0     P2.0 ext0_   chip interrupt. ->video ISR.
+  77          1  1  ET0    IE.1   IP.1   TF0          timer0_ time tick
+  78          2  1  EX1  IE.2   IP.2   IE1     P2.1 ext1_   DE(data enable) end.
+  79          3  1  ET1  IE.3   IP.3   TF1          timer1_ ->touch.
+  80          4  2  ES0    IE.4   IP.4   RI/TI        uart0_  uart0.
+  81          5  1  ET2  IE.5   IP.5   T2IF         timer2_ ->remo sampling
+  82          6  1  ES1    IE.6   IP.6   RI1/TI1      uart1_
+  83          7  1  EINT2  EIE.0  EIP.0  EIF.0   P2.2 ext2_   DMA done.
+  84          8  1  EINT3  EIE.1  EIP.1  EIF.1   P2.3 ext3_   Touch_Ready interrupt.
+  85          9  1  EINT4  EIE.2  EIP.2  EIF.2        ext4_   xram 7FF access by I2C.
+  86          10 1  EINT5  EIE.3  EIP.3  EIF.3        ext5_   
+  87          11 1  EINT6  EIE.4  EIP.4  EIF.4   P2.4 ext6_   Touch_Pen interrupt.
+  88          12 3  EWDI   EIE.5  EIP.5          WDIF watchdog_
+  89          13 1  EINT7  E2IE.0 E2IP.0 E2IF.0  P1.0 ext7_   Programable. P1.0 Pin60
+  90          14 1  EINT8  E2IE.1 E2IP.1 E2IF.1  P1.1 ext8_   Programable. P1.1 Pin61
+  91          15 1  EINT9  E2IE.2 E2IP.2 E2IF.2  P1.2 ext9_   Programable. P1.2 Pin62
+  92          16 1  EINT10 E2IE.3 E2IP.3 E2IF.3  P1.3 ext10_  Programable. P1.3 Pin63
+  93          17 1  EINT11 E2IE.4 E2IP.4 E2IF.4  P1.4 ext11_  Programable. P1.4 Pin87  ->remo activate
+  94          18 1  EINT12 E2IE.5 E2IP.5 E2IF.5  P1.5 ext12_  Programable. P1.5 Pin86
+  95          19 1  EINT13 E2IE.6 E2IP.6 E2IF.6  P1.6 ext13_  Programable. P1.6 Pin114
+  96          20 1  EINT14 E2IE.7 E2IP.7 E2IF.7  P1.7 ext14_  Programable. P1.7 Pin115
+  97          
+  98          Interrupt Polling Sequence
+  99          EX0 ET0 EX1 ET1 ES ...
+ 100          The "using" function attribute is used to select a register bank 
+ 101          
+ 102          */
+ 103          #include "HWconf.h"
+ 104          
+ 105          volatile BYTE XDATA *DATA regTW88 = REG_START_ADDRESS;
+ 106          
+ 107          
+ 108          //*****************************************************************************
+ 109          //      UART 0 Interrupt                                                   
+ 110          //*****************************************************************************
+ 111          
+ 112          DATA  BYTE  RS_buf[RS_BUF_MAX];
+ 113          DATA  BYTE  RS_in=0;
+ 114          DATA  BYTE  RS_out=0;
+ 115          bit   RS_Xbusy=0;
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 3   
+
+ 116          
+ 117          
+ 118          //=============================================================================
+ 119          //                               
+ 120          //=============================================================================
+ 121          /**
+ 122          * 1ms delay
+ 123          *
+ 124          * tic_pc will be increased every 1 timer0 interrupt that based 1ms.
+ 125          * tic_pc: 0~0xffff and will not increased after 0xffff.
+ 126          * @param cnt_1ms have to less then 65536. max 65sec delay
+ 127          *
+ 128          * tic_pc uses WORD size. It is not an automic. It needs SFRB_EA.
+ 129          */
+ 130          DATA  WORD    tic_pc=0;
+ 131          void delay1ms(WORD cnt_1ms)
+ 132          {
+ 133   1        volatile WORD temp_tic_pc;
+ 134   1        SFRB_ET0 = 0;
+ 135   1        tic_pc = 0;               //clear
+ 136   1        SFRB_ET0 = 1;
+ 137   1        do {
+ 138   2          SFRB_ET0=0;
+ 139   2          temp_tic_pc = tic_pc;       //read
+ 140   2          SFRB_ET0=1;
+ 141   2        } while(temp_tic_pc < cnt_1ms);     //compare
+ 142   1      }
+ 143          
+ 144          //=============================================================================
+ 145          //    Serial RX                              
+ 146          //=============================================================================
+ 147          /**
+ 148          * get Rx data
+ 149          */
+ 150          BYTE RS_rx(void)
+ 151          {
+ 152   1        BYTE  ret;
+ 153   1      
+ 154   1        SFRB_ES = 0;
+ 155   1      
+ 156   1        ret = RS_buf[RS_out];
+ 157   1        RS_out++;
+ 158   1        if(RS_out >= RS_BUF_MAX) 
+ 159   1          RS_out = 0;
+ 160   1      
+ 161   1        SFRB_ES = 1;
+ 162   1      
+ 163   1        return ret;
+ 164   1      }
+ 165          
+ 166          /**
+ 167          * check Serial RX
+ 168          *
+ 169          * @return
+ 170          * 1:something to read.  0:empty.
+ 171          * 
+ 172          */
+ 173          BYTE RS_ready(void)
+ 174          {
+ 175   1        if( RS_in == RS_out ) return 0;
+ 176   1        else return 1;
+ 177   1      }
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 4   
+
+ 178          /**
+ 179          * send Tx
+ 180          */
+ 181          void RS_tx(BYTE tx_buf)
+ 182          {
+ 183   1        while(RS_Xbusy);
+ 184   1        SFRB_ES = 0;
+ 185   1        SFR_SBUF = tx_buf;
+ 186   1        RS_Xbusy=1;
+ 187   1        SFRB_ES = 1;
+ 188   1      }
+ 189          BYTE InitCpu()
+ 190          {
+ 191   1      /*----------HW-start-----------*/
+ 192   1        //初始化UART-115200-8-1-non
+ 193   1        
+ 194   1        //初始化定时器 时心跳时钟
+ 195   1        
+ 196   1        //初始化IO口
+ 197   1        
+ 198   1      /*----------HW-end-------------*/
+ 199   1        
+ 200   1      /*----------Drv-start----------*/
+ 201   1        
+ 202   1      /*----------Drv-end------------*/
+ 203   1        
+ 204   1      /*----------App-start----------*/
+ 205   1      /*----------App-end------------*/
+ 206   1        //  
+ 207   1        //  
+ 208   1        //  
+ 209   1        //  
+ 210   1        //  
+ 211   1        //  
+ 212   1        TWBASE = 0x00;          // Base address of TW88xx
+ 213   1        SFR_CAMC = 1;         // Chip Access Mode Control. E2[0]=1b:16bit mode
+ 214   1        
+ 215   1          WriteTW88(REG4E2, 0x69);    // Timer0 Divider : for systick
+ 216   1          WriteTW88(REG4E3, 0x78);    // 27M/27000 = 1ms  
+ 217   1          
+ 218   1          WriteTW88(REG4E4, 0x01);    // Timer1 Divider : 
+ 219   1          WriteTW88(REG4E5, 0x0E);    // 27M/270 = 10us 
+ 220   1      
+ 221   1          WriteTW88(REG084,ReadTW88(REG084)|0x02);  //GPIO 4x Enable      - GPIO41 enable
+ 222   1          WriteTW88(REG08C,ReadTW88(REG09C)| 0x02); //GPIO 4x direction   - GPIO41 output
+ 223   1          WriteTW88(REG094,ReadTW88(REG094)| 0x02); //GPIO 4x output data - GPIO41 outdata as 1.
+ 224   1        //---------- Initialize interrupt -------------
+ 225   1          SFR_CKCON = 0x00;   // Clock control register     
+ 226   1                              // 0000 0000
+ 227   1                              // |||| |||+-- MD0 \.
+ 228   1                              // |||| ||+--- MD1  > MD[2:0] Stretch RD/WR timing
+ 229   1                              // |||| |+---- MD2 /
+ 230   1                              // |||| +----- T0M:  Timer0 Pre-Divider 0=div by 12,  1=div by 4
+ 231   1                              // |||+------- T1M:  Timer1 Pre-Divider 0=div by 12,  1=div by 4
+ 232   1                              // ||+-------- ---
+ 233   1                              // |+--------- WD0 \ Watchdong Timeout Period
+ 234   1                              // +---------- WD1 / 00=2^17,  01=2^20,  10=2^23,  11=2^26
+ 235   1      
+ 236   1          SFR_TMOD = 0x66;    // 0110 0110
+ 237   1                              // |||| ||||   << Timer 0 >>
+ 238   1                              // |||| |||+-- M0 \  00= 8bit timer,counter /32  01= 16bit timer,counter
+ 239   1                              // |||| ||+--- M1 /  10= 8bit auto reload        11= 8bit timer,counter
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 5   
+
+ 240   1                              // |||| |+---- CT:   0=Timer Mode,    1=Counter Mode
+ 241   1                              // |||| +----- GATE: 0=GATE not used, 1=GATE used
+ 242   1                              // ||||        << Timer 1 >>
+ 243   1                              // |||+------- M0 \  00= 8bit timer,counter /32  01= 16bit timer,counter
+ 244   1                              // ||+-------- M1 /  10= 8bit auto reload        11= 8bit timer,counter
+ 245   1                              // |+--------- CT:   0=Timer Mode,    1=Counter Mode
+ 246   1                              // +---------- GATE: 0=GATE not used, 1=GATE used
+ 247   1      
+ 248   1          SFR_TCON = 0x50;    // 0101 0101
+ 249   1                              // |||| |||+-- IT0:  INT0 Trigger 0=level, 1=edge
+ 250   1                              // |||| ||+--- IE0:  INT0 Interrupt Flag
+ 251   1                              // |||| |+---- IT1:  INT1 Trigger 0=level, 1=edge
+ 252   1                              // |||| +----- IE1:  INT1 Interrupt Flag
+ 253   1                              // |||+------- TR0:  Timer0 Run 
+ 254   1                              // ||+-------- TF0:  Timer0 Flag
+ 255   1                              // |+--------- TR1:  Timer1 Run
+ 256   1                              // +---------- TF0:  Timer1 Flag
+ 257   1      
+ 258   1        SFR_TH0 = 0xF6;     // 10 * 1ms = 10ms once interrupt time0
+ 259   1        SFR_TL0 = 0xF6;     //
+ 260   1        
+ 261   1        SFR_TH1 = 0x9C;     // 100cycle * 10uS/cycle = 1ms once interrupt
+ 262   1        SFR_TL1 = 0x9C;
+ 263   1      
+ 264   1      //  SFR_T2CON = 0x12;   // 0001 0010 
+ 265   1      //              // |||| |||+-- T2I0 \ Timer2 Input Selection 
+ 266   1      //              // |||| ||+--- T2I1 / 00=No,  01=Timer,  10=Counter, 11=Gate
+ 267   1      //              // |||| |+---- T2CM:  Compare mode
+ 268   1      //              // |||| +----- T2R0 \ Timer2 Reload Mode 
+ 269   1      //              // |||+------- T2R1 / 00=No,  01=No,     10=Auto,    11=pin T2EX
+ 270   1      //              // ||+-------- ---
+ 271   1      //              // |+--------- I3FR: Timer2 Compare0 Interrupt Edge...
+ 272   1      //              // +---------- T2PS: Timer2 Prescaler
+ 273   1      //        
+ 274   1      //  SFR_TH2 = 0xff;         // 0xFF2E = 0x10000-0xD2 = 0x10000-210. 
+ 275   1      //  SFR_TL2 = 0x2e;         // it means 210 usec interval. 
+ 276   1      
+ 277   1        SFR_PCON = 0xc0;    // 1100 0000
+ 278   1                            // |||| |||+-- PMM:  Power Management Mode 0=Disable,  1=Enable
+ 279   1                            // |||| ||+--- STOP: Stop Mode             0=Disable,  1=Enable
+ 280   1                            // |||| |+---- SWB:  Switch Back from STOP 0=Disable,  1=Enable
+ 281   1                            // |||| +----- ---
+ 282   1                            // |||+------- PWE:  (Program write Enable)
+ 283   1                            // ||+-------- ---
+ 284   1                            // |+--------- SMOD1:UART1 Double baudrate bit
+ 285   1                            // +---------- SMOD0:UART0 Double baudrate bit
+ 286   1      
+ 287   1        SFR_SCON = 0x50;    // 0101 0000
+ 288   1                            // |||| |||+-- RI:   Receive Interrupt Flag
+ 289   1                            // |||| ||+--- TI:   Transmit Interrupt Flag
+ 290   1                            // |||| |+---- RB08: 9th RX data
+ 291   1                            // |||| +----- TB08: 9th TX data
+ 292   1                            // |||+------- REN:  Enable Serial Reception
+ 293   1                            // ||+-------- SMO2: Enable Multiprocessor communication
+ 294   1                            // |+--------- SM01 \   Baudrate Mode
+ 295   1                            // +---------- SM00 / 00=f/12,  01=8bit var,  10=9bit,f/32,f/64,  11=9bit var
+ 296   1      
+ 297   1        SFR_IE   = 0x1A;    // 0001 1010 interrupt enable
+ 298   1                            // |||| |||+ EX0    : Chip Interrupt. I will enable it later.
+ 299   1                            // |||| ||+- ET0    : Timer0    System Tic
+ 300   1                            // |||| |+-- EX1    : DE End
+ 301   1                            // |||| +--- ET1    : timer1 - touch
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 6   
+
+ 302   1                            // |||+----- ES     : UART0
+ 303   1                            // ||+------ ET2    : timer2 - remocon
+ 304   1                            // |+------- ES1    : UART1
+ 305   1                            // +-------- EA     : Global Interrupt. I will enable it below.
+ 306   1                                  
+ 307   1        SFR_UART0FIFO = 0x80; //          : UART0 FIFO
+ 308   1      
+ 309   1      
+ 310   1      //  InitCore();
+ 311   1        return OK;
+ 312   1      }
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 7   
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com000E (BEGIN)
+0000         L?0015:
+0000         L?0016:
+0000 F582              MOV     DPL,A
+0002 E500        R     MOV     A,regTW88
+0004 3404              ADDC    A,#04H
+0006 F583              MOV     DPH,A
+0008 759300      E     MOV     DPX,#?C?XDATASEG
+000B 22                RET     
+000C         L?0017:
+000C         L?0018:
+000C F582              MOV     DPL,A
+000E E4                CLR     A
+000F 3500        R     ADDC    A,regTW88
+0011 F583              MOV     DPH,A
+0013 759300      E     MOV     DPX,#?C?XDATASEG
+0016 22                RET     
+0017         L?0019:
+0017         L?0020:
+0017 F0                MOVX    @DPTR,A
+0018 759300      E     MOV     DPX,#?C?XDATASEG
+001B E500        R     MOV     A,regTW88+01H
+001D 22                RET     
+             ; FUNCTION Com000E (END)
+
+             ; FUNCTION _delay1ms (BEGIN)
+                                           ; SOURCE LINE # 131
+;---- Variable 'cnt_1ms' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 132
+                                           ; SOURCE LINE # 134
+0000 C2A9              CLR     SFRB_ET0
+                                           ; SOURCE LINE # 135
+0002 E4                CLR     A
+0003 F500        R     MOV     tic_pc,A
+0005 F500        R     MOV     tic_pc+01H,A
+                                           ; SOURCE LINE # 136
+0007 D2A9              SETB    SFRB_ET0
+0009         ?C0003:
+                                           ; SOURCE LINE # 137
+                                           ; SOURCE LINE # 138
+0009 C2A9              CLR     SFRB_ET0
+                                           ; SOURCE LINE # 139
+000B 90000000    R     MOV     DPTR,#temp_tic_pc
+000F E500        R     MOV     A,tic_pc
+0011 F0                MOVX    @DPTR,A
+0012 A3                INC     DPTR
+0013 E500        R     MOV     A,tic_pc+01H
+0015 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 140
+0016 D2A9              SETB    SFRB_ET0
+                                           ; SOURCE LINE # 141
+0018 C3                CLR     C
+0019 90000000    R     MOV     DPTR,#temp_tic_pc+01H
+001D E0                MOVX    A,@DPTR
+001E 9F                SUBB    A,R7
+001F 90000000    R     MOV     DPTR,#temp_tic_pc
+0023 E0                MOVX    A,@DPTR
+0024 9E                SUBB    A,R6
+0025 40E2              JC      ?C0003
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 8   
+
+                                           ; SOURCE LINE # 142
+0027 22                RET     
+             ; FUNCTION _delay1ms (END)
+
+             ; FUNCTION RS_rx (BEGIN)
+                                           ; SOURCE LINE # 150
+                                           ; SOURCE LINE # 151
+                                           ; SOURCE LINE # 154
+0000 C2AC              CLR     SFRB_ES
+                                           ; SOURCE LINE # 156
+0002 7400        R     MOV     A,#LOW RS_buf
+0004 2500        R     ADD     A,RS_out
+0006 F8                MOV     R0,A
+0007 E6                MOV     A,@R0
+0008 FF                MOV     R7,A
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 157
+0009 0500        R     INC     RS_out
+                                           ; SOURCE LINE # 158
+000B E500        R     MOV     A,RS_out
+000D C3                CLR     C
+000E 9420              SUBB    A,#020H
+0010 4003              JC      ?C0005
+                                           ; SOURCE LINE # 159
+0012 E4                CLR     A
+0013 F500        R     MOV     RS_out,A
+0015         ?C0005:
+                                           ; SOURCE LINE # 161
+0015 D2AC              SETB    SFRB_ES
+                                           ; SOURCE LINE # 163
+                                           ; SOURCE LINE # 164
+0017         ?C0006:
+0017 22                RET     
+             ; FUNCTION RS_rx (END)
+
+             ; FUNCTION RS_ready (BEGIN)
+                                           ; SOURCE LINE # 173
+                                           ; SOURCE LINE # 174
+                                           ; SOURCE LINE # 175
+0000 E500        R     MOV     A,RS_in
+0002 7F01              MOV     R7,#01H
+0004 B50002            CJNE    A,RS_out,?C0007
+0007 7F00              MOV     R7,#00H
+0009         ?C0007:
+                                           ; SOURCE LINE # 176
+                                           ; SOURCE LINE # 177
+0009         ?C0008:
+0009 22                RET     
+             ; FUNCTION RS_ready (END)
+
+             ; FUNCTION _RS_tx (BEGIN)
+                                           ; SOURCE LINE # 181
+;---- Variable 'tx_buf' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 182
+0000         ?C0010:
+                                           ; SOURCE LINE # 183
+0000 2000FD            JB      RS_Xbusy,?C0010
+0003         ?C0011:
+                                           ; SOURCE LINE # 184
+0003 C2AC              CLR     SFRB_ES
+                                           ; SOURCE LINE # 185
+0005 8F99              MOV     SFR_SBUF,R7
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 9   
+
+                                           ; SOURCE LINE # 186
+0007 D200        R     SETB    RS_Xbusy
+                                           ; SOURCE LINE # 187
+0009 D2AC              SETB    SFRB_ES
+                                           ; SOURCE LINE # 188
+000B 22                RET     
+             ; FUNCTION _RS_tx (END)
+
+             ; FUNCTION InitCpu (BEGIN)
+                                           ; SOURCE LINE # 189
+                                           ; SOURCE LINE # 190
+                                           ; SOURCE LINE # 212
+0000 E4                CLR     A
+0001 F59A              MOV     TWBASE,A
+                                           ; SOURCE LINE # 213
+0003 75E201            MOV     SFR_CAMC,#01H
+                                           ; SOURCE LINE # 215
+0006 759300      E     MOV     DPX,#?C?XDATASEG
+0009 E500        R     MOV     A,regTW88+01H
+000B 24E2              ADD     A,#0E2H
+000D 110000      R     ACALL   L?0015
+0010 7469              MOV     A,#069H
+                                           ; SOURCE LINE # 216
+0012 110000      R     ACALL   L?0019
+0015 24E3              ADD     A,#0E3H
+0017 110000      R     ACALL   L?0015
+001A 7478              MOV     A,#078H
+                                           ; SOURCE LINE # 218
+001C 110000      R     ACALL   L?0019
+001F 24E4              ADD     A,#0E4H
+0021 110000      R     ACALL   L?0016
+0024 7401              MOV     A,#01H
+                                           ; SOURCE LINE # 219
+0026 110000      R     ACALL   L?0020
+0029 24E5              ADD     A,#0E5H
+002B 110000      R     ACALL   L?0016
+002E 740E              MOV     A,#0EH
+                                           ; SOURCE LINE # 221
+0030 110000      R     ACALL   L?0020
+0033 2484              ADD     A,#084H
+0035 110000      R     ACALL   L?0017
+0038 E0                MOVX    A,@DPTR
+0039 4402              ORL     A,#02H
+                                           ; SOURCE LINE # 222
+003B 110000      R     ACALL   L?0020
+003E 249C              ADD     A,#09CH
+0040 110000      R     ACALL   L?0017
+0043 E0                MOVX    A,@DPTR
+0044 4402              ORL     A,#02H
+0046 FF                MOV     R7,A
+0047 759300      E     MOV     DPX,#?C?XDATASEG
+004A E500        R     MOV     A,regTW88+01H
+004C 248C              ADD     A,#08CH
+004E 110000      R     ACALL   L?0018
+0051 EF                MOV     A,R7
+                                           ; SOURCE LINE # 223
+0052 110000      R     ACALL   L?0020
+0055 2494              ADD     A,#094H
+0057 110000      R     ACALL   L?0018
+005A E0                MOVX    A,@DPTR
+005B 4402              ORL     A,#02H
+005D F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 10  
+
+                                           ; SOURCE LINE # 225
+005E E4                CLR     A
+005F F58E              MOV     SFR_CKCON,A
+                                           ; SOURCE LINE # 236
+0061 758966            MOV     SFR_TMOD,#066H
+                                           ; SOURCE LINE # 248
+0064 758850            MOV     SFR_TCON,#050H
+                                           ; SOURCE LINE # 258
+0067 758CF6            MOV     SFR_TH0,#0F6H
+                                           ; SOURCE LINE # 259
+006A 758AF6            MOV     SFR_TL0,#0F6H
+                                           ; SOURCE LINE # 261
+006D 758D9C            MOV     SFR_TH1,#09CH
+                                           ; SOURCE LINE # 262
+0070 758B9C            MOV     SFR_TL1,#09CH
+                                           ; SOURCE LINE # 277
+0073 7587C0            MOV     SFR_PCON,#0C0H
+                                           ; SOURCE LINE # 287
+0076 759850            MOV     SFR_SCON,#050H
+                                           ; SOURCE LINE # 297
+0079 75A81A            MOV     SFR_IE,#01AH
+                                           ; SOURCE LINE # 307
+007C 759E80            MOV     SFR_UART0FIFO,#080H
+                                           ; SOURCE LINE # 311
+007F 7FFF              MOV     R7,#0FFH
+                                           ; SOURCE LINE # 312
+0081         ?C0013:
+0081 22                RET     
+             ; FUNCTION InitCpu (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    246    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----       2
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =     38    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

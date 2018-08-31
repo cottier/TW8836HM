@@ -1,0 +1,2698 @@
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE I2C
+OBJECT MODULE PLACED IN .\Output\i2c.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source36\i2c.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\Output\
+                    -TW8836B_EVB11.ORC) BROWSE INCDIR(SiI-SW;SiI-SW\HAL;SiI-SW\DEBUG;SiI-SW\CEC;.\Source36\LIB) DEFINE(EVB_11,nullFn=//) DEBU
+                    -G CODE PRINT(.\List\i2c.lst) TABS(2) OBJECT(.\Output\i2c.obj)
+
+line level    source
+
+   1          /**
+   2           * @file
+   3           * i2c.c
+   4           * @author Brian Kang
+   5           * @version 1.0
+   6           * @section LICENSE
+   7           *  Copyright (C) 2011~2012 Intersil Corporation
+   8           * @section DESCRIPTION
+   9           *  a device driver for the iic-bus interface 
+  10           ******************************************************************************
+  11           */
+  12          /*
+  13          Disclaimer: THIS INFORMATION IS PROVIDED 'AS-IS' FOR EVALUATION PURPOSES ONLY.  
+  14          INTERSIL CORPORATION AND ITS SUBSIDIARIES ('INTERSIL') DISCLAIM ALL WARRANTIES, 
+  15          INCLUDING WITHOUT LIMITATION FITNESS FOR A PARTICULAR PURPOSE AND MERCHANTABILITY.  
+  16          Intersil provides evaluation platforms to help our customers to develop products. 
+  17          However, factors beyond Intersil's control could significantly affect Intersil 
+  18          product performance. 
+  19          It remains the customers' responsibility to verify the actual system performance.
+  20          */
+  21          #include "Config.h"
+  22          #include "reg.h"
+  23          #include "typedefs.h"
+  24          #include "TW8836.h"
+  25          #include "global.h"
+  26          
+  27          #include "printf.h"
+  28          #include "CPU.h"
+  29          #include "util.h"
+  30          
+  31          #include "I2C.h"
+  32          
+  33          #include "SOsd.h"
+  34          
+  35          #include <intrins.h>
+  36          
+  37          //------------------------
+  38          // only for FAST or Slow environment
+  39          //------------------------
+  40          
+  41          //BYTE I2C_Bus; //0:Bus0 for TW8835, 1:BUS1 for TW8809, 2:BUS2 for TW8832.
+  42          //BYTE I2C_Idx; //I2C address index mode. 0:8bit 1:16bit.
+  43          //BYTE I2C_Speed=1; //0:normal, 1:slow, 2:for HS_mode, but not implememted.
+  44          
+  45          void dummy_i2c_code(void) 
+  46          {
+  47   1          Puts("\dummy i2c_code\n");
+  48   1      }
+  49          
+  50          /**
+  51          * I2C Buffer
+  52          */
+  53          //BYTE I2C_Buffer[16];
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 2   
+
+  54          /**
+  55          * I2C delay base value
+  56          * I2C uses a loop to make a delay.
+  57          * Its speed is depend on the MCU speed and cache.
+  58          * If MCU is 27MHz, use 1.
+  59          */
+  60          BYTE I2C_delay_base = 1;
+  61          
+  62          #if defined(SUPPORT_I2C_MASTER)
+  63          
+  64          //=============================
+  65          // I2C TIME CHART
+  66          //=============================
+  67          /**
+  68          * I2C TIME CHART
+  69          *
+  70          *
+  71              -+      +----------+---------+...----+   ...-+     +-------+        
+  72          SDA  |      |          |         |       |       |     |       |
+  73               +------+----------+---------+...    +---...-+-----+       +--
+  74                                  
+  75          SCL ---+     +----+      +----+      +----+          +------------+
+  76                 |     |    |      |    |      |    |          |            |
+  77                 +-----+    +------+    +-..---+    +--......--+            +--
+  78               | |     |    |    | |           |  |          | | |
+  79               |1|  2  |  3 |5   |6|           | 4|          |9|7|   8   |
+  80               |                                  |              |
+  81               |                                  |              |
+  82               +START                              +RESTART      +STOP
+  83             (4 1 5) (6  3   5)                              (9 7 8)
+  84                                               TW8835 Slave 
+  85                                               MIN    MAX
+  86          1: Hold Time START Condition                      74ns  -
+  87          2: Clock Low Time(5+6)
+  88          3: Clock High Time                i2c_delay_clockhigh   
+  89          4: Setup Time for a Repeated START Condition              370ns -
+  90          5: Data Hold Time               i2c_delay_datahold    50ns  900ns
+  91          6: Data Setup Time                i2c_delay_datasetup   74ns  -
+  92          7: Set-up time for STOP condition                   370ns -
+  93          8: Bus Free Time between a STOP and a START Condition           740ns  -
+  94          9: prepare time for STOP condition
+  95          A: ack wait time
+  96          
+  97          
+  98          I2C SPEED
+  99          =========
+ 100            slow      depend on system.
+ 101            Standard    100kbps
+ 102            Fast mode   400kbps
+ 103            Fast mode plus  1Mbit
+ 104            High-Speed    3.4Mbit       HS-mode
+ 105          
+ 106            TW8836 uses about 35kHz.
+ 107          
+ 108          */
+ 109          
+ 110          //-----------------------
+ 111          // I2C DELAY
+ 112          // Note: It depends on CACHE, MCUSPI clock, & SPIOSD.
+ 113          //-----------------------
+ 114          
+ 115          #pragma SAVE
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 3   
+
+ 116          #pragma OPTIMIZE(2,SIZE)
+ 117          static void dd(BYTE delay)
+ 118          {
+ 119   1        BYTE i,j;
+ 120   1        j = I2C_delay_base;
+ 121   1        while(j--) {
+ 122   2          for(i=0; i < delay; i++);
+ 123   2        }
+ 124   1      }
+ 125          #pragma RESTORE
+ 126          
+ 127                                              //32kHz
+ 128          #define I2CDelay_1    dd(8)   //13uS        
+ 129          #define I2CDelay_2    dd(13)    //22uS    
+ 130          #define I2CDelay_3    dd(5)   //9.6uS   
+ 131          #define I2CDelay_4    dd(37)    //  
+ 132          #define I2CDelay_5    dd(5)   //
+ 133          #define I2CDelay_6    dd(8)   //
+ 134          #define I2CDelay_7    dd(37)    //  
+ 135          #define I2CDelay_8    dd(74)    //  
+ 136          #define I2CDelay_9    dd(10)    //
+ 137          #define I2CDelay_ACK  dd(8)   //
+ 138          
+ 139          //=============================================================================
+ 140          /**
+ 141          * I2C subroutines
+ 142          */
+ 143          //=============================================================================
+ 144          #pragma SAVE
+ 145          #pragma OPTIMIZE(2,SIZE)
+ 146          static BYTE I2C_SetSclWait(void)
+ 147          {
+ 148   1      //#if 0 
+ 149   1      //  //It is fast, but, if your HW has a bug,
+ 150   1      //  //it can hangup the system. 
+ 151   1      //  I2C_SCL=1;    
+ 152   1      //  while(I2C_SCL==0);
+ 153   1      //  return 0; 
+ 154   1      //#else
+ 155   1        BYTE i;
+ 156   1        I2C_SCL=1;    
+ 157   1        for(i=0; i < 250; i++) {
+ 158   2          dd(10);
+ 159   2          if(I2C_SCL != 0)
+ 160   2            break;
+ 161   2        }
+ 162   1        if(i>=250) {
+ 163   2          Printf("\n\rI2C_SetSclWait Fail");
+ 164   2          return 1; //fail
+ 165   2        }
+ 166   1        return 0;
+ 167   1      //#endif
+ 168   1      }
+ 169          #pragma RESTORE
+ 170          
+ 171          
+ 172          //static void I2C_Start(void)
+ 173          void I2C_Start(void)
+ 174          {
+ 175   1        I2C_SDA = 1;  
+ 176   1        I2C_SCL = 1;  
+ 177   1                    I2CDelay_4;
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 4   
+
+ 178   1        I2C_SDA = 0;      I2CDelay_1;
+ 179   1        I2C_SCL = 0;      I2CDelay_5;
+ 180   1      }
+ 181          
+ 182          //static void I2C_Stop(void)
+ 183          void I2C_Stop(void)
+ 184          {
+ 185   1        I2C_SDA = 0;      I2CDelay_9;
+ 186   1        I2C_SetSclWait();   I2CDelay_7;
+ 187   1        I2C_SDA = 1;      I2CDelay_8; 
+ 188   1      }
+ 189          
+ 190          //static BYTE I2C_WriteData(BYTE value)
+ 191          BYTE I2C_WriteData(BYTE value)
+ 192          {
+ 193   1        BYTE error;
+ 194   1        BYTE i;
+ 195   1      
+ 196   1        for(i=0;i<8;i++) {
+ 197   2          if(value & 0x80)  I2C_SDA = 1;
+ 198   2          else        I2C_SDA = 0;
+ 199   2                    I2CDelay_6;
+ 200   2          I2C_SCL = 1;    I2CDelay_3;
+ 201   2          I2C_SCL = 0;    I2CDelay_5;
+ 202   2      
+ 203   2          value <<=1;
+ 204   2        }
+ 205   1        I2C_SDA = 1;      //listen for ACK
+ 206   1                                
+ 207   1        I2C_SetSclWait();   I2CDelay_ACK;
+ 208   1        if(I2C_SDA) error=1;
+ 209   1        else        error=0;
+ 210   1                                
+ 211   1        I2C_SCL=0;        I2CDelay_5;
+ 212   1      
+ 213   1        return error;
+ 214   1      }
+ 215          //static BYTE I2C_ReadData(BYTE fLast)
+ 216          BYTE I2C_ReadData(BYTE fLast)
+ 217          {
+ 218   1        BYTE i;
+ 219   1        BYTE val=0;
+ 220   1      
+ 221   1        for(i=0; i <8; i++) {
+ 222   2                    I2CDelay_6;
+ 223   2          I2C_SetSclWait(); I2CDelay_3;
+ 224   2          val <<= 1;
+ 225   2          if(I2C_SDA)
+ 226   2            val |= 1;
+ 227   2          I2C_SCL=0;      I2CDelay_5;
+ 228   2        }
+ 229   1        if(fLast) I2C_SDA = 1;  //last byte
+ 230   1        else    I2C_SDA = 0;
+ 231   1      
+ 232   1        I2C_SetSclWait();   I2CDelay_3;
+ 233   1        I2C_SCL=0;
+ 234   1        I2C_SDA=1;        I2CDelay_5;
+ 235   1        return val;
+ 236   1      }
+ 237          
+ 238          
+ 239          
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 5   
+
+ 240          //=============================================================================
+ 241          /**
+ 242          * I2C global Functions
+ 243          *
+ 244          * BYTE CheckI2C(BYTE i2cid)
+ 245          *
+ 246          * BYTE WriteI2CByte(BYTE i2cid, BYTE index, BYTE val)
+ 247          * void WriteI2C(BYTE i2cid, BYTE index, BYTE *val, WORD cnt)
+ 248          * BYTE ReadI2CByte(BYTE i2cid, BYTE index)
+ 249          * void ReadI2C(BYTE i2cid, BYTE index, BYTE *val, BYTE cnt)
+ 250          */                                                                            
+ 251          //=============================================================================
+ 252          /**
+ 253          * check I2C device
+ 254          *
+ 255          * I2C commands use a infinity loop. 
+ 256          * Use CheckI2C() first before you use other I2C commands.
+ 257          *
+ 258          * @return
+ 259          * 0: success
+ 260          * 1: NAK
+ 261          * 2: I2C dead
+ 262          *
+ 263          * NOTE: I am not using I2CSetSclWait().
+ 264          */
+ 265          BYTE CheckI2C(BYTE i2cid)
+ 266          {
+ 267   1        BYTE error;
+ 268   1        BYTE i;
+ 269   1        BYTE value;
+ 270   1      
+ 271   1        value = i2cid;
+ 272   1        //--SFRB_EA=0;
+ 273   1        I2C_Start();
+ 274   1      
+ 275   1        for(i=0;i<8;i++) {
+ 276   2          if(value & 0x80) I2C_SDA = 1;
+ 277   2          else             I2C_SDA = 0;
+ 278   2                    I2CDelay_6;
+ 279   2          I2C_SCL = 1;    I2CDelay_3;
+ 280   2          I2C_SCL = 0;    I2CDelay_5;
+ 281   2      
+ 282   2          value <<=1;
+ 283   2        }
+ 284   1        I2C_SDA = 1;      //listen for ACK.                      
+ 285   1        I2C_SCL=1;        I2CDelay_ACK;
+ 286   1        dd(100);
+ 287   1        if(I2C_SCL==0)  error = 2;  //I2C dead
+ 288   1        else {
+ 289   2          if(I2C_SDA) error=1;  //NAK
+ 290   2          else        error=0;  //ACK
+ 291   2        }                        
+ 292   1        I2C_SCL=0;        I2CDelay_5;
+ 293   1      
+ 294   1        //stop routine
+ 295   1        I2C_SDA = 0;    I2CDelay_9;                      
+ 296   1        I2C_SCL=1;      I2CDelay_7;
+ 297   1        I2C_SDA = 1;    I2CDelay_8; 
+ 298   1      
+ 299   1        //--SFRB_EA=1;
+ 300   1        return error;
+ 301   1      }
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 6   
+
+ 302          /**
+ 303          * write one byte data to I2C slave device
+ 304          *
+ 305          * @param i2cid - 8bit.
+ 306          * @param index - 8bit 
+ 307          * @param data
+ 308          */
+ 309          BYTE WriteI2CByte(BYTE i2cid, BYTE index, BYTE val)
+ 310          {
+ 311   1        BYTE ret;
+ 312   1      
+ 313   1        //--SFRB_EA=0;
+ 314   1        I2C_Start();
+ 315   1        ret  = I2C_WriteData(i2cid);  ret <<=1;
+ 316   1        ret |= I2C_WriteData(index);  ret <<=1;
+ 317   1        ret |= I2C_WriteData(val);
+ 318   1        I2C_Stop();
+ 319   1        //--SFRB_EA=1;
+ 320   1      
+ 321   1      #if defined(DEBUG_I2C)
+                if(ret)
+                  Printf("\n\rWriteI2CByte[%bx:%bx,%bx] FAIL:%bx",i2cid, index,val, ret);
+              #endif
+ 325   1        return ret;
+ 326   1      }
+ 327          
+ 328          
+ 329          /**
+ 330          * write data to I2C slave device
+ 331          *
+ 332          * @param i2cid - 8bit
+ 333          * @param index - 8bit
+ 334          * @param *val. NOTE: Do not use a CodeSegment
+ 335          * @param count
+ 336          */
+ 337          BYTE WriteI2CS(BYTE i2cid, BYTE index, BYTE *val, BYTE _cnt)
+ 338          {
+ 339   1        WORD cnt, i;
+ 340   1        BYTE ret;
+ 341   1      
+ 342   1          cnt = _cnt;
+ 343   1          if(cnt==0) 
+ 344   1              cnt=256;
+ 345   1      
+ 346   1        //--SFRB_EA=0;
+ 347   1        I2C_Start();
+ 348   1        ret  = I2C_WriteData(i2cid);  ret <<=1;
+ 349   1        ret |= I2C_WriteData(index);  ret <<=1;
+ 350   1        for(i=0;i<cnt;i++) 
+ 351   1          ret |= I2C_WriteData(val[i]);
+ 352   1        I2C_Stop();
+ 353   1        //--SFRB_EA=1;
+ 354   1      #if defined(DEBUG_I2C)
+                if(ret)
+                  Printf("\n\rWriteBlock2C[%bx:%bx,%bx] FAIL:%bx",i2cid, index,val, ret);
+              #endif
+ 358   1        return ret;
+ 359   1      }
+ 360          
+ 361          /**
+ 362          * read only commnad
+ 363          * It should be combined with WriteI2CS(i2cid,index,NULL,0).
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 7   
+
+ 364          *
+ 365          * @param i2cid - 8bit
+ 366          * @return data
+ 367          */
+ 368          BYTE ReadI2C_Only(BYTE i2cid)
+ 369          {
+ 370   1        BYTE value;
+ 371   1      
+ 372   1        //--SFRB_EA=0;
+ 373   1        I2C_Start();      
+ 374   1        I2C_WriteData(i2cid | 0x01);
+ 375   1        value=I2C_ReadData(1);
+ 376   1        I2C_Stop();
+ 377   1        //--SFRB_EA=1;
+ 378   1      
+ 379   1        return value;
+ 380   1      }
+ 381          
+ 382          
+ 383          /**
+ 384          * read one byte data from I2C slave device
+ 385          *
+ 386          * @param i2cid - 8bit
+ 387          * @param index - 8bit
+ 388          * @return data
+ 389          */
+ 390          BYTE ReadI2CByte(BYTE i2cid, BYTE index)
+ 391          {
+ 392   1        BYTE value;
+ 393   1        BYTE ret;
+ 394   1      
+ 395   1        //--SFRB_EA=0;
+ 396   1        I2C_Start();      
+ 397   1        ret = I2C_WriteData(i2cid);   ret<<=1;
+ 398   1        ret +=I2C_WriteData(index);   ret<<=1;
+ 399   1        I2C_Start();
+ 400   1        ret +=I2C_WriteData(i2cid | 0x01);
+ 401   1        value=I2C_ReadData(1);
+ 402   1        I2C_Stop();
+ 403   1        //--SFRB_EA=1;
+ 404   1      
+ 405   1      #if defined(DEBUG_I2C)
+                if(ret)
+                  Printf("\n\rReadI2CByte[%bx:%bx] FAIL:%bx",i2cid,index, ret);
+              #endif
+ 409   1        return value;
+ 410   1      }
+ 411          
+ 412          /**
+ 413          * read only command
+ 414          * It should be combined with WriteI2CS(i2cid,index,NULL,0).
+ 415          *
+ 416          * @param i2cid - 8bit
+ 417          * @param *val - read back buffer
+ 418          * @param count
+ 419          * @return NA
+ 420          */
+ 421          BYTE ReadI2CS_Only(BYTE i2cid, BYTE *val, BYTE _cnt)
+ 422          {
+ 423   1        WORD i;
+ 424   1        BYTE ret;
+ 425   1          WORD cnt;
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 8   
+
+ 426   1      
+ 427   1          cnt = _cnt;
+ 428   1          if(_cnt==0)
+ 429   1              cnt=256;
+ 430   1      
+ 431   1        //--SFRB_EA=0;
+ 432   1        I2C_Start();
+ 433   1        ret |= I2C_WriteData(i2cid | 0x01);
+ 434   1        cnt--;
+ 435   1        for(i=0; i<cnt; i++){
+ 436   2          val[i]=I2C_ReadData(0);
+ 437   2        }
+ 438   1        val[i]=I2C_ReadData(1);
+ 439   1        
+ 440   1        I2C_Stop();
+ 441   1        //--SFRB_EA=1;
+ 442   1      
+ 443   1        return ret;
+ 444   1      }
+ 445          
+ 446          
+ 447          /**
+ 448          * read data from I2C slave device
+ 449          *
+ 450          * @param i2cid - 8bit
+ 451          * @param index - 8bit 
+ 452          * @param *val - read back buffer
+ 453          * @param count
+ 454          * @return 0:success, other:fail
+ 455          */
+ 456          BYTE ReadI2CS(BYTE i2cid, BYTE index, BYTE *val, BYTE cnt)
+ 457          {
+ 458   1        BYTE i;
+ 459   1        BYTE ret;
+ 460   1      
+ 461   1        //--SFRB_EA=0;
+ 462   1        I2C_Start();
+ 463   1        ret  = I2C_WriteData(i2cid);    ret <<=1;
+ 464   1        ret |= I2C_WriteData(index);    ret <<=1;
+ 465   1        I2C_Start();
+ 466   1        ret |= I2C_WriteData(i2cid | 0x01);
+ 467   1        cnt--;
+ 468   1        for(i=0; i<cnt; i++){
+ 469   2          val[i]=I2C_ReadData(0);
+ 470   2        }
+ 471   1        val[i]=I2C_ReadData(1);
+ 472   1        
+ 473   1        I2C_Stop();
+ 474   1        //--SFRB_EA=1;
+ 475   1      #if defined(DEBUG_I2C)
+                if(ret)
+                  Printf("\n\rReadI2C[%bx:%bx] FAIL:%bx",i2cid,index, ret);
+              #endif
+ 479   1        return ret;
+ 480   1      }
+ 481          
+ 482          
+ 483          //=============================================================================
+ 484          // I2C_multi functions                                                                          
+ 485          //  DWORD ReadI2C_multi(BYTE i2cid, BYTE config, WORD index)
+ 486          //  BYTE ReadI2CS_multi(BYTE i2cid, BYTE config, WORD index, void *value, BYTE count)
+ 487          //  BYTE WriteI2C_multi(BYTE i2cid, BYTE config, WORD index, DWORD value)
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 9   
+
+ 488          //  BYTE WriteI2CS_multi(BYTE i2cid, BYTE config, WORD index, void *value, BYTE count)
+ 489          //=============================================================================
+ 490          DWORD ReadI2C_multi(BYTE i2cid, BYTE config, WORD index)
+ 491          {
+ 492   1        BYTE size, data_size;
+ 493   1        BYTE ret;
+ 494   1        DWORD value;
+ 495   1      
+ 496   1        size = config >>4;      //index size
+ 497   1        data_size = config & 0x0F;  //data size
+ 498   1      
+ 499   1      
+ 500   1        //--SFRB_EA=0;
+ 501   1        I2C_Start();      
+ 502   1        ret = I2C_WriteData(i2cid);     ret<<=1;
+ 503   1        if(size==2)
+ 504   1          ret+=I2C_WriteData(index>>8); ret<<=1;
+ 505   1        ret +=I2C_WriteData(index);     ret<<=1;
+ 506   1      
+ 507   1        I2C_Start();
+ 508   1        ret +=I2C_WriteData(i2cid | 0x01);
+ 509   1      
+ 510   1        //I2C read MSB first.
+ 511   1        size = data_size;
+ 512   1        value = 0;
+ 513   1        while(size) {
+ 514   2          size--; 
+ 515   2          if(size) {
+ 516   3            value |= I2C_ReadData(0);
+ 517   3            value <<= 8;
+ 518   3          }
+ 519   2          else 
+ 520   2            value |= I2C_ReadData(1);
+ 521   2        }
+ 522   1      
+ 523   1        I2C_Stop();
+ 524   1        //--SFRB_EA=1;
+ 525   1      
+ 526   1        return value;
+ 527   1      }
+ 528          /**
+ 529          * count is -1.
+ 530          */
+ 531          BYTE ReadI2CS_multi(BYTE i2cid, BYTE config, WORD index, void *value, BYTE _count)
+ 532          {
+ 533   1        BYTE *pBYTE;
+ 534   1        BYTE size, data_size;
+ 535   1        BYTE ret;
+ 536   1          WORD count;
+ 537   1      
+ 538   1          count = _count;
+ 539   1          if(_count==0)
+ 540   1              count=256;
+ 541   1        pBYTE = (BYTE *)value;
+ 542   1      
+ 543   1        size = config >>4;      //index size
+ 544   1        data_size = config & 0x0F;  //data size
+ 545   1      
+ 546   1      
+ 547   1        //--SFRB_EA=0;
+ 548   1        I2C_Start();      
+ 549   1        ret = I2C_WriteData(i2cid);     ret<<=1;
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 10  
+
+ 550   1        if(size==2)
+ 551   1          ret+=I2C_WriteData(index>>8); ret<<=1;
+ 552   1        ret +=I2C_WriteData(index);     ret<<=1;
+ 553   1      
+ 554   1        I2C_Start();
+ 555   1        ret +=I2C_WriteData(i2cid | 0x01);
+ 556   1      
+ 557   1        //I2C read MSB first
+ 558   1          while(count--) {
+ 559   2          size = data_size;
+ 560   2          while(size) {
+ 561   3            size--; 
+ 562   3            if(count || size)
+ 563   3              *pBYTE++ = I2C_ReadData(0);
+ 564   3            else
+ 565   3              *pBYTE = I2C_ReadData(1); //last    
+ 566   3          }
+ 567   2        }
+ 568   1      
+ 569   1        I2C_Stop();
+ 570   1        //--SFRB_EA=1;
+ 571   1      
+ 572   1        return 0;
+ 573   1      }
+ 574          
+ 575          BYTE WriteI2C_multi(BYTE i2cid, BYTE config, WORD index, DWORD value)
+ 576          {
+ 577   1        BYTE ret;
+ 578   1        BYTE bTemp;
+ 579   1        BYTE size;
+ 580   1      
+ 581   1        size = config >>4;  /*index size. 1 or 2 */
+ 582   1        //--SFRB_EA=0;
+ 583   1        I2C_Start();      
+ 584   1        ret= I2C_WriteData(i2cid);        ret<<=1;
+ 585   1        if(size==2)
+ 586   1          ret+=I2C_WriteData(index>>8);   ret<<=1;
+ 587   1        ret+=I2C_WriteData((BYTE)index);    ret<<=1;
+ 588   1      
+ 589   1        size = config & 0x0F; /*data size, 1,2,or 4*/
+ 590   1        while(size) {
+ 591   2          size--;
+ 592   2          bTemp = value >> (size*8);
+ 593   2          ret |= I2C_WriteData(bTemp);
+ 594   2        }
+ 595   1        I2C_Stop();
+ 596   1        //--SFRB_EA=1;
+ 597   1      #if defined(DEBUG_I2C)
+                if(ret)
+                  Printf("=>Fail ret:%bx",ret);
+              #endif
+ 601   1      
+ 602   1        return ret;
+ 603   1      }
+ 604          
+ 605          // config[7:4] index size
+ 606          // config[3:0] data size
+ 607          // count start from 0. If want to write 256, assign 255.    BKTODO::change it
+ 608          /*
+ 609          * count is -1
+ 610          */
+ 611          BYTE WriteI2CS_multi(BYTE i2cid, BYTE config, WORD index, void *value, BYTE _count)
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 11  
+
+ 612          {
+ 613   1        BYTE *pBYTE;
+ 614   1        BYTE size, data_size;
+ 615   1        BYTE ret;
+ 616   1          WORD count;
+ 617   1      
+ 618   1          count=_count;
+ 619   1          if(_count==0)
+ 620   1              count=256;
+ 621   1      
+ 622   1        pBYTE = (BYTE *)value;
+ 623   1      
+ 624   1        size = config >>4;      //index size
+ 625   1        data_size = config & 0x0F;  //data size
+ 626   1      
+ 627   1        //--SFRB_EA=0;
+ 628   1        I2C_Start();      
+ 629   1        ret= I2C_WriteData(i2cid);        ret<<=1;
+ 630   1        if(size==2)
+ 631   1          ret+=I2C_WriteData(index>>8);   ret<<=1;
+ 632   1        ret+=I2C_WriteData((BYTE)index);    ret<<=1;
+ 633   1      
+ 634   1        // write MSB first.
+ 635   1          while(count--) {
+ 636   2          size = data_size;
+ 637   2          while(size) {
+ 638   3            size--;
+ 639   3            ret |= I2C_WriteData(*pBYTE++);
+ 640   3          }
+ 641   2          if(ret)
+ 642   2            break;
+ 643   2        }
+ 644   1      
+ 645   1        I2C_Stop();
+ 646   1        //--SFRB_EA=1;
+ 647   1      
+ 648   1        return ret;
+ 649   1      }
+ 650          
+ 651          //=============================================================================
+ 652          // Linux style functions                                                                          
+ 653          //  WriteI2C_8A
+ 654          //  ReadI2C_8A
+ 655          //  WriteI2CS_8A
+ 656          //  ReadI2CS_8A
+ 657          //=============================================================================
+ 658          BYTE WriteI2C_8A(BYTE index, BYTE value)
+ 659          {
+ 660   1        //--SFRB_EA=0;
+ 661   1        I2C_Start();
+ 662   1        I2C_WriteData(0x8A);
+ 663   1        I2C_WriteData(index);
+ 664   1        I2C_WriteData(value);
+ 665   1        I2C_Stop();
+ 666   1        //--SFRB_EA=1;
+ 667   1        return 0;
+ 668   1      }
+ 669          BYTE ReadI2C_8A(BYTE index)
+ 670          {
+ 671   1        BYTE value;
+ 672   1      
+ 673   1        //--SFRB_EA=0;
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 12  
+
+ 674   1        I2C_Start();
+ 675   1        I2C_WriteData(0x8A);
+ 676   1        I2C_WriteData(index);
+ 677   1        I2C_Stop();
+ 678   1        //--SFRB_EA=1;
+ 679   1      
+ 680   1        //--SFRB_EA=0;
+ 681   1        I2C_Start();
+ 682   1        I2C_WriteData(0x8B);
+ 683   1        value = I2C_ReadData(1);
+ 684   1        I2C_Stop();
+ 685   1        //--SFRB_EA=1;
+ 686   1        return value;
+ 687   1      }
+ 688          BYTE WriteI2CS_8A(BYTE index, BYTE len, BYTE *buff)
+ 689          {
+ 690   1        BYTE value;
+ 691   1        WORD i,n;
+ 692   1      
+ 693   1        if(len==0)  n=256;
+ 694   1        else    n=len;
+ 695   1      
+ 696   1        //--SFRB_EA=0;
+ 697   1        I2C_Start();
+ 698   1        I2C_WriteData(0x8A);
+ 699   1        I2C_WriteData(index);
+ 700   1        for(i=0; i < n; i++) {
+ 701   2          value = *buff++;
+ 702   2          I2C_WriteData(value);
+ 703   2        }
+ 704   1        I2C_Stop();
+ 705   1        //--SFRB_EA=1;
+ 706   1        return 0;
+ 707   1      }
+ 708          BYTE ReadI2CS_8A(BYTE index, BYTE len, BYTE *buff)
+ 709          {
+ 710   1        BYTE value;
+ 711   1        WORD i,n;
+ 712   1      
+ 713   1        if(len==0)  n=256;
+ 714   1        else    n=len;
+ 715   1      
+ 716   1        //--SFRB_EA=0;
+ 717   1        I2C_Start();
+ 718   1        I2C_WriteData(0x8A); /* i2cid */
+ 719   1        I2C_WriteData(index);
+ 720   1        I2C_Stop();
+ 721   1        //--SFRB_EA=1;
+ 722   1      
+ 723   1        //--SFRB_EA=0;
+ 724   1        I2C_Start();
+ 725   1        I2C_WriteData(0x8B);
+ 726   1        for(i=0; i < n; i++) {
+ 727   2          if((i+1)==n)  value=I2C_ReadData(1);
+ 728   2          else      value=I2C_ReadData(0);
+ 729   2          *buff++ = value;
+ 730   2        }
+ 731   1        I2C_Stop();
+ 732   1        //--SFRB_EA=1;
+ 733   1        return 0;
+ 734   1      }
+ 735          
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 13  
+
+ 736          
+ 737          #endif //..SUPPORT_I2C_MASTER
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 14  
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com0071 (BEGIN)
+0000         L?0114:
+0000         L?0115:
+0000 E0                MOVX    A,@DPTR
+0001 FB                MOV     R3,A
+0002 A3                INC     DPTR
+0003 E4                CLR     A
+0004 75F001            MOV     B,#01H
+0007 110000      E     ACALL   ?C?ILDIX
+000A A9F0              MOV     R1,B
+000C FA                MOV     R2,A
+000D 22                RET     
+000E         L?0116:
+000E ED                MOV     A,R5
+000F         L?0117:
+000F F0                MOVX    @DPTR,A
+0010 A3                INC     DPTR
+0011         L?0118:
+0011 EB                MOV     A,R3
+0012         L?0119:
+0012 F0                MOVX    @DPTR,A
+0013 A3                INC     DPTR
+0014 EA                MOV     A,R2
+0015 F0                MOVX    @DPTR,A
+0016 A3                INC     DPTR
+0017 E9                MOV     A,R1
+0018 22                RET     
+0019         L?0123:
+0019         L?0124:
+0019 E0                MOVX    A,@DPTR
+001A 2F                ADD     A,R7
+001B F0                MOVX    @DPTR,A
+001C E0                MOVX    A,@DPTR
+001D FF                MOV     R7,A
+001E 25E0              ADD     A,ACC
+0020 22                RET     
+0021         L?0125:
+0021         L?0126:
+0021 F0                MOVX    @DPTR,A
+0022 ED                MOV     A,R5
+0023 C4                SWAP    A
+0024 540F              ANL     A,#0FH
+0026 A3                INC     DPTR
+0027 F0                MOVX    @DPTR,A
+0028 ED                MOV     A,R5
+0029 540F              ANL     A,#0FH
+002B A3                INC     DPTR
+002C 22                RET     
+002D         L?0127:
+002D 90000000    R     MOV     DPTR,#value
+0031         L?0128:
+0031 E0                MOVX    A,@DPTR
+0032 FC                MOV     R4,A
+0033 A3                INC     DPTR
+0034 E0                MOVX    A,@DPTR
+0035 FD                MOV     R5,A
+0036 A3                INC     DPTR
+0037 E0                MOVX    A,@DPTR
+0038 FE                MOV     R6,A
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 15  
+
+0039 A3                INC     DPTR
+003A 22                RET     
+003B         L?0129:
+003B E0                MOVX    A,@DPTR
+003C F8                MOV     R0,A
+003D A3                INC     DPTR
+003E         L?0130:
+003E E0                MOVX    A,@DPTR
+003F F9                MOV     R1,A
+0040 A3                INC     DPTR
+0041 E0                MOVX    A,@DPTR
+0042 FA                MOV     R2,A
+0043 A3                INC     DPTR
+0044 22                RET     
+0045         L?0134:
+0045 FF                MOV     R7,A
+0046 E0                MOVX    A,@DPTR
+0047 FC                MOV     R4,A
+0048 A3                INC     DPTR
+0049 E0                MOVX    A,@DPTR
+004A FD                MOV     R5,A
+004B C3                CLR     C
+004C 9F                SUBB    A,R7
+004D EC                MOV     A,R4
+004E 9E                SUBB    A,R6
+004F 22                RET     
+0050         L?0135:
+0050 EA                MOV     A,R2
+0051         L?0136:
+0051 F0                MOVX    @DPTR,A
+0052 A3                INC     DPTR
+0053 EB                MOV     A,R3
+0054 F0                MOVX    @DPTR,A
+0055 AC07              MOV     R4,AR7
+0057 22                RET     
+0058         L?0137:
+0058 EB                MOV     A,R3
+0059 4F                ORL     A,R7
+005A FF                MOV     R7,A
+005B EA                MOV     A,R2
+005C FE                MOV     R6,A
+005D E9                MOV     A,R1
+005E FD                MOV     R5,A
+005F E8                MOV     A,R0
+0060 FC                MOV     R4,A
+0061 22                RET     
+0062         L?0138:
+0062 74FF              MOV     A,#0FFH
+0064 F5F0              MOV     B,A
+0066 110000      E     ACALL   ?C?ILDIX
+0069 45F0              ORL     A,B
+006B 22                RET     
+             ; FUNCTION Com0071 (END)
+
+             ; FUNCTION dummy_i2c_code (BEGIN)
+                                           ; SOURCE LINE # 45
+                                           ; SOURCE LINE # 46
+                                           ; SOURCE LINE # 47
+0000 7B00        R     MOV     R3,#MBYTE ?SC_0
+0002 7A00        R     MOV     R2,#HIGH ?SC_0
+0004 7900        R     MOV     R1,#LOW ?SC_0
+0006 010000      E     AJMP    _Puts
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 16  
+
+             ; FUNCTION dummy_i2c_code (END)
+
+             ; FUNCTION _dd (BEGIN)
+                                           ; SOURCE LINE # 117
+0000 90000000    R     MOV     DPTR,#delay
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 118
+                                           ; SOURCE LINE # 120
+0006 90000000    R     MOV     DPTR,#I2C_delay_base
+000A E0                MOVX    A,@DPTR
+000B FF                MOV     R7,A
+000C 90000000    R     MOV     DPTR,#j
+0010 EF                MOV     A,R7
+0011 F0                MOVX    @DPTR,A
+0012         ?C0002:
+                                           ; SOURCE LINE # 121
+0012 90000000    R     MOV     DPTR,#j
+0016 E0                MOVX    A,@DPTR
+0017 FF                MOV     R7,A
+0018 14                DEC     A
+0019 F0                MOVX    @DPTR,A
+001A EF                MOV     A,R7
+001B 6020              JZ      ?C0007
+                                           ; SOURCE LINE # 122
+001D 90000000    R     MOV     DPTR,#i
+0021 E4                CLR     A
+0022 F0                MOVX    @DPTR,A
+0023         ?C0004:
+0023 90000000    R     MOV     DPTR,#delay
+0027 E0                MOVX    A,@DPTR
+0028 FF                MOV     R7,A
+0029 90000000    R     MOV     DPTR,#i
+002D E0                MOVX    A,@DPTR
+002E FE                MOV     R6,A
+002F EE                MOV     A,R6
+0030 C3                CLR     C
+0031 9F                SUBB    A,R7
+0032 50DE              JNC     ?C0002
+0034 90000000    R     MOV     DPTR,#i
+0038 E0                MOVX    A,@DPTR
+0039 04                INC     A
+003A F0                MOVX    @DPTR,A
+003B 80E6              SJMP    ?C0004
+                                           ; SOURCE LINE # 123
+                                           ; SOURCE LINE # 124
+003D         ?C0007:
+003D 22                RET     
+             ; FUNCTION _dd (END)
+
+             ; FUNCTION I2C_SetSclWait (BEGIN)
+                                           ; SOURCE LINE # 146
+                                           ; SOURCE LINE # 147
+                                           ; SOURCE LINE # 156
+0000 D290              SETB    P1_0
+                                           ; SOURCE LINE # 157
+0002 90000000    R     MOV     DPTR,#i
+0006 E4                CLR     A
+0007 F0                MOVX    @DPTR,A
+0008         ?C0008:
+0008 90000000    R     MOV     DPTR,#i
+000C E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 17  
+
+000D FF                MOV     R7,A
+000E EF                MOV     A,R7
+000F C3                CLR     C
+0010 94FA              SUBB    A,#0FAH
+0012 5011              JNC     ?C0009
+                                           ; SOURCE LINE # 158
+0014 7F0A              MOV     R7,#0AH
+0016 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 159
+0019 209009            JB      P1_0,?C0009
+                                           ; SOURCE LINE # 160
+001C         ?C0011:
+                                           ; SOURCE LINE # 161
+001C         ?C0010:
+001C 90000000    R     MOV     DPTR,#i
+0020 E0                MOVX    A,@DPTR
+0021 04                INC     A
+0022 F0                MOVX    @DPTR,A
+0023 80E3              SJMP    ?C0008
+0025         ?C0009:
+                                           ; SOURCE LINE # 162
+0025 90000000    R     MOV     DPTR,#i
+0029 E0                MOVX    A,@DPTR
+002A FF                MOV     R7,A
+002B EF                MOV     A,R7
+002C C3                CLR     C
+002D 94FA              SUBB    A,#0FAH
+002F 400C              JC      ?C0012
+                                           ; SOURCE LINE # 163
+0031 7B00        R     MOV     R3,#MBYTE ?SC_16
+0033 7A00        R     MOV     R2,#HIGH ?SC_16
+0035 7900        R     MOV     R1,#LOW ?SC_16
+0037 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 164
+003A 7F01              MOV     R7,#01H
+003C 22                RET     
+                                           ; SOURCE LINE # 165
+003D         ?C0012:
+                                           ; SOURCE LINE # 166
+003D 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 168
+003F         ?C0013:
+003F 22                RET     
+             ; FUNCTION I2C_SetSclWait (END)
+
+             ; FUNCTION I2C_Start (BEGIN)
+                                           ; SOURCE LINE # 173
+                                           ; SOURCE LINE # 174
+                                           ; SOURCE LINE # 175
+0000 D291              SETB    P1_1
+                                           ; SOURCE LINE # 176
+0002 D290              SETB    P1_0
+                                           ; SOURCE LINE # 177
+0004 7F25              MOV     R7,#025H
+0006 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 178
+0009 C291              CLR     P1_1
+000B 7F08              MOV     R7,#08H
+000D 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 179
+0010 C290              CLR     P1_0
+0012 7F05              MOV     R7,#05H
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 18  
+
+0014 010000      R     AJMP    _dd
+             ; FUNCTION I2C_Start (END)
+
+             ; FUNCTION I2C_Stop (BEGIN)
+                                           ; SOURCE LINE # 183
+                                           ; SOURCE LINE # 184
+                                           ; SOURCE LINE # 185
+0000 C291              CLR     P1_1
+0002 7F0A              MOV     R7,#0AH
+0004 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 186
+0007 110000      R     ACALL   I2C_SetSclWait
+000A 7F25              MOV     R7,#025H
+000C 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 187
+000F D291              SETB    P1_1
+0011 7F4A              MOV     R7,#04AH
+0013 010000      R     AJMP    _dd
+             ; FUNCTION I2C_Stop (END)
+
+             ; FUNCTION _I2C_WriteData (BEGIN)
+                                           ; SOURCE LINE # 191
+;---- Variable 'value' assigned to Register 'R5' ----
+0000 AD07              MOV     R5,AR7
+                                           ; SOURCE LINE # 192
+                                           ; SOURCE LINE # 196
+;---- Variable 'i' assigned to Register 'R4' ----
+0002 E4                CLR     A
+0003 FC                MOV     R4,A
+0004         ?C0016:
+                                           ; SOURCE LINE # 197
+0004 ED                MOV     A,R5
+0005 30E704            JNB     ACC.7,?C0019
+0008 D291              SETB    P1_1
+000A 8002              SJMP    ?C0020
+000C         ?C0019:
+                                           ; SOURCE LINE # 198
+000C C291              CLR     P1_1
+000E         ?C0020:
+                                           ; SOURCE LINE # 199
+000E 7F08              MOV     R7,#08H
+0010 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 200
+0013 D290              SETB    P1_0
+0015 7F05              MOV     R7,#05H
+0017 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 201
+001A C290              CLR     P1_0
+001C 7F05              MOV     R7,#05H
+001E 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 203
+0021 ED                MOV     A,R5
+0022 25E0              ADD     A,ACC
+0024 FD                MOV     R5,A
+                                           ; SOURCE LINE # 204
+0025 0C                INC     R4
+0026 EC                MOV     A,R4
+0027 B408DA            CJNE    A,#08H,?C0016
+002A         ?C0017:
+                                           ; SOURCE LINE # 205
+002A D291              SETB    P1_1
+                                           ; SOURCE LINE # 207
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 19  
+
+002C 110000      R     ACALL   I2C_SetSclWait
+002F 7F08              MOV     R7,#08H
+0031 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 208
+0034 309109            JNB     P1_1,?C0021
+0037 90000000    R     MOV     DPTR,#error
+003B 7401              MOV     A,#01H
+003D F0                MOVX    @DPTR,A
+003E 8006              SJMP    ?C0022
+0040         ?C0021:
+                                           ; SOURCE LINE # 209
+0040 E4                CLR     A
+0041 90000000    R     MOV     DPTR,#error
+0045 F0                MOVX    @DPTR,A
+0046         ?C0022:
+                                           ; SOURCE LINE # 211
+0046 C290              CLR     P1_0
+0048 7F05              MOV     R7,#05H
+004A 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 213
+004D 90000000    R     MOV     DPTR,#error
+0051 E0                MOVX    A,@DPTR
+0052 FF                MOV     R7,A
+                                           ; SOURCE LINE # 214
+0053         ?C0023:
+0053 22                RET     
+             ; FUNCTION _I2C_WriteData (END)
+
+             ; FUNCTION _I2C_ReadData (BEGIN)
+                                           ; SOURCE LINE # 216
+0000 90000000    R     MOV     DPTR,#fLast
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 217
+                                           ; SOURCE LINE # 219
+0006 E4                CLR     A
+0007 90000000    R     MOV     DPTR,#val
+000B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 221
+000C 90000000    R     MOV     DPTR,#i
+0010 F0                MOVX    @DPTR,A
+0011         ?C0024:
+                                           ; SOURCE LINE # 222
+0011 7F08              MOV     R7,#08H
+0013 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 223
+0016 110000      R     ACALL   I2C_SetSclWait
+                                           ; SOURCE LINE # 224
+0019 110000      R     ACALL   L?0139
+001C E0                MOVX    A,@DPTR
+001D 25E0              ADD     A,ACC
+001F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 225
+0020 309104            JNB     P1_1,?C0027
+                                           ; SOURCE LINE # 226
+0023 E0                MOVX    A,@DPTR
+0024 4401              ORL     A,#01H
+0026 F0                MOVX    @DPTR,A
+0027         ?C0027:
+                                           ; SOURCE LINE # 227
+0027 C290              CLR     P1_0
+0029 7F05              MOV     R7,#05H
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 20  
+
+002B 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 228
+002E 90000000    R     MOV     DPTR,#i
+0032 E0                MOVX    A,@DPTR
+0033 04                INC     A
+0034 F0                MOVX    @DPTR,A
+0035 E0                MOVX    A,@DPTR
+0036 C3                CLR     C
+0037 9408              SUBB    A,#08H
+0039 40D6              JC      ?C0024
+003B         ?C0025:
+                                           ; SOURCE LINE # 229
+003B 90000000    R     MOV     DPTR,#fLast
+003F E0                MOVX    A,@DPTR
+0040 6004              JZ      ?C0028
+0042 D291              SETB    P1_1
+0044 8002              SJMP    ?C0029
+0046         ?C0028:
+                                           ; SOURCE LINE # 230
+0046 C291              CLR     P1_1
+0048         ?C0029:
+                                           ; SOURCE LINE # 232
+0048 110000      R     ACALL   I2C_SetSclWait
+004B 7F05              MOV     R7,#05H
+004D 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 233
+0050 C290              CLR     P1_0
+                                           ; SOURCE LINE # 234
+0052 D291              SETB    P1_1
+                                           ; SOURCE LINE # 235
+0054 110000      R     ACALL   L?0139
+0057 E0                MOVX    A,@DPTR
+0058 FF                MOV     R7,A
+                                           ; SOURCE LINE # 236
+0059         ?C0030:
+0059 22                RET     
+005A         L?0139:
+005A 7F05              MOV     R7,#05H
+005C 110000      R     ACALL   _dd
+005F 90000000    R     MOV     DPTR,#val
+0063 22                RET     
+             ; FUNCTION _I2C_ReadData (END)
+
+             ; FUNCTION _CheckI2C (BEGIN)
+                                           ; SOURCE LINE # 265
+;---- Variable 'error' assigned to Register 'R5' ----
+;---- Variable 'i2cid' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 266
+                                           ; SOURCE LINE # 271
+;---- Variable 'value' assigned to Register 'R4' ----
+0000 AC07              MOV     R4,AR7
+                                           ; SOURCE LINE # 273
+0002 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 275
+;---- Variable 'i' assigned to Register 'R3' ----
+0005 E4                CLR     A
+0006 FB                MOV     R3,A
+0007         ?C0031:
+                                           ; SOURCE LINE # 276
+0007 EC                MOV     A,R4
+0008 30E704            JNB     ACC.7,?C0034
+000B D291              SETB    P1_1
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 21  
+
+000D 8002              SJMP    ?C0035
+000F         ?C0034:
+                                           ; SOURCE LINE # 277
+000F C291              CLR     P1_1
+0011         ?C0035:
+                                           ; SOURCE LINE # 278
+0011 7F08              MOV     R7,#08H
+0013 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 279
+0016 D290              SETB    P1_0
+0018 7F05              MOV     R7,#05H
+001A 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 280
+001D C290              CLR     P1_0
+001F 7F05              MOV     R7,#05H
+0021 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 282
+0024 EC                MOV     A,R4
+0025 25E0              ADD     A,ACC
+0027 FC                MOV     R4,A
+                                           ; SOURCE LINE # 283
+0028 0B                INC     R3
+0029 EB                MOV     A,R3
+002A B408DA            CJNE    A,#08H,?C0031
+002D         ?C0032:
+                                           ; SOURCE LINE # 284
+002D D291              SETB    P1_1
+                                           ; SOURCE LINE # 285
+002F D290              SETB    P1_0
+0031 7F08              MOV     R7,#08H
+0033 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 286
+0036 7F64              MOV     R7,#064H
+0038 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 287
+003B 209004            JB      P1_0,?C0036
+003E 7D02              MOV     R5,#02H
+0040 8009              SJMP    ?C0037
+0042         ?C0036:
+                                           ; SOURCE LINE # 288
+                                           ; SOURCE LINE # 289
+0042 309104            JNB     P1_1,?C0038
+0045 7D01              MOV     R5,#01H
+0047 8002              SJMP    ?C0037
+0049         ?C0038:
+                                           ; SOURCE LINE # 290
+0049 E4                CLR     A
+004A FD                MOV     R5,A
+                                           ; SOURCE LINE # 291
+004B         ?C0037:
+                                           ; SOURCE LINE # 292
+004B C290              CLR     P1_0
+004D 7F05              MOV     R7,#05H
+004F 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 295
+0052 C291              CLR     P1_1
+0054 7F0A              MOV     R7,#0AH
+0056 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 296
+0059 D290              SETB    P1_0
+005B 7F25              MOV     R7,#025H
+005D 110000      R     ACALL   _dd
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 22  
+
+                                           ; SOURCE LINE # 297
+0060 D291              SETB    P1_1
+0062 7F4A              MOV     R7,#04AH
+0064 110000      R     ACALL   _dd
+                                           ; SOURCE LINE # 300
+0067 AF05              MOV     R7,AR5
+                                           ; SOURCE LINE # 301
+0069         ?C0040:
+0069 22                RET     
+             ; FUNCTION _CheckI2C (END)
+
+             ; FUNCTION _WriteI2CByte (BEGIN)
+                                           ; SOURCE LINE # 309
+0000 90000000    R     MOV     DPTR,#index
+0004 ED                MOV     A,R5
+;---- Variable 'i2cid' assigned to Register 'R4' ----
+0005 110000      R     ACALL   L?0136
+                                           ; SOURCE LINE # 310
+                                           ; SOURCE LINE # 314
+0008 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 315
+000B AF04              MOV     R7,AR4
+000D 110000      R     ACALL   _I2C_WriteData
+0010 90000000    R     MOV     DPTR,#ret
+0014 EF                MOV     A,R7
+0015 F0                MOVX    @DPTR,A
+0016 E0                MOVX    A,@DPTR
+0017 25E0              ADD     A,ACC
+0019 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 316
+001A E0                MOVX    A,@DPTR
+001B FE                MOV     R6,A
+001C C006              PUSH    AR6
+001E 90000000    R     MOV     DPTR,#index
+0022 E0                MOVX    A,@DPTR
+0023 FF                MOV     R7,A
+0024 110000      R     ACALL   _I2C_WriteData
+0027 D0E0              POP     ACC
+0029 4F                ORL     A,R7
+002A 90000000    R     MOV     DPTR,#ret
+002E F0                MOVX    @DPTR,A
+002F E0                MOVX    A,@DPTR
+0030 25E0              ADD     A,ACC
+0032 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 317
+0033 E0                MOVX    A,@DPTR
+0034 FE                MOV     R6,A
+0035 C006              PUSH    AR6
+0037 90000000    R     MOV     DPTR,#val
+003B E0                MOVX    A,@DPTR
+003C FF                MOV     R7,A
+003D 110000      R     ACALL   _I2C_WriteData
+0040 D0E0              POP     ACC
+0042 4F                ORL     A,R7
+0043 90000000    R     MOV     DPTR,#ret
+0047 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 318
+0048 110000      R     ACALL   I2C_Stop
+                                           ; SOURCE LINE # 325
+004B 90000000    R     MOV     DPTR,#ret
+004F E0                MOVX    A,@DPTR
+0050 FF                MOV     R7,A
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 23  
+
+                                           ; SOURCE LINE # 326
+0051         ?C0041:
+0051 22                RET     
+             ; FUNCTION _WriteI2CByte (END)
+
+             ; FUNCTION _WriteI2CS (BEGIN)
+                                           ; SOURCE LINE # 337
+0000 90000000    R     MOV     DPTR,#index
+0004 110000      R     ACALL   L?0116
+0007 F0                MOVX    @DPTR,A
+;---- Variable 'i2cid' assigned to Register 'R4' ----
+0008 AC07              MOV     R4,AR7
+                                           ; SOURCE LINE # 338
+                                           ; SOURCE LINE # 342
+000A A3                INC     DPTR
+000B E0                MOVX    A,@DPTR
+000C FF                MOV     R7,A
+000D 7E00              MOV     R6,#00H
+000F A3                INC     DPTR
+0010 EE                MOV     A,R6
+0011 F0                MOVX    @DPTR,A
+0012 A3                INC     DPTR
+0013 EF                MOV     A,R7
+0014 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 343
+0015 7009              JNZ     ?C0042
+                                           ; SOURCE LINE # 344
+0017 90000000    R     MOV     DPTR,#cnt
+001B 04                INC     A
+001C F0                MOVX    @DPTR,A
+001D A3                INC     DPTR
+001E E4                CLR     A
+001F F0                MOVX    @DPTR,A
+0020         ?C0042:
+                                           ; SOURCE LINE # 347
+0020 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 348
+0023 AF04              MOV     R7,AR4
+0025 110000      R     ACALL   _I2C_WriteData
+0028 90000000    R     MOV     DPTR,#ret
+002C EF                MOV     A,R7
+002D F0                MOVX    @DPTR,A
+002E E0                MOVX    A,@DPTR
+002F 25E0              ADD     A,ACC
+0031 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 349
+0032 E0                MOVX    A,@DPTR
+0033 FE                MOV     R6,A
+0034 C006              PUSH    AR6
+0036 90000000    R     MOV     DPTR,#index
+003A E0                MOVX    A,@DPTR
+003B FF                MOV     R7,A
+003C 110000      R     ACALL   _I2C_WriteData
+003F D0E0              POP     ACC
+0041 4F                ORL     A,R7
+0042 90000000    R     MOV     DPTR,#ret
+0046 F0                MOVX    @DPTR,A
+0047 E0                MOVX    A,@DPTR
+0048 25E0              ADD     A,ACC
+004A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 350
+004B E4                CLR     A
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 24  
+
+004C 90000000    R     MOV     DPTR,#i
+0050 F0                MOVX    @DPTR,A
+0051 A3                INC     DPTR
+0052 F0                MOVX    @DPTR,A
+0053         ?C0043:
+0053 90000000    R     MOV     DPTR,#cnt
+0057 E0                MOVX    A,@DPTR
+0058 FE                MOV     R6,A
+0059 A3                INC     DPTR
+005A E0                MOVX    A,@DPTR
+005B A3                INC     DPTR
+005C 110000      R     ACALL   L?0134
+005F 5036              JNC     ?C0044
+                                           ; SOURCE LINE # 351
+0061 A3                INC     DPTR
+0062 E0                MOVX    A,@DPTR
+0063 FE                MOV     R6,A
+0064 C006              PUSH    AR6
+0066 90000000    R     MOV     DPTR,#val
+006A E0                MOVX    A,@DPTR
+006B FB                MOV     R3,A
+006C A3                INC     DPTR
+006D E0                MOVX    A,@DPTR
+006E FA                MOV     R2,A
+006F A3                INC     DPTR
+0070 E0                MOVX    A,@DPTR
+0071 2D                ADD     A,R5
+0072 F9                MOV     R1,A
+0073 EA                MOV     A,R2
+0074 3C                ADDC    A,R4
+0075 FA                MOV     R2,A
+0076 110000      E     ACALL   ?C?CLDPTR
+0079 FF                MOV     R7,A
+007A 110000      R     ACALL   _I2C_WriteData
+007D D0E0              POP     ACC
+007F 4F                ORL     A,R7
+0080 90000000    R     MOV     DPTR,#ret
+0084 F0                MOVX    @DPTR,A
+0085 90000000    R     MOV     DPTR,#i+01H
+0089 E0                MOVX    A,@DPTR
+008A 04                INC     A
+008B F0                MOVX    @DPTR,A
+008C 70C5              JNZ     ?C0043
+008E 90000000    R     MOV     DPTR,#i
+0092 E0                MOVX    A,@DPTR
+0093 04                INC     A
+0094 F0                MOVX    @DPTR,A
+0095         ?C0102:
+0095 80BC              SJMP    ?C0043
+0097         ?C0044:
+                                           ; SOURCE LINE # 352
+0097 110000      R     ACALL   I2C_Stop
+                                           ; SOURCE LINE # 358
+009A 90000000    R     MOV     DPTR,#ret
+009E E0                MOVX    A,@DPTR
+009F FF                MOV     R7,A
+                                           ; SOURCE LINE # 359
+00A0         ?C0046:
+00A0 22                RET     
+             ; FUNCTION _WriteI2CS (END)
+
+             ; FUNCTION _ReadI2C_Only (BEGIN)
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 25  
+
+                                           ; SOURCE LINE # 368
+;---- Variable 'i2cid' assigned to Register 'R5' ----
+0000 AD07              MOV     R5,AR7
+                                           ; SOURCE LINE # 369
+                                           ; SOURCE LINE # 373
+0002 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 374
+0005 ED                MOV     A,R5
+0006 4401              ORL     A,#01H
+0008 FF                MOV     R7,A
+0009 110000      R     ACALL   _I2C_WriteData
+                                           ; SOURCE LINE # 375
+000C 7F01              MOV     R7,#01H
+000E 110000      R     ACALL   _I2C_ReadData
+0011 90000000    R     MOV     DPTR,#value
+0015 EF                MOV     A,R7
+0016 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 376
+0017 110000      R     ACALL   I2C_Stop
+                                           ; SOURCE LINE # 379
+001A 90000000    R     MOV     DPTR,#value
+001E E0                MOVX    A,@DPTR
+001F FF                MOV     R7,A
+                                           ; SOURCE LINE # 380
+0020         ?C0047:
+0020 22                RET     
+             ; FUNCTION _ReadI2C_Only (END)
+
+             ; FUNCTION _ReadI2CByte (BEGIN)
+                                           ; SOURCE LINE # 390
+0000 90000000    R     MOV     DPTR,#i2cid
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 ED                MOV     A,R5
+0008 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 391
+                                           ; SOURCE LINE # 396
+0009 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 397
+000C 90000000    R     MOV     DPTR,#i2cid
+0010 110000      R     ACALL   L?0131
+0013 EF                MOV     A,R7
+0014 F0                MOVX    @DPTR,A
+0015 E0                MOVX    A,@DPTR
+0016 25E0              ADD     A,ACC
+0018 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 398
+0019 90000000    R     MOV     DPTR,#index
+001D 110000      R     ACALL   L?0131
+0020 110000      R     ACALL   L?0123
+0023 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 399
+0024 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 400
+0027 90000000    R     MOV     DPTR,#i2cid
+002B E0                MOVX    A,@DPTR
+002C 4401              ORL     A,#01H
+002E FF                MOV     R7,A
+002F 110000      R     ACALL   _I2C_WriteData
+0032 90000000    R     MOV     DPTR,#ret
+0036 E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 26  
+
+0037 2F                ADD     A,R7
+0038 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 401
+0039 7F01              MOV     R7,#01H
+003B 110000      R     ACALL   _I2C_ReadData
+003E 90000000    R     MOV     DPTR,#value
+0042 EF                MOV     A,R7
+0043 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 402
+0044 110000      R     ACALL   I2C_Stop
+                                           ; SOURCE LINE # 409
+0047 90000000    R     MOV     DPTR,#value
+004B E0                MOVX    A,@DPTR
+004C FF                MOV     R7,A
+                                           ; SOURCE LINE # 410
+004D         ?C0048:
+004D 22                RET     
+004E         L?0131:
+004E E0                MOVX    A,@DPTR
+004F FF                MOV     R7,A
+0050 110000      R     ACALL   _I2C_WriteData
+0053 90000000    R     MOV     DPTR,#ret
+0057 22                RET     
+             ; FUNCTION _ReadI2CByte (END)
+
+             ; FUNCTION _ReadI2CS_Only (BEGIN)
+                                           ; SOURCE LINE # 421
+0000 90000000    R     MOV     DPTR,#val
+0004 110000      R     ACALL   L?0118
+0007 F0                MOVX    @DPTR,A
+;---- Variable 'i2cid' assigned to Register 'R5' ----
+0008 AD07              MOV     R5,AR7
+                                           ; SOURCE LINE # 422
+                                           ; SOURCE LINE # 427
+000A A3                INC     DPTR
+000B E0                MOVX    A,@DPTR
+000C FB                MOV     R3,A
+000D 90000000    R     MOV     DPTR,#cnt
+0011 E4                CLR     A
+0012 F0                MOVX    @DPTR,A
+0013 A3                INC     DPTR
+0014 EB                MOV     A,R3
+0015 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 428
+0016 7009              JNZ     ?C0049
+                                           ; SOURCE LINE # 429
+0018 90000000    R     MOV     DPTR,#cnt
+001C 04                INC     A
+001D F0                MOVX    @DPTR,A
+001E A3                INC     DPTR
+001F E4                CLR     A
+0020 F0                MOVX    @DPTR,A
+0021         ?C0049:
+                                           ; SOURCE LINE # 432
+0021 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 433
+0024 90000000    R     MOV     DPTR,#ret
+0028 E0                MOVX    A,@DPTR
+0029 FE                MOV     R6,A
+002A C006              PUSH    AR6
+002C ED                MOV     A,R5
+002D 4401              ORL     A,#01H
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 27  
+
+002F FF                MOV     R7,A
+0030 110000      R     ACALL   _I2C_WriteData
+0033 D0E0              POP     ACC
+0035 4F                ORL     A,R7
+0036 90000000    R     MOV     DPTR,#ret
+003A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 434
+003B 90000000    R     MOV     DPTR,#cnt+01H
+003F E0                MOVX    A,@DPTR
+0040 24FF              ADD     A,#0FFH
+0042 F0                MOVX    @DPTR,A
+0043 90000000    R     MOV     DPTR,#cnt
+0047 E0                MOVX    A,@DPTR
+0048 34FF              ADDC    A,#0FFH
+004A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 435
+004B E4                CLR     A
+004C 90000000    R     MOV     DPTR,#i
+0050 F0                MOVX    @DPTR,A
+0051 A3                INC     DPTR
+0052 F0                MOVX    @DPTR,A
+0053         ?C0050:
+0053 90000000    R     MOV     DPTR,#cnt
+0057 E0                MOVX    A,@DPTR
+0058 FE                MOV     R6,A
+0059 A3                INC     DPTR
+005A E0                MOVX    A,@DPTR
+005B FF                MOV     R7,A
+005C C3                CLR     C
+005D 90000000    R     MOV     DPTR,#i+01H
+0061 E0                MOVX    A,@DPTR
+0062 9F                SUBB    A,R7
+0063 90000000    R     MOV     DPTR,#i
+0067 E0                MOVX    A,@DPTR
+0068 9E                SUBB    A,R6
+0069 5017              JNC     ?C0051
+                                           ; SOURCE LINE # 436
+006B E4                CLR     A
+006C FF                MOV     R7,A
+006D 110000      R     ACALL   L?0112
+                                           ; SOURCE LINE # 437
+0070 90000000    R     MOV     DPTR,#i+01H
+0074 E0                MOVX    A,@DPTR
+0075 04                INC     A
+0076 F0                MOVX    @DPTR,A
+0077 70DA              JNZ     ?C0050
+0079 90000000    R     MOV     DPTR,#i
+007D E0                MOVX    A,@DPTR
+007E 04                INC     A
+007F F0                MOVX    @DPTR,A
+0080         ?C0103:
+0080 80D1              SJMP    ?C0050
+0082         ?C0051:
+                                           ; SOURCE LINE # 438
+0082 7F01              MOV     R7,#01H
+0084 110000      R     ACALL   L?0112
+                                           ; SOURCE LINE # 440
+0087 110000      R     ACALL   I2C_Stop
+                                           ; SOURCE LINE # 443
+008A 90000000    R     MOV     DPTR,#ret
+008E E0                MOVX    A,@DPTR
+008F FF                MOV     R7,A
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 28  
+
+                                           ; SOURCE LINE # 444
+0090         ?C0053:
+0090 22                RET     
+0091         L?0112:
+0091 110000      R     ACALL   _I2C_ReadData
+0094 90000000    R     MOV     DPTR,#val
+0098 E0                MOVX    A,@DPTR
+0099 FB                MOV     R3,A
+009A A3                INC     DPTR
+009B E0                MOVX    A,@DPTR
+009C FA                MOV     R2,A
+009D A3                INC     DPTR
+009E E0                MOVX    A,@DPTR
+009F F9                MOV     R1,A
+00A0 90000000    R     MOV     DPTR,#i
+00A4 E0                MOVX    A,@DPTR
+00A5 FC                MOV     R4,A
+00A6 A3                INC     DPTR
+00A7 E0                MOVX    A,@DPTR
+00A8 FD                MOV     R5,A
+00A9 E9                MOV     A,R1
+00AA 2D                ADD     A,R5
+00AB F9                MOV     R1,A
+00AC EA                MOV     A,R2
+00AD 3C                ADDC    A,R4
+00AE FA                MOV     R2,A
+00AF EF                MOV     A,R7
+00B0 110000      E     ACALL   ?C?CSTPTR
+00B3 22                RET     
+             ; FUNCTION _ReadI2CS_Only (END)
+
+             ; FUNCTION _ReadI2CS (BEGIN)
+                                           ; SOURCE LINE # 456
+0000 90000000    R     MOV     DPTR,#i2cid
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 110000      R     ACALL   L?0116
+000A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 457
+                                           ; SOURCE LINE # 462
+000B 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 463
+000E 90000000    R     MOV     DPTR,#i2cid
+0012 E0                MOVX    A,@DPTR
+0013 FF                MOV     R7,A
+0014 110000      R     ACALL   _I2C_WriteData
+0017 90000000    R     MOV     DPTR,#ret
+001B EF                MOV     A,R7
+001C F0                MOVX    @DPTR,A
+001D E0                MOVX    A,@DPTR
+001E 25E0              ADD     A,ACC
+0020 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 464
+0021 E0                MOVX    A,@DPTR
+0022 FE                MOV     R6,A
+0023 C006              PUSH    AR6
+0025 90000000    R     MOV     DPTR,#index
+0029 E0                MOVX    A,@DPTR
+002A FF                MOV     R7,A
+002B 110000      R     ACALL   _I2C_WriteData
+002E D0E0              POP     ACC
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 29  
+
+0030 4F                ORL     A,R7
+0031 90000000    R     MOV     DPTR,#ret
+0035 F0                MOVX    @DPTR,A
+0036 E0                MOVX    A,@DPTR
+0037 FF                MOV     R7,A
+0038 25E0              ADD     A,ACC
+003A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 465
+003B 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 466
+003E 90000000    R     MOV     DPTR,#ret
+0042 E0                MOVX    A,@DPTR
+0043 FE                MOV     R6,A
+0044 C006              PUSH    AR6
+0046 90000000    R     MOV     DPTR,#i2cid
+004A E0                MOVX    A,@DPTR
+004B 4401              ORL     A,#01H
+004D FF                MOV     R7,A
+004E 110000      R     ACALL   _I2C_WriteData
+0051 D0E0              POP     ACC
+0053 4F                ORL     A,R7
+0054 90000000    R     MOV     DPTR,#ret
+0058 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 467
+0059 90000000    R     MOV     DPTR,#cnt
+005D E0                MOVX    A,@DPTR
+005E 14                DEC     A
+005F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 468
+0060 E4                CLR     A
+0061 A3                INC     DPTR
+0062 F0                MOVX    @DPTR,A
+0063         ?C0054:
+0063 90000000    R     MOV     DPTR,#cnt
+0067 E0                MOVX    A,@DPTR
+0068 FF                MOV     R7,A
+0069 A3                INC     DPTR
+006A E0                MOVX    A,@DPTR
+006B C3                CLR     C
+006C 9F                SUBB    A,R7
+006D 500E              JNC     ?C0055
+                                           ; SOURCE LINE # 469
+006F E4                CLR     A
+0070 FF                MOV     R7,A
+0071 110000      R     ACALL   L?0120
+                                           ; SOURCE LINE # 470
+0074 90000000    R     MOV     DPTR,#i
+0078 E0                MOVX    A,@DPTR
+0079 04                INC     A
+007A F0                MOVX    @DPTR,A
+007B 80E6              SJMP    ?C0054
+007D         ?C0055:
+                                           ; SOURCE LINE # 471
+007D 7F01              MOV     R7,#01H
+007F 110000      R     ACALL   L?0120
+                                           ; SOURCE LINE # 473
+0082 110000      R     ACALL   I2C_Stop
+                                           ; SOURCE LINE # 479
+0085 90000000    R     MOV     DPTR,#ret
+0089 E0                MOVX    A,@DPTR
+008A FF                MOV     R7,A
+                                           ; SOURCE LINE # 480
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 30  
+
+008B         ?C0057:
+008B 22                RET     
+008C         L?0120:
+008C 110000      R     ACALL   _I2C_ReadData
+008F 90000000    R     MOV     DPTR,#val
+0093 E0                MOVX    A,@DPTR
+0094 FB                MOV     R3,A
+0095 A3                INC     DPTR
+0096 E0                MOVX    A,@DPTR
+0097 FA                MOV     R2,A
+0098 A3                INC     DPTR
+0099 E0                MOVX    A,@DPTR
+009A F9                MOV     R1,A
+009B 90000000    R     MOV     DPTR,#i
+009F E0                MOVX    A,@DPTR
+00A0 FE                MOV     R6,A
+00A1 E9                MOV     A,R1
+00A2 2E                ADD     A,R6
+00A3 F9                MOV     R1,A
+00A4 E4                CLR     A
+00A5 3A                ADDC    A,R2
+00A6 FA                MOV     R2,A
+00A7 EF                MOV     A,R7
+00A8 110000      E     ACALL   ?C?CSTPTR
+00AB 22                RET     
+             ; FUNCTION _ReadI2CS (END)
+
+             ; FUNCTION _ReadI2C_multi (BEGIN)
+                                           ; SOURCE LINE # 490
+0000 90000000    R     MOV     DPTR,#i2cid
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 EA                MOV     A,R2
+0008 F0                MOVX    @DPTR,A
+0009 A3                INC     DPTR
+000A EB                MOV     A,R3
+;---- Variable 'config' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 491
+                                           ; SOURCE LINE # 496
+                                           ; SOURCE LINE # 497
+000B 110000      R     ACALL   L?0125
+000E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 501
+000F 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 502
+0012 90000000    R     MOV     DPTR,#i2cid
+0016 110000      R     ACALL   L?0121
+0019 EF                MOV     A,R7
+001A F0                MOVX    @DPTR,A
+001B E0                MOVX    A,@DPTR
+001C 25E0              ADD     A,ACC
+001E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 503
+001F 90000000    R     MOV     DPTR,#size
+0023 E0                MOVX    A,@DPTR
+0024 B4020A            CJNE    A,#02H,?C0058
+                                           ; SOURCE LINE # 504
+0027 90000000    R     MOV     DPTR,#index
+002B 110000      R     ACALL   L?0121
+002E E0                MOVX    A,@DPTR
+002F 2F                ADD     A,R7
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 31  
+
+0030 F0                MOVX    @DPTR,A
+0031         ?C0058:
+0031 90000000    R     MOV     DPTR,#ret
+0035 E0                MOVX    A,@DPTR
+0036 25E0              ADD     A,ACC
+0038 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 505
+0039 90000000    R     MOV     DPTR,#index
+003D A3                INC     DPTR
+003E E0                MOVX    A,@DPTR
+003F FF                MOV     R7,A
+0040 110000      R     ACALL   _I2C_WriteData
+0043 90000000    R     MOV     DPTR,#ret
+0047 110000      R     ACALL   L?0123
+004A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 507
+004B 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 508
+004E 90000000    R     MOV     DPTR,#i2cid
+0052 E0                MOVX    A,@DPTR
+0053 4401              ORL     A,#01H
+0055 FF                MOV     R7,A
+0056 110000      R     ACALL   _I2C_WriteData
+0059 90000000    R     MOV     DPTR,#ret
+005D E0                MOVX    A,@DPTR
+005E 2F                ADD     A,R7
+005F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 511
+0060 90000000    R     MOV     DPTR,#data_size
+0064 E0                MOVX    A,@DPTR
+0065 90000000    R     MOV     DPTR,#size
+0069 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 512
+006A E4                CLR     A
+006B FF                MOV     R7,A
+006C FE                MOV     R6,A
+006D FD                MOV     R5,A
+006E FC                MOV     R4,A
+006F 805D              SJMP    ?C0109
+0071         ?C0059:
+                                           ; SOURCE LINE # 513
+0071 90000000    R     MOV     DPTR,#size
+0075 E0                MOVX    A,@DPTR
+0076 605F              JZ      ?C0060
+                                           ; SOURCE LINE # 514
+0078 14                DEC     A
+0079 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 515
+007A E0                MOVX    A,@DPTR
+007B 90000000    R     MOV     DPTR,#value
+007F 6030              JZ      ?C0061
+                                           ; SOURCE LINE # 516
+0081 110000      R     ACALL   L?0129
+0084 E0                MOVX    A,@DPTR
+0085 FB                MOV     R3,A
+0086 C000              PUSH    AR0
+0088 C001              PUSH    AR1
+008A C002              PUSH    AR2
+008C C003              PUSH    AR3
+008E E4                CLR     A
+008F FF                MOV     R7,A
+0090 110000      R     ACALL   _I2C_ReadData
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 32  
+
+0093 D003              POP     AR3
+0095 D002              POP     AR2
+0097 D001              POP     AR1
+0099 D000              POP     AR0
+009B 110000      R     ACALL   L?0137
+009E 90000000    R     MOV     DPTR,#value
+00A2 110000      E     ACALL   ?C?LSTXDATA
+                                           ; SOURCE LINE # 517
+00A5 110000      R     ACALL   L?0127
+00A8 E0                MOVX    A,@DPTR
+00A9 FF                MOV     R7,A
+00AA 7808              MOV     R0,#08H
+00AC 110000      E     ACALL   ?C?LSHL
+                                           ; SOURCE LINE # 518
+00AF 801D              SJMP    ?C0108
+00B1         ?C0061:
+                                           ; SOURCE LINE # 520
+00B1 110000      R     ACALL   L?0129
+00B4 E0                MOVX    A,@DPTR
+00B5 FB                MOV     R3,A
+00B6 C000              PUSH    AR0
+00B8 C001              PUSH    AR1
+00BA C002              PUSH    AR2
+00BC C003              PUSH    AR3
+00BE 7F01              MOV     R7,#01H
+00C0 110000      R     ACALL   _I2C_ReadData
+00C3 D003              POP     AR3
+00C5 D002              POP     AR2
+00C7 D001              POP     AR1
+00C9 D000              POP     AR0
+00CB 110000      R     ACALL   L?0137
+00CE         ?C0108:
+00CE         ?C0109:
+00CE 90000000    R     MOV     DPTR,#value
+00D2 110000      E     ACALL   ?C?LSTXDATA
+                                           ; SOURCE LINE # 521
+00D5 809A              SJMP    ?C0059
+00D7         ?C0060:
+                                           ; SOURCE LINE # 523
+00D7 110000      R     ACALL   I2C_Stop
+                                           ; SOURCE LINE # 526
+00DA 110000      R     ACALL   L?0127
+00DD E0                MOVX    A,@DPTR
+00DE FF                MOV     R7,A
+                                           ; SOURCE LINE # 527
+00DF         ?C0063:
+00DF 22                RET     
+00E0         L?0121:
+00E0 E0                MOVX    A,@DPTR
+00E1 FF                MOV     R7,A
+00E2 110000      R     ACALL   _I2C_WriteData
+00E5 90000000    R     MOV     DPTR,#ret
+00E9 22                RET     
+             ; FUNCTION _ReadI2C_multi (END)
+
+             ; FUNCTION _ReadI2CS_multi (BEGIN)
+                                           ; SOURCE LINE # 531
+0000 90000000    R     MOV     DPTR,#i2cid
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+0006 90000000    R     MOV     DPTR,#index
+000A EA                MOV     A,R2
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 33  
+
+000B F0                MOVX    @DPTR,A
+000C A3                INC     DPTR
+000D EB                MOV     A,R3
+000E F0                MOVX    @DPTR,A
+;---- Variable 'config' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 532
+                                           ; SOURCE LINE # 538
+000F 90000000    R     MOV     DPTR,#_count
+0013 E0                MOVX    A,@DPTR
+0014 FB                MOV     R3,A
+0015 90000000    R     MOV     DPTR,#count
+0019 E4                CLR     A
+001A F0                MOVX    @DPTR,A
+001B A3                INC     DPTR
+001C EB                MOV     A,R3
+001D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 539
+001E 7009              JNZ     ?C0064
+                                           ; SOURCE LINE # 540
+0020 90000000    R     MOV     DPTR,#count
+0024 04                INC     A
+0025 F0                MOVX    @DPTR,A
+0026 A3                INC     DPTR
+0027 E4                CLR     A
+0028 F0                MOVX    @DPTR,A
+0029         ?C0064:
+                                           ; SOURCE LINE # 541
+0029 90000000    R     MOV     DPTR,#value
+002D 110000      R     ACALL   L?0130
+0030 E0                MOVX    A,@DPTR
+0031 90000000    R     MOV     DPTR,#pBYTE
+0035 C9                XCH     A,R1
+0036 110000      R     ACALL   L?0119
+                                           ; SOURCE LINE # 543
+                                           ; SOURCE LINE # 544
+0039 110000      R     ACALL   L?0125
+003C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 548
+003D 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 549
+0040 90000000    R     MOV     DPTR,#i2cid
+0044 110000      R     ACALL   L?0122
+0047 EF                MOV     A,R7
+0048 F0                MOVX    @DPTR,A
+0049 E0                MOVX    A,@DPTR
+004A 25E0              ADD     A,ACC
+004C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 550
+004D 90000000    R     MOV     DPTR,#size
+0051 E0                MOVX    A,@DPTR
+0052 B4020A            CJNE    A,#02H,?C0065
+                                           ; SOURCE LINE # 551
+0055 90000000    R     MOV     DPTR,#index
+0059 110000      R     ACALL   L?0122
+005C E0                MOVX    A,@DPTR
+005D 2F                ADD     A,R7
+005E F0                MOVX    @DPTR,A
+005F         ?C0065:
+005F 90000000    R     MOV     DPTR,#ret
+0063 E0                MOVX    A,@DPTR
+0064 25E0              ADD     A,ACC
+0066 F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 34  
+
+                                           ; SOURCE LINE # 552
+0067 90000000    R     MOV     DPTR,#index
+006B A3                INC     DPTR
+006C E0                MOVX    A,@DPTR
+006D FF                MOV     R7,A
+006E 110000      R     ACALL   _I2C_WriteData
+0071 90000000    R     MOV     DPTR,#ret
+0075 110000      R     ACALL   L?0124
+0078 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 554
+0079 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 555
+007C 90000000    R     MOV     DPTR,#i2cid
+0080 E0                MOVX    A,@DPTR
+0081 4401              ORL     A,#01H
+0083 FF                MOV     R7,A
+0084 110000      R     ACALL   _I2C_WriteData
+0087 90000000    R     MOV     DPTR,#ret
+008B E0                MOVX    A,@DPTR
+008C 2F                ADD     A,R7
+008D F0                MOVX    @DPTR,A
+008E         ?C0066:
+                                           ; SOURCE LINE # 558
+008E 90000000    R     MOV     DPTR,#count
+0092 110000      R     ACALL   L?0138
+0095 604A              JZ      ?C0067
+                                           ; SOURCE LINE # 559
+0097 90000000    R     MOV     DPTR,#data_size
+009B E0                MOVX    A,@DPTR
+009C 90000000    R     MOV     DPTR,#size
+00A0 F0                MOVX    @DPTR,A
+00A1         ?C0068:
+                                           ; SOURCE LINE # 560
+00A1 90000000    R     MOV     DPTR,#size
+00A5 E0                MOVX    A,@DPTR
+00A6 60E6              JZ      ?C0066
+                                           ; SOURCE LINE # 561
+00A8 14                DEC     A
+00A9 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 562
+00AA 90000000    R     MOV     DPTR,#count
+00AE E0                MOVX    A,@DPTR
+00AF 7002              JNZ     ?C0104
+00B1 A3                INC     DPTR
+00B2 E0                MOVX    A,@DPTR
+00B3         ?C0104:
+00B3 7007              JNZ     ?C0071
+00B5 90000000    R     MOV     DPTR,#size
+00B9 E0                MOVX    A,@DPTR
+00BA 600E              JZ      ?C0070
+00BC         ?C0071:
+                                           ; SOURCE LINE # 563
+00BC E4                CLR     A
+00BD FF                MOV     R7,A
+00BE 110000      R     ACALL   _I2C_ReadData
+00C1 90000000    R     MOV     DPTR,#pBYTE
+00C5 110000      R     ACALL   L?0114
+00C8 8011              SJMP    ?C0110
+00CA         ?C0070:
+                                           ; SOURCE LINE # 565
+00CA 7F01              MOV     R7,#01H
+00CC 110000      R     ACALL   _I2C_ReadData
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 35  
+
+00CF 90000000    R     MOV     DPTR,#pBYTE
+00D3 E0                MOVX    A,@DPTR
+00D4 FB                MOV     R3,A
+00D5 A3                INC     DPTR
+00D6 E0                MOVX    A,@DPTR
+00D7 FA                MOV     R2,A
+00D8 A3                INC     DPTR
+00D9 E0                MOVX    A,@DPTR
+00DA F9                MOV     R1,A
+00DB         ?C0110:
+00DB EF                MOV     A,R7
+00DC 110000      E     ACALL   ?C?CSTPTR
+                                           ; SOURCE LINE # 566
+00DF 80C0              SJMP    ?C0068
+                                           ; SOURCE LINE # 567
+00E1         ?C0067:
+                                           ; SOURCE LINE # 569
+00E1 110000      R     ACALL   I2C_Stop
+                                           ; SOURCE LINE # 572
+00E4 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 573
+00E6         ?C0073:
+00E6 22                RET     
+00E7         L?0122:
+00E7 E0                MOVX    A,@DPTR
+00E8 FF                MOV     R7,A
+00E9 110000      R     ACALL   _I2C_WriteData
+00EC 90000000    R     MOV     DPTR,#ret
+00F0 22                RET     
+             ; FUNCTION _ReadI2CS_multi (END)
+
+             ; FUNCTION _WriteI2C_multi (BEGIN)
+                                           ; SOURCE LINE # 575
+0000 90000000    R     MOV     DPTR,#config
+0004 ED                MOV     A,R5
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+;---- Variable 'i2cid' assigned to Register 'R4' ----
+0007 110000      R     ACALL   L?0135
+                                           ; SOURCE LINE # 576
+                                           ; SOURCE LINE # 581
+000A 90000000    R     MOV     DPTR,#config
+000E E0                MOVX    A,@DPTR
+000F FF                MOV     R7,A
+0010 C4                SWAP    A
+0011 540F              ANL     A,#0FH
+0013 90000000    R     MOV     DPTR,#size
+0017 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 583
+0018 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 584
+001B AF04              MOV     R7,AR4
+001D 110000      R     ACALL   _I2C_WriteData
+0020 90000000    R     MOV     DPTR,#ret
+0024 EF                MOV     A,R7
+0025 F0                MOVX    @DPTR,A
+0026 E0                MOVX    A,@DPTR
+0027 25E0              ADD     A,ACC
+0029 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 585
+002A 90000000    R     MOV     DPTR,#size
+002E E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 36  
+
+002F B4020A            CJNE    A,#02H,?C0074
+                                           ; SOURCE LINE # 586
+0032 90000000    R     MOV     DPTR,#index
+0036 110000      R     ACALL   L?0132
+0039 E0                MOVX    A,@DPTR
+003A 2F                ADD     A,R7
+003B F0                MOVX    @DPTR,A
+003C         ?C0074:
+003C 90000000    R     MOV     DPTR,#ret
+0040 E0                MOVX    A,@DPTR
+0041 25E0              ADD     A,ACC
+0043 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 587
+0044 90000000    R     MOV     DPTR,#index
+0048 A3                INC     DPTR
+0049 110000      R     ACALL   L?0132
+004C 110000      R     ACALL   L?0124
+004F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 589
+0050 90000000    R     MOV     DPTR,#config
+0054 E0                MOVX    A,@DPTR
+0055 540F              ANL     A,#0FH
+0057 90000000    R     MOV     DPTR,#size
+005B F0                MOVX    @DPTR,A
+005C         ?C0075:
+                                           ; SOURCE LINE # 590
+005C 90000000    R     MOV     DPTR,#size
+0060 E0                MOVX    A,@DPTR
+0061 6034              JZ      ?C0076
+                                           ; SOURCE LINE # 591
+0063 14                DEC     A
+0064 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 592
+0065 90000000    R     MOV     DPTR,#value
+0069 110000      R     ACALL   L?0128
+006C E0                MOVX    A,@DPTR
+006D FF                MOV     R7,A
+006E 90000000    R     MOV     DPTR,#size
+0072 E0                MOVX    A,@DPTR
+0073 75F008            MOV     B,#08H
+0076 A4                MUL     AB
+0077 F9                MOV     R1,A
+0078 F8                MOV     R0,A
+0079 110000      E     ACALL   ?C?ULSHR
+007C 90000000    R     MOV     DPTR,#bTemp
+0080 EF                MOV     A,R7
+0081 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 593
+0082 90000000    R     MOV     DPTR,#ret
+0086 E0                MOVX    A,@DPTR
+0087 FE                MOV     R6,A
+0088 C006              PUSH    AR6
+008A 110000      R     ACALL   _I2C_WriteData
+008D D0E0              POP     ACC
+008F 4F                ORL     A,R7
+0090 90000000    R     MOV     DPTR,#ret
+0094 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 594
+0095 80C5              SJMP    ?C0075
+0097         ?C0076:
+                                           ; SOURCE LINE # 595
+0097 110000      R     ACALL   I2C_Stop
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 37  
+
+                                           ; SOURCE LINE # 602
+009A 90000000    R     MOV     DPTR,#ret
+009E E0                MOVX    A,@DPTR
+009F FF                MOV     R7,A
+                                           ; SOURCE LINE # 603
+00A0         ?C0077:
+00A0 22                RET     
+00A1         L?0132:
+00A1 E0                MOVX    A,@DPTR
+00A2 FF                MOV     R7,A
+00A3 110000      R     ACALL   _I2C_WriteData
+00A6 90000000    R     MOV     DPTR,#ret
+00AA 22                RET     
+             ; FUNCTION _WriteI2C_multi (END)
+
+             ; FUNCTION _WriteI2CS_multi (BEGIN)
+                                           ; SOURCE LINE # 611
+0000 90000000    R     MOV     DPTR,#index
+;---- Variable 'config' assigned to Register 'R5' ----
+;---- Variable 'i2cid' assigned to Register 'R4' ----
+0004 110000      R     ACALL   L?0135
+                                           ; SOURCE LINE # 612
+                                           ; SOURCE LINE # 618
+0007 90000000    R     MOV     DPTR,#_count
+000B E0                MOVX    A,@DPTR
+000C FB                MOV     R3,A
+000D 90000000    R     MOV     DPTR,#count
+0011 E4                CLR     A
+0012 F0                MOVX    @DPTR,A
+0013 A3                INC     DPTR
+0014 EB                MOV     A,R3
+0015 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 619
+0016 7009              JNZ     ?C0078
+                                           ; SOURCE LINE # 620
+0018 90000000    R     MOV     DPTR,#count
+001C 04                INC     A
+001D F0                MOVX    @DPTR,A
+001E A3                INC     DPTR
+001F E4                CLR     A
+0020 F0                MOVX    @DPTR,A
+0021         ?C0078:
+                                           ; SOURCE LINE # 622
+0021 90000000    R     MOV     DPTR,#value
+0025 110000      R     ACALL   L?0130
+0028 E0                MOVX    A,@DPTR
+0029 90000000    R     MOV     DPTR,#pBYTE
+002D C9                XCH     A,R1
+002E 110000      R     ACALL   L?0119
+                                           ; SOURCE LINE # 624
+                                           ; SOURCE LINE # 625
+0031 110000      R     ACALL   L?0126
+0034 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 628
+0035 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 629
+0038 AF04              MOV     R7,AR4
+003A 110000      R     ACALL   _I2C_WriteData
+003D 90000000    R     MOV     DPTR,#ret
+0041 EF                MOV     A,R7
+0042 F0                MOVX    @DPTR,A
+0043 E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 38  
+
+0044 25E0              ADD     A,ACC
+0046 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 630
+0047 90000000    R     MOV     DPTR,#size
+004B E0                MOVX    A,@DPTR
+004C B4020A            CJNE    A,#02H,?C0079
+                                           ; SOURCE LINE # 631
+004F 90000000    R     MOV     DPTR,#index
+0053 110000      R     ACALL   L?0133
+0056 E0                MOVX    A,@DPTR
+0057 2F                ADD     A,R7
+0058 F0                MOVX    @DPTR,A
+0059         ?C0079:
+0059 90000000    R     MOV     DPTR,#ret
+005D E0                MOVX    A,@DPTR
+005E 25E0              ADD     A,ACC
+0060 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 632
+0061 90000000    R     MOV     DPTR,#index
+0065 A3                INC     DPTR
+0066 110000      R     ACALL   L?0133
+0069 110000      R     ACALL   L?0124
+006C F0                MOVX    @DPTR,A
+006D         ?C0080:
+                                           ; SOURCE LINE # 635
+006D 90000000    R     MOV     DPTR,#count
+0071 110000      R     ACALL   L?0138
+0074 603A              JZ      ?C0081
+                                           ; SOURCE LINE # 636
+0076 90000000    R     MOV     DPTR,#data_size
+007A E0                MOVX    A,@DPTR
+007B 90000000    R     MOV     DPTR,#size
+007F F0                MOVX    @DPTR,A
+0080         ?C0082:
+                                           ; SOURCE LINE # 637
+0080 90000000    R     MOV     DPTR,#size
+0084 E0                MOVX    A,@DPTR
+0085 6022              JZ      ?C0083
+                                           ; SOURCE LINE # 638
+0087 14                DEC     A
+0088 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 639
+0089 90000000    R     MOV     DPTR,#ret
+008D E0                MOVX    A,@DPTR
+008E FE                MOV     R6,A
+008F C006              PUSH    AR6
+0091 90000000    R     MOV     DPTR,#pBYTE
+0095 110000      R     ACALL   L?0114
+0098 110000      E     ACALL   ?C?CLDPTR
+009B FF                MOV     R7,A
+009C 110000      R     ACALL   _I2C_WriteData
+009F D0E0              POP     ACC
+00A1 4F                ORL     A,R7
+00A2 90000000    R     MOV     DPTR,#ret
+00A6 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 640
+00A7 80D7              SJMP    ?C0082
+00A9         ?C0083:
+                                           ; SOURCE LINE # 641
+00A9 90000000    R     MOV     DPTR,#ret
+00AD E0                MOVX    A,@DPTR
+00AE 60BD              JZ      ?C0080
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 39  
+
+                                           ; SOURCE LINE # 642
+00B0         ?C0081:
+                                           ; SOURCE LINE # 645
+00B0 110000      R     ACALL   I2C_Stop
+                                           ; SOURCE LINE # 648
+00B3 90000000    R     MOV     DPTR,#ret
+00B7 E0                MOVX    A,@DPTR
+00B8 FF                MOV     R7,A
+                                           ; SOURCE LINE # 649
+00B9         ?C0085:
+00B9 22                RET     
+00BA         L?0133:
+00BA E0                MOVX    A,@DPTR
+00BB FF                MOV     R7,A
+00BC 110000      R     ACALL   _I2C_WriteData
+00BF 90000000    R     MOV     DPTR,#ret
+00C3 22                RET     
+             ; FUNCTION _WriteI2CS_multi (END)
+
+             ; FUNCTION _WriteI2C_8A (BEGIN)
+                                           ; SOURCE LINE # 658
+0000 90000000    R     MOV     DPTR,#index
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 ED                MOV     A,R5
+0008 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 659
+                                           ; SOURCE LINE # 661
+0009 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 662
+000C 7F8A              MOV     R7,#08AH
+000E 110000      R     ACALL   _I2C_WriteData
+                                           ; SOURCE LINE # 663
+0011 90000000    R     MOV     DPTR,#index
+0015 E0                MOVX    A,@DPTR
+0016 FF                MOV     R7,A
+0017 110000      R     ACALL   _I2C_WriteData
+                                           ; SOURCE LINE # 664
+001A 90000000    R     MOV     DPTR,#value
+001E E0                MOVX    A,@DPTR
+001F FF                MOV     R7,A
+0020 110000      R     ACALL   _I2C_WriteData
+                                           ; SOURCE LINE # 665
+0023 110000      R     ACALL   I2C_Stop
+                                           ; SOURCE LINE # 667
+0026 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 668
+0028         ?C0086:
+0028 22                RET     
+             ; FUNCTION _WriteI2C_8A (END)
+
+             ; FUNCTION _ReadI2C_8A (BEGIN)
+                                           ; SOURCE LINE # 669
+0000 90000000    R     MOV     DPTR,#index
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 670
+                                           ; SOURCE LINE # 674
+0006 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 675
+0009 7F8A              MOV     R7,#08AH
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 40  
+
+000B 110000      R     ACALL   _I2C_WriteData
+                                           ; SOURCE LINE # 676
+000E 90000000    R     MOV     DPTR,#index
+0012 E0                MOVX    A,@DPTR
+0013 FF                MOV     R7,A
+0014 110000      R     ACALL   _I2C_WriteData
+                                           ; SOURCE LINE # 677
+0017 110000      R     ACALL   I2C_Stop
+                                           ; SOURCE LINE # 681
+001A 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 682
+001D 7F8B              MOV     R7,#08BH
+001F 110000      R     ACALL   _I2C_WriteData
+                                           ; SOURCE LINE # 683
+0022 7F01              MOV     R7,#01H
+0024 110000      R     ACALL   _I2C_ReadData
+0027 90000000    R     MOV     DPTR,#value
+002B EF                MOV     A,R7
+002C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 684
+002D 110000      R     ACALL   I2C_Stop
+                                           ; SOURCE LINE # 686
+0030 90000000    R     MOV     DPTR,#value
+0034 E0                MOVX    A,@DPTR
+0035 FF                MOV     R7,A
+                                           ; SOURCE LINE # 687
+0036         ?C0087:
+0036 22                RET     
+             ; FUNCTION _ReadI2C_8A (END)
+
+             ; FUNCTION _WriteI2CS_8A (BEGIN)
+                                           ; SOURCE LINE # 688
+0000 90000000    R     MOV     DPTR,#index
+0004 EF                MOV     A,R7
+0005 110000      R     ACALL   L?0117
+0008 F0                MOVX    @DPTR,A
+;---- Variable 'len' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 689
+                                           ; SOURCE LINE # 693
+0009 ED                MOV     A,R5
+000A 700B              JNZ     ?C0088
+000C 90000000    R     MOV     DPTR,#n
+0010 04                INC     A
+0011 F0                MOVX    @DPTR,A
+0012 A3                INC     DPTR
+0013 E4                CLR     A
+0014 F0                MOVX    @DPTR,A
+0015 800B              SJMP    ?C0089
+0017         ?C0088:
+                                           ; SOURCE LINE # 694
+0017 AF05              MOV     R7,AR5
+0019 90000000    R     MOV     DPTR,#n
+001D E4                CLR     A
+001E F0                MOVX    @DPTR,A
+001F A3                INC     DPTR
+0020 EF                MOV     A,R7
+0021 F0                MOVX    @DPTR,A
+0022         ?C0089:
+                                           ; SOURCE LINE # 697
+0022 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 698
+0025 7F8A              MOV     R7,#08AH
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 41  
+
+0027 110000      R     ACALL   _I2C_WriteData
+                                           ; SOURCE LINE # 699
+002A 90000000    R     MOV     DPTR,#index
+002E E0                MOVX    A,@DPTR
+002F FF                MOV     R7,A
+0030 110000      R     ACALL   _I2C_WriteData
+                                           ; SOURCE LINE # 700
+0033 E4                CLR     A
+0034 90000000    R     MOV     DPTR,#i
+0038 F0                MOVX    @DPTR,A
+0039 A3                INC     DPTR
+003A F0                MOVX    @DPTR,A
+003B         ?C0090:
+003B 90000000    R     MOV     DPTR,#n
+003F E0                MOVX    A,@DPTR
+0040 FE                MOV     R6,A
+0041 A3                INC     DPTR
+0042 E0                MOVX    A,@DPTR
+0043 FF                MOV     R7,A
+0044 C3                CLR     C
+0045 90000000    R     MOV     DPTR,#i+01H
+0049 E0                MOVX    A,@DPTR
+004A 9F                SUBB    A,R7
+004B 90000000    R     MOV     DPTR,#i
+004F E0                MOVX    A,@DPTR
+0050 9E                SUBB    A,R6
+0051 5026              JNC     ?C0091
+                                           ; SOURCE LINE # 701
+0053 90000000    R     MOV     DPTR,#buff
+0057 110000      R     ACALL   L?0115
+005A 110000      E     ACALL   ?C?CLDPTR
+005D 90000000    R     MOV     DPTR,#value
+0061 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 702
+0062 E0                MOVX    A,@DPTR
+0063 FF                MOV     R7,A
+0064 110000      R     ACALL   _I2C_WriteData
+                                           ; SOURCE LINE # 703
+0067 90000000    R     MOV     DPTR,#i+01H
+006B E0                MOVX    A,@DPTR
+006C 04                INC     A
+006D F0                MOVX    @DPTR,A
+006E 70CB              JNZ     ?C0090
+0070 90000000    R     MOV     DPTR,#i
+0074 E0                MOVX    A,@DPTR
+0075 04                INC     A
+0076 F0                MOVX    @DPTR,A
+0077         ?C0105:
+0077 80C2              SJMP    ?C0090
+0079         ?C0091:
+                                           ; SOURCE LINE # 704
+0079 110000      R     ACALL   I2C_Stop
+                                           ; SOURCE LINE # 706
+007C 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 707
+007E         ?C0093:
+007E 22                RET     
+             ; FUNCTION _WriteI2CS_8A (END)
+
+             ; FUNCTION _ReadI2CS_8A (BEGIN)
+                                           ; SOURCE LINE # 708
+0000 90000000    R     MOV     DPTR,#index
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 42  
+
+0004 EF                MOV     A,R7
+0005 110000      R     ACALL   L?0117
+0008 F0                MOVX    @DPTR,A
+;---- Variable 'len' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 709
+                                           ; SOURCE LINE # 713
+0009 ED                MOV     A,R5
+000A 700B              JNZ     ?C0094
+000C 90000000    R     MOV     DPTR,#n
+0010 04                INC     A
+0011 F0                MOVX    @DPTR,A
+0012 A3                INC     DPTR
+0013 E4                CLR     A
+0014 F0                MOVX    @DPTR,A
+0015 800B              SJMP    ?C0095
+0017         ?C0094:
+                                           ; SOURCE LINE # 714
+0017 AF05              MOV     R7,AR5
+0019 90000000    R     MOV     DPTR,#n
+001D E4                CLR     A
+001E F0                MOVX    @DPTR,A
+001F A3                INC     DPTR
+0020 EF                MOV     A,R7
+0021 F0                MOVX    @DPTR,A
+0022         ?C0095:
+                                           ; SOURCE LINE # 717
+0022 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 718
+0025 7F8A              MOV     R7,#08AH
+0027 110000      R     ACALL   _I2C_WriteData
+                                           ; SOURCE LINE # 719
+002A 90000000    R     MOV     DPTR,#index
+002E E0                MOVX    A,@DPTR
+002F FF                MOV     R7,A
+0030 110000      R     ACALL   _I2C_WriteData
+                                           ; SOURCE LINE # 720
+0033 110000      R     ACALL   I2C_Stop
+                                           ; SOURCE LINE # 724
+0036 110000      R     ACALL   I2C_Start
+                                           ; SOURCE LINE # 725
+0039 7F8B              MOV     R7,#08BH
+003B 110000      R     ACALL   _I2C_WriteData
+                                           ; SOURCE LINE # 726
+003E E4                CLR     A
+003F 90000000    R     MOV     DPTR,#i
+0043 F0                MOVX    @DPTR,A
+0044 A3                INC     DPTR
+0045 F0                MOVX    @DPTR,A
+0046         ?C0096:
+0046 90000000    R     MOV     DPTR,#n
+004A E0                MOVX    A,@DPTR
+004B FE                MOV     R6,A
+004C A3                INC     DPTR
+004D E0                MOVX    A,@DPTR
+004E 90000000    R     MOV     DPTR,#i
+0052 110000      R     ACALL   L?0134
+0055 5041              JNC     ?C0097
+                                           ; SOURCE LINE # 727
+0057 ED                MOV     A,R5
+0058 2401              ADD     A,#01H
+005A FD                MOV     R5,A
+005B E4                CLR     A
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 43  
+
+005C 3C                ADDC    A,R4
+005D FC                MOV     R4,A
+005E EF                MOV     A,R7
+005F B50508            CJNE    A,AR5,?C0099
+0062 EE                MOV     A,R6
+0063 B50404            CJNE    A,AR4,?C0099
+0066 7F01              MOV     R7,#01H
+0068 8002              SJMP    ?C0111
+006A         ?C0099:
+                                           ; SOURCE LINE # 728
+006A E4                CLR     A
+006B FF                MOV     R7,A
+006C         ?C0111:
+006C 110000      R     ACALL   _I2C_ReadData
+006F 90000000    R     MOV     DPTR,#value
+0073 EF                MOV     A,R7
+0074 F0                MOVX    @DPTR,A
+0075         ?C0100:
+                                           ; SOURCE LINE # 729
+0075 90000000    R     MOV     DPTR,#value
+0079 E0                MOVX    A,@DPTR
+007A FF                MOV     R7,A
+007B 90000000    R     MOV     DPTR,#buff
+007F 110000      R     ACALL   L?0115
+0082 EF                MOV     A,R7
+0083 110000      E     ACALL   ?C?CSTPTR
+                                           ; SOURCE LINE # 730
+0086 90000000    R     MOV     DPTR,#i+01H
+008A E0                MOVX    A,@DPTR
+008B 04                INC     A
+008C F0                MOVX    @DPTR,A
+008D 70B7              JNZ     ?C0096
+008F 90000000    R     MOV     DPTR,#i
+0093 E0                MOVX    A,@DPTR
+0094 04                INC     A
+0095 F0                MOVX    @DPTR,A
+0096         ?C0107:
+0096 80AE              SJMP    ?C0096
+0098         ?C0097:
+                                           ; SOURCE LINE # 731
+0098 110000      R     ACALL   I2C_Stop
+                                           ; SOURCE LINE # 733
+009B 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 734
+009D         ?C0101:
+009D 22                RET     
+             ; FUNCTION _ReadI2CS_8A (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   2517    ----
+   CONSTANT SIZE    =     38    ----
+   XDATA SIZE       =      1     120
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+C51 COMPILER V9.56.0.0   I2C                                                               07/18/2018 10:44:34 PAGE 44  
+
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

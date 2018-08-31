@@ -1,0 +1,2012 @@
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE DEMOMAIN
+OBJECT MODULE PLACED IN .\Output\DemoMain.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source36\DemoMain.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\Ou
+                    -tput\TW8836B_EVB11.ORC) BROWSE INCDIR(SiI-SW;SiI-SW\HAL;SiI-SW\DEBUG;SiI-SW\CEC;.\Source36\LIB) DEFINE(EVB_11,nullFn=//)
+                    - DEBUG CODE PRINT(.\List\DemoMain.lst) TABS(2) OBJECT(.\Output\DemoMain.obj)
+
+line level    source
+
+   1          /**
+   2           * @file
+   3           * DemoMain.c 
+   4           * @author Brian Kang
+   5           * @version 1.0
+   6           * @section LICENSE
+   7           *  Copyright (C) 2011~2012 Intersil Corporation
+   8           * @section DESCRIPTION
+   9           *  Demo
+  10          */
+  11          /*
+  12          Disclaimer: THIS INFORMATION IS PROVIDED 'AS-IS' FOR EVALUATION PURPOSES ONLY.  
+  13          INTERSIL CORPORATION AND ITS SUBSIDIARIES ('INTERSIL') DISCLAIM ALL WARRANTIES, 
+  14          INCLUDING WITHOUT LIMITATION FITNESS FOR A PARTICULAR PURPOSE AND MERCHANTABILITY.  
+  15          Intersil provides evaluation platforms to help our customers to develop products. 
+  16          However, factors beyond Intersil's control could significantly affect Intersil 
+  17          product performance. 
+  18          It remains the customers' responsibility to verify the actual system performance.
+  19          */
+  20          //*****************************************************************************
+  21          //
+  22          //                Monitor_OSD.c
+  23          //
+  24          //*****************************************************************************
+  25          //
+  26          //
+  27          #include "Config.h"
+  28          #include "reg.h"
+  29          #include "typedefs.h"
+  30          #include "TW8836.h"
+  31          
+  32          #include "Global.h"
+  33          #include "CPU.h"
+  34          #include "printf.h"
+  35          #include "util.h"
+  36          #include "monitor.h"
+  37          
+  38          #include "I2C.h"
+  39          #include "Demo.h"
+  40          #include "Remo.h"
+  41          #include "InputCtrl.h"
+  42          
+  43          #include "SOsd.h"
+  44          #include "FOsd.h"
+  45          #include "SpiFlashMap.h"
+  46          
+  47          
+  48          //#include "SOsdMenu.h"
+  49          
+  50          BYTE  OsdDemoMode = 0;
+  51          
+  52          
+  53          XDATA BYTE Task_Grid_dt;
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 2   
+
+  54          XDATA BYTE Task_Grid_lut;
+  55          XDATA BYTE Task_Grid_direction;
+  56          XDATA BYTE Task_Grid_n;
+  57          XDATA WORD Task_Grid_timer;
+  58          //XDATA BYTE Task_Grid_on;
+  59          extern void TaskSetGrid(BYTE onoff);
+  60          extern BYTE TaskGetGrid(void);
+  61          extern void TaskSetGridCmd(BYTE cmd); 
+  62          extern BYTE TaskGetGridCmd(void);
+  63          
+  64          
+  65          
+  66          #define offsetd_grid DGRID_IMG_START //offset address for SPI writing
+  67           
+  68          // typedef struct {    
+  69          //     DWORD start;    
+  70          //     DWORD length;   
+  71          // } SLIDEIMAGE;
+  72          #if 0
+              FAR CONST SLIDEIMAGE d_grid_IMG[] = { 
+                  { offsetd_grid+0x000000, 0x002AF0},    // Grid01 
+                  { offsetd_grid+0x002AF0, 0x00294B},    // Grid02 
+                  { offsetd_grid+0x00543B, 0x002934},    // Grid03 
+                  { offsetd_grid+0x007D6F, 0x002D1C},    // Grid04 
+                  { offsetd_grid+0x00AA8B, 0x003010},    // Grid05 
+                  { offsetd_grid+0x00DA9B, 0x00318F},    // Grid06 
+                  { offsetd_grid+0x010C2A, 0x00323F},    // Grid07 
+                  { offsetd_grid+0x013E69, 0x0032D4},    // Grid08 
+                  { offsetd_grid+0x01713D, 0x00339D},    // Grid09 
+                  { offsetd_grid+0x01A4DA, 0x00340C},    // Grid10 
+                  { offsetd_grid+0x01D8E6, 0x00347B},    // Grid11 
+                  { offsetd_grid+0x020D61, 0x00294C},    // Grid12 
+                  { offsetd_grid+0x0236AD, 0x002935},    // Grid13 
+                  { offsetd_grid+0x025FE2, 0x002D1D},    // Grid14 
+                  { offsetd_grid+0x028CFF, 0x003010},    // Grid15 
+                  { offsetd_grid+0x02BD0F, 0x00318F},    // Grid16 
+                  { offsetd_grid+0x02EE9E, 0x00323F},    // Grid17 
+                  { offsetd_grid+0x0320DD, 0x0032D4},    // Grid18 
+                  { offsetd_grid+0x0353B1, 0x00339D},    // Grid19 
+                  { offsetd_grid+0x03874E, 0x003408},    // Grid20 
+                  { offsetd_grid+0x03BB56, 0x00347B},    // Grid21 
+              };
+              #else 
+  97          //16 bytes aligned
+  98          FAR CONST SLIDEIMAGE d_grid_IMG[] = { 
+  99              { offsetd_grid+0x000000, 0x002AF0},    // Grid01 
+ 100              { offsetd_grid+0x002af0, 0x00294B},    // Grid02 
+ 101              { offsetd_grid+0x005440, 0x002934},    // Grid03 
+ 102              { offsetd_grid+0x007d80, 0x002D1C},    // Grid04 
+ 103              { offsetd_grid+0x00aaa0, 0x003010},    // Grid05 
+ 104              { offsetd_grid+0x00dab0, 0x00318F},    // Grid06 
+ 105              { offsetd_grid+0x010c40, 0x00323F},    // Grid07 
+ 106              { offsetd_grid+0x013e80, 0x0032D4},    // Grid08 
+ 107              { offsetd_grid+0x017160, 0x00339D},    // Grid09 
+ 108              { offsetd_grid+0x01a500, 0x00340C},    // Grid10 
+ 109              { offsetd_grid+0x01d910, 0x00347B},    // Grid11 
+ 110              { offsetd_grid+0x020d90, 0x00294C},    // Grid12 
+ 111              { offsetd_grid+0x0236e0, 0x002935},    // Grid13 
+ 112              { offsetd_grid+0x026020, 0x002D1D},    // Grid14 
+ 113              { offsetd_grid+0x028d40, 0x003010},    // Grid15 
+ 114              { offsetd_grid+0x02bd50, 0x00318F},    // Grid16 
+ 115              { offsetd_grid+0x02eee0, 0x00323F},    // Grid17 
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 3   
+
+ 116              { offsetd_grid+0x032120, 0x0032D4},    // Grid18 
+ 117              { offsetd_grid+0x035400, 0x00339D},    // Grid19 
+ 118              { offsetd_grid+0x0387a0, 0x003408},    // Grid20 
+ 119              { offsetd_grid+0x03bbb0, 0x00347B},    // Grid21 
+ 120          };
+ 121          #endif
+ 122          
+ 123          #if 0
+               0:0x000000  0x000000:0x002af0
+               1:0x002af0  0x002af0:0x00294b padd:5
+               2:0x005440  0x00543b:0x002934 padd:c
+               3:0x007d80  0x007d6f:0x002d1c padd:4
+               4:0x00aaa0  0x00aa8b:0x003010 
+               5:0x00dab0  0x00da9b:0x00318f padd:1
+               6:0x010c40  0x010c2a:0x00323f padd:1
+               7:0x013e80  0x013e69:0x0032d4 padd:c
+               8:0x017160  0x01713d:0x00339d padd:3
+               9:0x01a500  0x01a4da:0x00340c padd:4
+              10:0x01d910  0x01d8e6:0x00347b  padd:5
+              11:0x020d90  0x020d61:0x00294c  padd:4
+              12:0x0236e0  0x0236ad:0x002935  padd:b
+              13:0x026020  0x025fe2:0x002d1d  padd:3
+              14:0x028d40  0x028cff:0x003010 
+              15:0x02bd50  0x02bd0f:0x00318f  padd:1
+              16:0x02eee0  0x02ee9e:0x00323f  padd:1
+              17:0x032120  0x0320dd:0x0032d4  padd:c
+              18:0x035400  0x0353b1:0x00339d  padd:3
+              19:0x0387a0  0x03874e:0x003408  padd:8
+              20:0x03bbb0  0x03bb56:0x00347b  padd:5
+              #endif
+ 146          
+ 147          
+ 148          
+ 149          
+ 150          
+ 151          
+ 152          
+ 153          FAR CONST BYTE d_grid_rle[] = {
+ 154              0x89, // Grid01
+ 155              0x89, // Grid02
+ 156              0x89, // Grid03
+ 157              0x89, // Grid04
+ 158              0x89, // Grid05
+ 159              0x89, // Grid06
+ 160              0x89, // Grid07
+ 161              0x89, // Grid08
+ 162              0x89, // Grid09
+ 163              0x88, // Grid10
+ 164              0x88, // Grid11
+ 165              0x89, // Grid12
+ 166              0x89, // Grid13
+ 167              0x89, // Grid14
+ 168              0x89, // Grid15
+ 169              0x89, // Grid16
+ 170              0x89, // Grid17
+ 171              0x89, // Grid18
+ 172              0x89, // Grid19
+ 173              0x88, // Grid20
+ 174              0x88, // Grid21
+ 175          };
+ 176          
+ 177          
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 4   
+
+ 178          //=============================================================================
+ 179          //           void FontDMA( void )
+ 180          //=============================================================================
+ 181          #if 0 //move to OSDFont
+              void FontDMA( void ) {}
+              #endif
+ 184          
+ 185          //=============================================================================
+ 186          //           void FontDisplay( void )
+ 187          //=============================================================================
+ 188          //Desc: Display font set. from 0x00 to (0xC0-1)
+ 189          #if 0
+              void FontDisplay( void )
+              {...}
+              #endif
+ 193          
+ 194          
+ 195          //=============================================================================
+ 196          //    void FontDemo( void )
+ 197          //=============================================================================
+ 198          #if 0
+              void FontDemo( void )
+              {...}
+              #endif
+ 202          
+ 203          //=============================================================================
+ 204          //    void RoseDemo( void )
+ 205          //=============================================================================
+ 206          #if 1
+ 207          void PigeonDemo( void )
+ 208          {
+ 209   1        SOsd_CleanReg();    //ClearSpiOsdWinBuffer();
+ 210   1      
+ 211   1        //WindowRoseInit();
+ 212   1        // window 0 is pigeon demo
+ 213   1        SOsd_SetSpiStartOffset( 0, PIGEON_START );
+ 214   1        SOsd_SetImageWidthHeight( 0, 120, 140 );
+ 215   1        SOsd_SetWin0ImageOffsetXY( 0, 0 );
+ 216   1      #if (PANEL_H==1024 && PANEL_V==600) //sorry! still I have a small image. 
+                SOsd_SetScreen( 0, SOSD_X_START+112, SOSD_Y_START+0, 120, 140 );
+              #else
+ 219   1        SOsd_SetScreen( 0, SOSD_X_START+0, SOSD_Y_START+0, 120, 140 );
+ 220   1      #endif
+ 221   1        SOsd_SetWin0Animation( 2/*3*/, 0, 7, 3);
+ 222   1      
+ 223   1        SOsd_SetPixelWidth(0, 8);
+ 224   1      
+ 225   1        SOsd_SetGlobalAlpha( 0, 0 );
+ 226   1        SOsd_Enable( 0, ON );
+ 227   1        dPuts("\n\rFinished Pigeon window init");
+ 228   1        SOsd_SetLutOffset(0,0);
+ 229   1      
+ 230   1        WaitVBlank(1);
+ 231   1        //SpiOsdLoadLUT( 0, 0/*1*/, 0,0x400, PIGEON_LUT_LOC, 0xFF );  //win0
+ 232   1        SOsd_SetLut(0, 0/*1*/, 0,0x400, PIGEON_LUT_LOC, 0xFF);
+ 233   1        SOsd_UpdateLut(0, 0); 
+ 234   1      
+ 235   1      
+ 236   1        SOsd_UpdateReg(0, 0);
+ 237   1        dPuts("\n\rFinished LUTRoseDMA");
+ 238   1      }
+ 239          #endif
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 5   
+
+ 240          #define ROSE_WIN  0
+ 241          void RoseDemo( void )
+ 242          {
+ 243   1        SOsd_init();
+ 244   1      
+ 245   1      
+ 246   1        SOsd_CleanReg();
+ 247   1        SOsd_CleanLut();  
+ 248   1        SOsd_CleanRlc();
+ 249   1      
+ 250   1        SpiOsdEnable(ON);
+ 251   1        SOsd_UpdateRlc();
+ 252   1        SOsd_UpdateReg(0,8);
+ 253   1      
+ 254   1      
+ 255   1        SOsd_SetSpiStartOffset( ROSE_WIN, ROSE_START );
+ 256   1        SOsd_SetImageWidthHeight( ROSE_WIN, 400, 400 );
+ 257   1        SOsd_SetWin0ImageOffsetXY( ROSE_WIN, 0 );
+ 258   1      #if (PANEL_H==1024 && PANEL_V==600) //sorry! still I have a small image. 
+                SOsd_SetScreen( ROSE_WIN, SOSD_X_START+200+112, SOSD_Y_START+40, 400, 400 );
+              #else
+ 261   1        SOsd_SetScreen( ROSE_WIN, SOSD_X_START+200, SOSD_Y_START+40, 400, 400 );
+ 262   1      #endif
+ 263   1        SOsd_SetWin0Animation( 2/*3*/, 0, 9, 3);
+ 264   1      
+ 265   1        SOsd_SetPixelWidth(ROSE_WIN, 8);
+ 266   1      
+ 267   1        SOsd_SetGlobalAlpha( ROSE_WIN, 0 );
+ 268   1        SOsd_Enable( ROSE_WIN, ON );
+ 269   1        dPuts("\n\rFinished Rose window init");
+ 270   1        SOsd_SetLutOffset(ROSE_WIN,0);
+ 271   1      
+ 272   1        WaitVBlank(1);
+ 273   1        //SpiOsdLoadLUT(0, 0/*1*/, 0, 0x400, ROSE_LUT_LOC, 0xFF); //win0
+ 274   1        SOsd_SetLut(ROSE_WIN, 0/*1*/, 0, 0x400, ROSE_LUT_LOC, 0xFF );
+ 275   1        SOsd_UpdateLut(ROSE_WIN, 0);  
+ 276   1      
+ 277   1        SOsd_UpdateReg(ROSE_WIN, 0);
+ 278   1        dPuts("\n\rFinished LUTRoseDMA");
+ 279   1      
+ 280   1      }
+ 281          
+ 282          //=============================================================================
+ 283          //    void CarDemo( void )
+ 284          //=============================================================================
+ 285          #if 0
+              void CarDemo( void )  {}
+              #endif
+ 288          
+ 289          //=============================================================================
+ 290          //    void LogoDemo( void )
+ 291          //=============================================================================
+ 292          #if 0
+              void LogoDemo( void ) {}
+              #endif
+ 295          
+ 296          //=============================================================================
+ 297          //    void GridDemo( void )
+ 298          //=============================================================================
+ 299          #if 0
+              void GridDemo( void ) {}
+              #endif
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 6   
+
+ 302          
+ 303          //=============================================================================
+ 304          //    void MovingGridInit( void )
+ 305          //=============================================================================
+ 306          //WIN1: Grid Image
+ 307          //WIN2: Grid Message
+ 308          
+ 309          
+ 310          //We only have one RLE window. WIN_GRID_IMG use more size. I will use it as a RLE.
+ 311          //If the WIN_GRIP_MSG can not use a RLE, we can use it as a Animation.
+ 312          
+ 313          #define WIN_GRID_IMG  3 //with RLE. BKTODO Win0 and Win1 use selerate RLE. If we use WIN3, we can share it.
+ 314          //#define WIN_GRID_IMG  1 //with RLE. BKTODO Win0 and Win1 use selerate RLE. If we use WIN3, we can share i
+             -t.
+ 315          #define WIN_GRID_MSG  0 //with Animation
+ 316          
+ 317          void MovingGridInit( void )
+ 318          {
+ 319   1        SpiOsdEnable(ON);
+ 320   1      
+ 321   1        //dPuts("\n\rMovingGridInit - Start");
+ 322   1        SOsd_SetSpiStartOffset( WIN_GRID_IMG, DGRID_IMG_START );
+ 323   1        SOsd_SetImageWidthHeight( WIN_GRID_IMG, DGRID_H, DGRID_V );
+ 324   1        //if(WIN_GRID_IMG==0)
+ 325   1        //  SOsd_SetWin0ImageOffsetXY( 0, 0 );
+ 326   1      #if (PANEL_H==1024 && PANEL_V==600) //sorry! still I have a small image. 
+                SOsd_SetScreen( WIN_GRID_IMG, SOSD_X_START+35+112, SOSD_Y_START+150 /*170*/, DGRID_H, DGRID_V );
+              #else
+ 329   1        SOsd_SetScreen( WIN_GRID_IMG, SOSD_X_START+35, SOSD_Y_START+150 /*170*/, DGRID_H, DGRID_V );
+ 330   1      #endif
+ 331   1        //if(WIN_GRID_IMG==0)
+ 332   1        //  SOsd_SetWin0Animation( 1, 0, 0, 0);
+ 333   1        SOsd_SetPixelAlpha( WIN_GRID_IMG, ON );
+ 334   1        SOsd_SetPixelWidth(WIN_GRID_IMG, 8);
+ 335   1        //need RLE
+ 336   1        SOsd_SetRlc( WIN_GRID_IMG, d_grid_rle[0]>>4,d_grid_rle[0]&0x0F); //(curr_bg_info->rle >> 4), curr_bg_info
+             -->rle & 0x0F);
+ 337   1        SOsd_UpdateRlc();
+ 338   1        SOsd_SetLutOffset(WIN_GRID_IMG,0);
+ 339   1      
+ 340   1        SOsd_Enable( WIN_GRID_IMG, ON );
+ 341   1      
+ 342   1        //MovingGrid Message
+ 343   1        SOsd_SetSpiStartOffset( WIN_GRID_MSG, DGRID_MSG_START );
+ 344   1        SOsd_SetImageWidthHeight( WIN_GRID_MSG, 800, 60 ); //BUG: MAX 800?? -> FIxed 11/18/2010.
+ 345   1        if(WIN_GRID_MSG==0)    //BK110330
+ 346   1          SOsd_SetWin0ImageOffsetXY( 0, 0 );
+ 347   1      #if (PANEL_H==1024 && PANEL_V==600) //sorry! still I have a small image. 
+                SOsd_SetScreen( WIN_GRID_MSG, SOSD_X_START+112, SOSD_Y_START+410/*420*/, 800, 60 );
+              #else
+ 350   1        SOsd_SetScreen( WIN_GRID_MSG, SOSD_X_START+0, SOSD_Y_START+410/*420*/, 800, 60 );
+ 351   1      #endif
+ 352   1        if(WIN_GRID_MSG == 0)
+ 353   1          SOsd_SetWin0Animation( 2/*3*/, 0, 3, 100/*50*/);
+ 354   1        dPuts("\n\rFinished GRID window init");
+ 355   1        SOsd_SetPixelAlpha( WIN_GRID_MSG, ON );
+ 356   1        SOsd_SetPixelWidth(WIN_GRID_MSG, 8); 
+ 357   1        SOsd_Enable( WIN_GRID_MSG, ON );
+ 358   1        SOsd_SetLutOffset(WIN_GRID_MSG,0x00 );  //If use a correct LUT, 0x0B is a better value.
+ 359   1      
+ 360   1      
+ 361   1        WaitVBlank(1);
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 7   
+
+ 362   1        //SpiOsdLoadLUT(WIN_GRID_MSG, LUTTYPE_ADDR, 0, 0x400,  DGRID_LUT_START, 0xFF ); //win ?0 we have a alpha 
+             -ready LUT.
+ 363   1        SOsd_SetLut(WIN_GRID_MSG, LUTTYPE_ADDR, 0, 0x400,  DGRID_LUT_START, 0xFF );
+ 364   1        SOsd_UpdateLut(WIN_GRID_MSG, 0);  
+ 365   1        if(WIN_GRID_IMG==1 || WIN_GRID_IMG==2) {
+ 366   2          //SpiOsdLoadLUT(WIN_GRID_IMG, LUTTYPE_ADDR, 0, 0x400,  DGRID_LUT_START, 0xFF ); //win ?1 TW8836 uses two
+             - LUT
+ 367   2          SOsd_SetLut(WIN_GRID_IMG, LUTTYPE_ADDR, 0, 0x400,  DGRID_LUT_START, 0xFF );
+ 368   2          SOsd_UpdateLut(WIN_GRID_IMG, 0);  
+ 369   2        }
+ 370   1        WaitVBlank(1);
+ 371   1        SOsd_UpdateReg(WIN_GRID_MSG, WIN_GRID_MSG);
+ 372   1        //test only IMG
+ 373   1        SOsd_UpdateReg(WIN_GRID_IMG, WIN_GRID_IMG);
+ 374   1      
+ 375   1        dPuts("\n\rFinished LUT GRID DMA");
+ 376   1        //dPuts("\n\rMovingGridInit - End");
+ 377   1      }
+ 378          
+ 379          //=============================================================================
+ 380          //    void MovingGridDemo( BYTE n )
+ 381          //=============================================================================
+ 382          void MovingGridDemo( BYTE n )
+ 383          {
+ 384   1        DWORD offset;
+ 385   1        BYTE rle_byte;
+ 386   1      
+ 387   1        //dPrintf("\n\rMovingGridDemo(%02d)", (WORD)n);
+ 388   1        offset = d_grid_IMG[n].start;
+ 389   1        rle_byte = d_grid_rle[n]; 
+ 390   1        //dPrintf("  offset:%06lx", offset);
+ 391   1      
+ 392   1        SOsd_SetSpiStartOffset( WIN_GRID_IMG, offset );
+ 393   1      
+ 394   1        WaitVBlank(1);
+ 395   1        SOsd_SetRlc( WIN_GRID_IMG, rle_byte >> 4, rle_byte & 0x0F);
+ 396   1        SOsd_UpdateRlc();
+ 397   1        SOsd_UpdateReg(WIN_GRID_IMG, WIN_GRID_IMG);
+ 398   1        //dPuts("\n\rFinished LUT GRID DMA");
+ 399   1      
+ 400   1      //dPrintf("  0x40F:0x%02bx -demo", ReadTW88(REG40F)); 
+ 401   1      
+ 402   1      }
+ 403          
+ 404          //=============================================================================
+ 405          //    void MovingGridLUT( BYTE n )
+ 406          //=============================================================================
+ 407          void MovingGridLUT( BYTE n )
+ 408          {
+ 409   1        WORD  offset;
+ 410   1      
+ 411   1        offset = n;
+ 412   1        offset *= 1024;
+ 413   1        WaitVBlank(1);
+ 414   1        //SpiOsdLoadLUT( WIN_GRID_MSG ,LUTTYPE_ADDR, 0, 0x400, DGRID_LUT_START + offset, 0xFF );  //win ?0
+ 415   1        SOsd_SetLut(WIN_GRID_MSG ,LUTTYPE_ADDR, 0, 0x400, DGRID_LUT_START + offset, 0xFF);
+ 416   1        SOsd_UpdateLut(WIN_GRID_MSG, 0);  
+ 417   1        if(WIN_GRID_IMG==1 || WIN_GRID_IMG==2) {
+ 418   2          //SpiOsdLoadLUT( WIN_GRID_IMG ,LUTTYPE_ADDR, 0, 0x400, DGRID_LUT_START + offset, 0xFF );  //win ?1
+ 419   2          SOsd_SetLut(WIN_GRID_IMG ,LUTTYPE_ADDR, 0, 0x400, DGRID_LUT_START + offset, 0xFF);
+ 420   2          SOsd_UpdateLut(WIN_GRID_IMG, 0);  
+ 421   2        }
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 8   
+
+ 422   1      #ifdef DEBUG_OSD
+                dPuts("\n\rFinished LUT GRID LUT change");
+              #endif
+ 425   1      }
+ 426          
+ 427          //=============================================================================
+ 428          //    void MovingGridAuto( void )
+ 429          //=============================================================================
+ 430          
+ 431          #if 0
+              //description:
+              //  This function do not receive the control input from TW-Terminal.
+              void MovingGridAuto( void )
+              {...}
+              #endif
+ 437          
+ 438          
+ 439          
+ 440          void MovingGridTask_init(void)
+ 441          {
+ 442   1        TaskSetGrid(1); //Task_Grid_on = 1;     //global
+ 443   1        Task_Grid_direction = 0;  //static
+ 444   1        Task_Grid_dt = 10;      //static
+ 445   1        Task_Grid_n = 0;      //static
+ 446   1        Task_Grid_lut = 0;      //static
+ 447   1        Task_Grid_timer = Task_Grid_dt;   Task_Grid_timer *= 100;
+ 448   1                      //Task_Grid_timer     static
+ 449   1                      //Task_Grid_dt        static
+ 450   1                      //Task_Grid_timer     static
+ 451   1      }
+ 452          
+ 453          #define NAVI_KEY_NONE 0
+ 454          #define NAVI_KEY_ENTER  1
+ 455          #define NAVI_KEY_UP   2
+ 456          #define NAVI_KEY_DOWN 3
+ 457          #define NAVI_KEY_LEFT 4
+ 458          #define NAVI_KEY_RIGHT  5
+ 459          
+ 460          void MovingGridTask( void )
+ 461          {
+ 462   1        BYTE GridCmd;
+ 463   1      
+ 464   1        if(tic_task > Task_Grid_timer) 
+ 465   1        {
+ 466   2          GridCmd = TaskGetGridCmd();
+ 467   2          if( GridCmd ) {
+ 468   3            dPrintf("\n\r**** GridCmd:%bx", GridCmd); 
+ 469   3            if ( GridCmd == NAVI_KEY_ENTER ) {
+ 470   4              TaskSetGrid(0);   //Task_Grid_on = 0; //OFF
+ 471   4              TaskSetGridCmd(0);  //clear
+ 472   4              WaitVBlank(1);
+ 473   4              SOsd_Enable( WIN_GRID_MSG, OFF );
+ 474   4              SOsd_UpdateReg(WIN_GRID_MSG, WIN_GRID_MSG);
+ 475   4              SOsd_Enable( WIN_GRID_IMG, OFF );
+ 476   4              SOsd_UpdateReg(WIN_GRID_IMG, WIN_GRID_IMG);
+ 477   4              SpiOsdEnable(OFF);
+ 478   4      
+ 479   4              return;
+ 480   4            }
+ 481   3            if ( GridCmd == NAVI_KEY_UP ) {
+ 482   4              if ( Task_Grid_dt ) {
+ 483   5                Task_Grid_dt--;               //fast up
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 9   
+
+ 484   5                Task_Grid_timer = Task_Grid_dt;
+ 485   5                Task_Grid_timer *= 100;
+ 486   5              }                 
+ 487   4            }
+ 488   3            if ( GridCmd == NAVI_KEY_DOWN ) {
+ 489   4              if ( Task_Grid_dt < 20 ) {          //slow down
+ 490   5                Task_Grid_dt++;
+ 491   5                Task_Grid_timer = Task_Grid_dt;
+ 492   5                Task_Grid_timer *= 100;
+ 493   5              }
+ 494   4            }
+ 495   3            else if ( GridCmd == NAVI_KEY_RIGHT ) {     //right
+ 496   4              Task_Grid_lut++;
+ 497   4              Task_Grid_lut %= 4;
+ 498   4              MovingGridLUT( Task_Grid_lut );
+ 499   4            }
+ 500   3            else if ( GridCmd == NAVI_KEY_LEFT ) {      //left
+ 501   4              Task_Grid_lut +=3;
+ 502   4              Task_Grid_lut %= 4;
+ 503   4              MovingGridLUT( Task_Grid_lut );
+ 504   4            }
+ 505   3      
+ 506   3            TaskSetGridCmd(0);  //clear
+ 507   3          }
+ 508   2      
+ 509   2          if ( Task_Grid_direction ) {    // move to RIGHT
+ 510   3            if ( Task_Grid_n > 10 ) {
+ 511   4              Task_Grid_n++;
+ 512   4            }
+ 513   3            else {
+ 514   4              if(Task_Grid_n)
+ 515   4                Task_Grid_n--;
+ 516   4              else
+ 517   4                Task_Grid_n = 11;
+ 518   4            }
+ 519   3            if ( Task_Grid_n == 20 )
+ 520   3              Task_Grid_direction = 0;  // move to LEFT           
+ 521   3          }
+ 522   2          else {                  // move to LEFT
+ 523   3            if ( Task_Grid_n < 10 ) {
+ 524   4              Task_Grid_n++;
+ 525   4            }
+ 526   3            else {
+ 527   4              Task_Grid_n--;
+ 528   4              if ( Task_Grid_n == 10 )
+ 529   4                Task_Grid_n = 0;
+ 530   4            }
+ 531   3            if ( Task_Grid_n == 10 )
+ 532   3              Task_Grid_direction = 1;  // move to RIGHT
+ 533   3          }
+ 534   2          MovingGridDemo(Task_Grid_n);
+ 535   2          //dPrintf("  tic_my:%d Task_Grid_timer:%d", tic_task, Task_Grid_timer);
+ 536   2          tic_task = 0;   //reset wait counter.
+ 537   2      
+ 538   2        }
+ 539   1      }
+ 540          
+ 541          
+ 542          //=============================================================================
+ 543          //    void CompassDemo( void )
+ 544          //=============================================================================
+ 545          #if 0
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 10  
+
+              void CompassDemo( void ) {}
+              #endif
+ 548          
+ 549          //=============================================================================
+ 550          //    void ComplexDemo( void )
+ 551          //=============================================================================
+ 552          #if 0
+              void ComplexDemo( void ) {}
+              #endif
+ 555          
+ 556          //=============================================================================
+ 557          //    void OsdWinOffAll( void )
+ 558          //=============================================================================
+ 559          #if 0
+              void OsdWinOffAll(void) {}
+              #endif
+ 562          
+ 563          #if 1 //save data memory and use code segment
+ 564          #else
+              void (*f[])(void) = { (void *)OsdWinOffAll, (void *)RoseDemo, (void *)CarDemo, (void *)CompassDemo, (void 
+             -*)GridDemo, (void *)LogoDemo, (void *)FontDemo, (void *)ComplexDemo };
+              #endif
+ 567          
+ 568          
+ 569          //=============================================================================
+ 570          //    void OsdDemoNext( void )
+ 571          //=============================================================================
+ 572          #if 0
+              void OsdDemoNext(void)  {}
+              #endif
+ 575          
+ 576          //=============================================================================
+ 577          // Read Output Pixel
+ 578          // this feature is a junk.
+ 579          // It is related with PCLKO and VBlank.
+ 580          // If it is a VBlank area, we can not read.
+ 581          // I can find a VBlank start position, but, I can not find the non-vblank area.
+ 582          // Giveup and do not try to use it.
+ 583          //=============================================================================
+ 584          #undef CHECK_USEDTIME
+ 585          void ReadOutputPixel(WORD start_x, WORD start_y,WORD end_x, WORD end_y)
+ 586          {
+ 587   1        WORD x,y,max_x;
+ 588   1        BYTE y_high;
+ 589   1        BYTE bTemp;
+ 590   1      #ifdef CHECK_USEDTIME
+                DWORD UsedTime, curr_clock;
+              #endif
+ 593   1        volatile BYTE r,g,b;
+ 594   1      
+ 595   1      
+ 596   1        Printf("\n\r--Start Read Pixel %dx%d to %dx%d",start_x,start_y,end_x,end_y);
+ 597   1        if(end_y >= PANEL_V)
+ 598   1          end_y = PANEL_V -1;
+ 599   1      
+ 600   1        if(end_x >= PANEL_H)
+ 601   1          end_x = PANEL_H - 1;
+ 602   1        max_x = end_x; 
+ 603   1        bTemp = ReadTW88(REG20D) & 0x23;
+ 604   1      
+ 605   1        max_x *= ((bTemp & 0x03) +1);
+ 606   1        if(bTemp & 0x20)
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 11  
+
+ 607   1          max_x >>= 1;
+ 608   1      
+ 609   1        Printf("  PCLKO:");
+ 610   1        if(bTemp == 0x22) Printf("1.5");
+ 611   1        else {
+ 612   2          bTemp &= 0x03;
+ 613   2          Printf("%bd", bTemp+1);
+ 614   2        }
+ 615   1            
+ 616   1      
+ 617   1      
+ 618   1      #ifdef CHECK_USEDTIME
+                SFRB_ET0 = 0;
+                UsedTime = SystemClock;
+                SFRB_ET0 = 1;
+              #endif
+ 623   1        WaitVBlank(1);
+ 624   1        delay1ms(8);
+ 625   1        for(y=start_y; y <= end_y; y++) {   //vertical
+ 626   2          Printf("\n\rLine:%d Pixels:%d\n",y,max_x);
+ 627   2          for(x=start_x; x < max_x; x++) {    //horizontal
+ 628   3            //position
+ 629   3            WriteTW88(REG2F0, (BYTE)x);
+ 630   3            WriteTW88(REG2F1, (BYTE)y);
+ 631   3            y_high = (y >> 8) << 4; 
+ 632   3            WriteTW88(REG2F2, y_high | (x >> 8));
+ 633   3            //Read R G B
+ 634   3            r=ReadTW88(REG2F3);
+ 635   3            g=ReadTW88(REG2F4);
+ 636   3            b=ReadTW88(REG2F5);
+ 637   3      
+ 638   3            Printf("%02bx-%02bx-%02bx ", r,g,b);
+ 639   3          }
+ 640   2        }
+ 641   1      #ifdef CHECK_USEDTIME
+                SFRB_ET0 = 0;
+                curr_clock = SystemClock;
+                SFRB_ET0 = 1;
+                UsedTime = curr_clock - UsedTime;
+                Printf("\n\r--END UsedTime:%ld.%ldsec", UsedTime/100, UsedTime%100 );
+              #else
+ 648   1        Printf("\n\r--END");
+ 649   1      #endif
+ 650   1      }
+ 651          #undef CHECK_USEDTIME
+*** WARNING C294 IN LINE 367 OF source36\DemoMain.c: unreachable code
+*** WARNING C294 IN LINE 419 OF source36\DemoMain.c: unreachable code
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 12  
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com0032 (BEGIN)
+0000         L?0051:
+0000 F0                MOVX    @DPTR,A
+0001         L?0052:
+0001 E0                MOVX    A,@DPTR
+0002 FF                MOV     R7,A
+0003 7E00              MOV     R6,#00H
+0005 90000000    R     MOV     DPTR,#Task_Grid_timer
+0009 EE                MOV     A,R6
+000A F0                MOVX    @DPTR,A
+000B A3                INC     DPTR
+000C EF                MOV     A,R7
+000D F0                MOVX    @DPTR,A
+000E 7C00              MOV     R4,#00H
+0010 7D64              MOV     R5,#064H
+0012 110000      E     ACALL   ?C?IMUL
+0015 90000000    R     MOV     DPTR,#Task_Grid_timer
+0019 EE                MOV     A,R6
+001A F0                MOVX    @DPTR,A
+001B A3                INC     DPTR
+001C EF                MOV     A,R7
+001D F0                MOVX    @DPTR,A
+001E 22                RET     
+001F         L?0053:
+001F 90000000    E     MOV     DPTR,#?_SOsd_SetLut?BYTE+04H
+0023 7404              MOV     A,#04H
+0025 F0                MOVX    @DPTR,A
+0026 A3                INC     DPTR
+0027 E4                CLR     A
+0028 F0                MOVX    @DPTR,A
+0029 FF                MOV     R7,A
+002A 7E77              MOV     R6,#077H
+002C 7D81              MOV     R5,#081H
+002E         L?0054:
+002E A3                INC     DPTR
+002F         L?0055:
+002F FC                MOV     R4,A
+0030 110000      E     ACALL   ?C?LSTXDATA
+0033 90000000    E     MOV     DPTR,#?_SOsd_SetLut?BYTE+0AH
+0037 74FF              MOV     A,#0FFH
+0039 F0                MOVX    @DPTR,A
+003A E4                CLR     A
+003B FB                MOV     R3,A
+003C FA                MOV     R2,A
+003D FD                MOV     R5,A
+003E FF                MOV     R7,A
+003F 22                RET     
+0040         L?0056:
+0040         L?0057:
+0040 F582              MOV     DPL,A
+0042 E500        E     MOV     A,regTW88
+0044 3402              ADDC    A,#02H
+0046 F583              MOV     DPH,A
+0048 759300      E     MOV     DPX,#?C?XDATASEG
+004B 22                RET     
+004C         L?0058:
+004C 7F00              MOV     R7,#00H
+004E         L?0059:
+004E 7C00              MOV     R4,#00H
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 13  
+
+0050         L?0060:
+0050 90000000    E     MOV     DPTR,#?_SOsd_SetSpiStartOffset?BYTE+01H
+0054 010000      E     AJMP    ?C?LSTXDATA
+0057         L?0061:
+0057 90000000    E     MOV     DPTR,#?_SOsd_SetScreen?BYTE+05H
+005B F0                MOVX    @DPTR,A
+005C A3                INC     DPTR
+005D 22                RET     
+005E         L?0062:
+005E FF                MOV     R7,A
+005F C4                SWAP    A
+0060 540F              ANL     A,#0FH
+0062 FD                MOV     R5,A
+0063 EF                MOV     A,R7
+0064 540F              ANL     A,#0FH
+0066 FB                MOV     R3,A
+0067 7F03              MOV     R7,#03H
+0069 22                RET     
+006A         L?0063:
+006A EE                MOV     A,R6
+006B F0                MOVX    @DPTR,A
+006C A3                INC     DPTR
+006D EF                MOV     A,R7
+006E F0                MOVX    @DPTR,A
+006F A3                INC     DPTR
+0070 EC                MOV     A,R4
+0071 F0                MOVX    @DPTR,A
+0072 A3                INC     DPTR
+0073 ED                MOV     A,R5
+0074 F0                MOVX    @DPTR,A
+0075 22                RET     
+0076         L?0064:
+0076 90000000    E     MOV     DPTR,#?_SOsd_SetLut?BYTE+04H
+007A 7404              MOV     A,#04H
+007C F0                MOVX    @DPTR,A
+007D A3                INC     DPTR
+007E E4                CLR     A
+007F F0                MOVX    @DPTR,A
+0080 22                RET     
+0081         L?0065:
+0081 90000000    R     MOV     DPTR,#max_x
+0085 E0                MOVX    A,@DPTR
+0086 FE                MOV     R6,A
+0087 A3                INC     DPTR
+0088 E0                MOVX    A,@DPTR
+0089 FF                MOV     R7,A
+008A 22                RET     
+008B         L?0066:
+008B         L?0067:
+008B F0                MOVX    @DPTR,A
+008C 759300      E     MOV     DPX,#?C?XDATASEG
+008F E500        E     MOV     A,regTW88+01H
+0091 22                RET     
+             ; FUNCTION Com0032 (END)
+
+             ; FUNCTION PigeonDemo (BEGIN)
+                                           ; SOURCE LINE # 207
+                                           ; SOURCE LINE # 208
+                                           ; SOURCE LINE # 209
+0000 110000      E     ACALL   SOsd_CleanReg
+                                           ; SOURCE LINE # 213
+0003 E4                CLR     A
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 14  
+
+0004 FF                MOV     R7,A
+0005 FE                MOV     R6,A
+0006 7D67              MOV     R5,#067H
+0008 FC                MOV     R4,A
+0009 110000      R     ACALL   L?0060
+000C E4                CLR     A
+000D FF                MOV     R7,A
+000E 110000      E     ACALL   _SOsd_SetSpiStartOffset
+                                           ; SOURCE LINE # 214
+0011 7B8C              MOV     R3,#08CH
+0013 7A00              MOV     R2,#00H
+0015 7D78              MOV     R5,#078H
+0017 7C00              MOV     R4,#00H
+0019 E4                CLR     A
+001A FF                MOV     R7,A
+001B 110000      E     ACALL   _SOsd_SetImageWidthHeight
+                                           ; SOURCE LINE # 215
+001E E4                CLR     A
+001F FD                MOV     R5,A
+0020 FC                MOV     R4,A
+0021 FF                MOV     R7,A
+0022 FE                MOV     R6,A
+0023 110000      E     ACALL   _SOsd_SetWin0ImageOffsetXY
+                                           ; SOURCE LINE # 219
+0026 E4                CLR     A
+0027 110000      R     ACALL   L?0061
+002A 7478              MOV     A,#078H
+002C F0                MOVX    @DPTR,A
+002D A3                INC     DPTR
+002E E4                CLR     A
+002F F0                MOVX    @DPTR,A
+0030 A3                INC     DPTR
+0031 748C              MOV     A,#08CH
+0033 F0                MOVX    @DPTR,A
+0034 E4                CLR     A
+0035 FB                MOV     R3,A
+0036 FA                MOV     R2,A
+0037 FD                MOV     R5,A
+0038 FC                MOV     R4,A
+0039 FF                MOV     R7,A
+003A 110000      E     ACALL   _SOsd_SetScreen
+                                           ; SOURCE LINE # 221
+003D 90000000    E     MOV     DPTR,#?_SOsd_SetWin0Animation?BYTE+03H
+0041 7403              MOV     A,#03H
+0043 F0                MOVX    @DPTR,A
+0044 7B07              MOV     R3,#07H
+0046 E4                CLR     A
+0047 FD                MOV     R5,A
+0048 7F02              MOV     R7,#02H
+004A 110000      E     ACALL   _SOsd_SetWin0Animation
+                                           ; SOURCE LINE # 223
+004D 7D08              MOV     R5,#08H
+004F E4                CLR     A
+0050 FF                MOV     R7,A
+0051 110000      E     ACALL   _SOsd_SetPixelWidth
+                                           ; SOURCE LINE # 225
+0054 E4                CLR     A
+0055 FD                MOV     R5,A
+0056 FF                MOV     R7,A
+0057 110000      E     ACALL   _SOsd_SetGlobalAlpha
+                                           ; SOURCE LINE # 226
+005A 7D01              MOV     R5,#01H
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 15  
+
+005C E4                CLR     A
+005D FF                MOV     R7,A
+005E 110000      E     ACALL   _SOsd_Enable
+                                           ; SOURCE LINE # 227
+0061 7B00        R     MOV     R3,#MBYTE ?SC_0
+0063 7A00        R     MOV     R2,#HIGH ?SC_0
+0065 7900        R     MOV     R1,#LOW ?SC_0
+0067 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 228
+006A E4                CLR     A
+006B FD                MOV     R5,A
+006C FC                MOV     R4,A
+006D FF                MOV     R7,A
+006E 110000      E     ACALL   _SOsd_SetLutOffset
+                                           ; SOURCE LINE # 230
+0071 7F01              MOV     R7,#01H
+0073 110000      E     ACALL   _WaitVBlank
+                                           ; SOURCE LINE # 232
+0076 110000      R     ACALL   L?0053
+0079 110000      E     ACALL   _SOsd_SetLut
+                                           ; SOURCE LINE # 233
+007C E4                CLR     A
+007D FD                MOV     R5,A
+007E FF                MOV     R7,A
+007F 110000      E     ACALL   _SOsd_UpdateLut
+                                           ; SOURCE LINE # 236
+0082 E4                CLR     A
+0083 FD                MOV     R5,A
+0084 FF                MOV     R7,A
+0085 110000      E     ACALL   _SOsd_UpdateReg
+                                           ; SOURCE LINE # 237
+0088 7B00        R     MOV     R3,#MBYTE ?SC_30
+008A 7A00        R     MOV     R2,#HIGH ?SC_30
+008C 7900        R     MOV     R1,#LOW ?SC_30
+008E 010000      E     AJMP    _dPuts
+             ; FUNCTION PigeonDemo (END)
+
+             ; FUNCTION RoseDemo (BEGIN)
+                                           ; SOURCE LINE # 241
+                                           ; SOURCE LINE # 242
+                                           ; SOURCE LINE # 243
+0000 110000      E     ACALL   SOsd_init
+                                           ; SOURCE LINE # 246
+0003 110000      E     ACALL   SOsd_CleanReg
+                                           ; SOURCE LINE # 247
+0006 110000      E     ACALL   SOsd_CleanLut
+                                           ; SOURCE LINE # 248
+0009 110000      E     ACALL   SOsd_CleanRlc
+                                           ; SOURCE LINE # 250
+000C 7F01              MOV     R7,#01H
+000E 110000      E     ACALL   _SpiOsdEnable
+                                           ; SOURCE LINE # 251
+0011 110000      E     ACALL   SOsd_UpdateRlc
+                                           ; SOURCE LINE # 252
+0014 7D08              MOV     R5,#08H
+0016 E4                CLR     A
+0017 FF                MOV     R7,A
+0018 110000      E     ACALL   _SOsd_UpdateReg
+                                           ; SOURCE LINE # 255
+001B 7E0D              MOV     R6,#0DH
+001D 7D69              MOV     R5,#069H
+001F 110000      R     ACALL   L?0058
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 16  
+
+0022 E4                CLR     A
+0023 FF                MOV     R7,A
+0024 110000      E     ACALL   _SOsd_SetSpiStartOffset
+                                           ; SOURCE LINE # 256
+0027 7B90              MOV     R3,#090H
+0029 7A01              MOV     R2,#01H
+002B 7D90              MOV     R5,#090H
+002D 7C01              MOV     R4,#01H
+002F E4                CLR     A
+0030 FF                MOV     R7,A
+0031 110000      E     ACALL   _SOsd_SetImageWidthHeight
+                                           ; SOURCE LINE # 257
+0034 E4                CLR     A
+0035 FD                MOV     R5,A
+0036 FC                MOV     R4,A
+0037 FF                MOV     R7,A
+0038 FE                MOV     R6,A
+0039 110000      E     ACALL   _SOsd_SetWin0ImageOffsetXY
+                                           ; SOURCE LINE # 261
+003C 7401              MOV     A,#01H
+003E 110000      R     ACALL   L?0061
+0041 7490              MOV     A,#090H
+0043 F0                MOVX    @DPTR,A
+0044 A3                INC     DPTR
+0045 7401              MOV     A,#01H
+0047 F0                MOVX    @DPTR,A
+0048 A3                INC     DPTR
+0049 7490              MOV     A,#090H
+004B F0                MOVX    @DPTR,A
+004C 7B28              MOV     R3,#028H
+004E 7A00              MOV     R2,#00H
+0050 7DC8              MOV     R5,#0C8H
+0052 7C00              MOV     R4,#00H
+0054 E4                CLR     A
+0055 FF                MOV     R7,A
+0056 110000      E     ACALL   _SOsd_SetScreen
+                                           ; SOURCE LINE # 263
+0059 90000000    E     MOV     DPTR,#?_SOsd_SetWin0Animation?BYTE+03H
+005D 7403              MOV     A,#03H
+005F F0                MOVX    @DPTR,A
+0060 7B09              MOV     R3,#09H
+0062 E4                CLR     A
+0063 FD                MOV     R5,A
+0064 7F02              MOV     R7,#02H
+0066 110000      E     ACALL   _SOsd_SetWin0Animation
+                                           ; SOURCE LINE # 265
+0069 7D08              MOV     R5,#08H
+006B E4                CLR     A
+006C FF                MOV     R7,A
+006D 110000      E     ACALL   _SOsd_SetPixelWidth
+                                           ; SOURCE LINE # 267
+0070 E4                CLR     A
+0071 FD                MOV     R5,A
+0072 FF                MOV     R7,A
+0073 110000      E     ACALL   _SOsd_SetGlobalAlpha
+                                           ; SOURCE LINE # 268
+0076 7D01              MOV     R5,#01H
+0078 E4                CLR     A
+0079 FF                MOV     R7,A
+007A 110000      E     ACALL   _SOsd_Enable
+                                           ; SOURCE LINE # 269
+007D 7B00        R     MOV     R3,#MBYTE ?SC_52
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 17  
+
+007F 7A00        R     MOV     R2,#HIGH ?SC_52
+0081 7900        R     MOV     R1,#LOW ?SC_52
+0083 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 270
+0086 E4                CLR     A
+0087 FD                MOV     R5,A
+0088 FC                MOV     R4,A
+0089 FF                MOV     R7,A
+008A 110000      E     ACALL   _SOsd_SetLutOffset
+                                           ; SOURCE LINE # 272
+008D 7F01              MOV     R7,#01H
+008F 110000      E     ACALL   _WaitVBlank
+                                           ; SOURCE LINE # 274
+0092 110000      R     ACALL   L?0053
+0095 110000      E     ACALL   _SOsd_SetLut
+                                           ; SOURCE LINE # 275
+0098 E4                CLR     A
+0099 FD                MOV     R5,A
+009A FF                MOV     R7,A
+009B 110000      E     ACALL   _SOsd_UpdateLut
+                                           ; SOURCE LINE # 277
+009E E4                CLR     A
+009F FD                MOV     R5,A
+00A0 FF                MOV     R7,A
+00A1 110000      E     ACALL   _SOsd_UpdateReg
+                                           ; SOURCE LINE # 278
+00A4 7B00        R     MOV     R3,#MBYTE ?SC_30
+00A6 7A00        R     MOV     R2,#HIGH ?SC_30
+00A8 7900        R     MOV     R1,#LOW ?SC_30
+00AA 010000      E     AJMP    _dPuts
+             ; FUNCTION RoseDemo (END)
+
+             ; FUNCTION MovingGridInit (BEGIN)
+                                           ; SOURCE LINE # 317
+                                           ; SOURCE LINE # 318
+                                           ; SOURCE LINE # 319
+0000 7F01              MOV     R7,#01H
+0002 110000      E     ACALL   _SpiOsdEnable
+                                           ; SOURCE LINE # 322
+0005 7EFE              MOV     R6,#0FEH
+0007 7D62              MOV     R5,#062H
+0009 110000      R     ACALL   L?0058
+000C 7F03              MOV     R7,#03H
+000E 110000      E     ACALL   _SOsd_SetSpiStartOffset
+                                           ; SOURCE LINE # 323
+0011 7BF5              MOV     R3,#0F5H
+0013 7A00              MOV     R2,#00H
+0015 7DDA              MOV     R5,#0DAH
+0017 7C02              MOV     R4,#02H
+0019 7F03              MOV     R7,#03H
+001B 110000      E     ACALL   _SOsd_SetImageWidthHeight
+                                           ; SOURCE LINE # 329
+001E 90000000    E     MOV     DPTR,#?_SOsd_SetScreen?BYTE+05H
+0022 7402              MOV     A,#02H
+0024 F0                MOVX    @DPTR,A
+0025 A3                INC     DPTR
+0026 74DA              MOV     A,#0DAH
+0028 F0                MOVX    @DPTR,A
+0029 A3                INC     DPTR
+002A E4                CLR     A
+002B F0                MOVX    @DPTR,A
+002C A3                INC     DPTR
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 18  
+
+002D 74F5              MOV     A,#0F5H
+002F F0                MOVX    @DPTR,A
+0030 7B96              MOV     R3,#096H
+0032 7A00              MOV     R2,#00H
+0034 7D23              MOV     R5,#023H
+0036 7C00              MOV     R4,#00H
+0038 7F03              MOV     R7,#03H
+003A 110000      E     ACALL   _SOsd_SetScreen
+                                           ; SOURCE LINE # 333
+003D 7D01              MOV     R5,#01H
+003F 7F03              MOV     R7,#03H
+0041 110000      E     ACALL   _SOsd_SetPixelAlpha
+                                           ; SOURCE LINE # 334
+0044 7D08              MOV     R5,#08H
+0046 7F03              MOV     R7,#03H
+0048 110000      E     ACALL   _SOsd_SetPixelWidth
+                                           ; SOURCE LINE # 336
+004B 90000000    R     MOV     DPTR,#d_grid_rle
+004F E4                CLR     A
+0050 93                MOVC    A,@A+DPTR
+0051 110000      R     ACALL   L?0062
+0054 110000      E     ACALL   _SOsd_SetRlc
+                                           ; SOURCE LINE # 337
+0057 110000      E     ACALL   SOsd_UpdateRlc
+                                           ; SOURCE LINE # 338
+005A E4                CLR     A
+005B FD                MOV     R5,A
+005C FC                MOV     R4,A
+005D 7F03              MOV     R7,#03H
+005F 110000      E     ACALL   _SOsd_SetLutOffset
+                                           ; SOURCE LINE # 340
+0062 7D01              MOV     R5,#01H
+0064 7F03              MOV     R7,#03H
+0066 110000      E     ACALL   _SOsd_Enable
+                                           ; SOURCE LINE # 343
+0069 7F00              MOV     R7,#00H
+006B 7E10              MOV     R6,#010H
+006D 7D60              MOV     R5,#060H
+006F 110000      R     ACALL   L?0059
+0072 E4                CLR     A
+0073 FF                MOV     R7,A
+0074 110000      E     ACALL   _SOsd_SetSpiStartOffset
+                                           ; SOURCE LINE # 344
+0077 7B3C              MOV     R3,#03CH
+0079 7A00              MOV     R2,#00H
+007B 7D20              MOV     R5,#020H
+007D 7C03              MOV     R4,#03H
+007F E4                CLR     A
+0080 FF                MOV     R7,A
+0081 110000      E     ACALL   _SOsd_SetImageWidthHeight
+                                           ; SOURCE LINE # 345
+                                           ; SOURCE LINE # 346
+0084 E4                CLR     A
+0085 FD                MOV     R5,A
+0086 FC                MOV     R4,A
+0087 FF                MOV     R7,A
+0088 FE                MOV     R6,A
+0089 110000      E     ACALL   _SOsd_SetWin0ImageOffsetXY
+                                           ; SOURCE LINE # 350
+008C 90000000    E     MOV     DPTR,#?_SOsd_SetScreen?BYTE+05H
+0090 7403              MOV     A,#03H
+0092 F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 19  
+
+0093 A3                INC     DPTR
+0094 7420              MOV     A,#020H
+0096 F0                MOVX    @DPTR,A
+0097 A3                INC     DPTR
+0098 E4                CLR     A
+0099 F0                MOVX    @DPTR,A
+009A A3                INC     DPTR
+009B 743C              MOV     A,#03CH
+009D F0                MOVX    @DPTR,A
+009E 7B9A              MOV     R3,#09AH
+00A0 7A01              MOV     R2,#01H
+00A2 E4                CLR     A
+00A3 FD                MOV     R5,A
+00A4 FC                MOV     R4,A
+00A5 FF                MOV     R7,A
+00A6 110000      E     ACALL   _SOsd_SetScreen
+                                           ; SOURCE LINE # 352
+                                           ; SOURCE LINE # 353
+00A9 90000000    E     MOV     DPTR,#?_SOsd_SetWin0Animation?BYTE+03H
+00AD 7464              MOV     A,#064H
+00AF F0                MOVX    @DPTR,A
+00B0 7B03              MOV     R3,#03H
+00B2 E4                CLR     A
+00B3 FD                MOV     R5,A
+00B4 7F02              MOV     R7,#02H
+00B6 110000      E     ACALL   _SOsd_SetWin0Animation
+                                           ; SOURCE LINE # 354
+00B9 7B00        R     MOV     R3,#MBYTE ?SC_80
+00BB 7A00        R     MOV     R2,#HIGH ?SC_80
+00BD 7900        R     MOV     R1,#LOW ?SC_80
+00BF 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 355
+00C2 7D01              MOV     R5,#01H
+00C4 E4                CLR     A
+00C5 FF                MOV     R7,A
+00C6 110000      E     ACALL   _SOsd_SetPixelAlpha
+                                           ; SOURCE LINE # 356
+00C9 7D08              MOV     R5,#08H
+00CB E4                CLR     A
+00CC FF                MOV     R7,A
+00CD 110000      E     ACALL   _SOsd_SetPixelWidth
+                                           ; SOURCE LINE # 357
+00D0 7D01              MOV     R5,#01H
+00D2 E4                CLR     A
+00D3 FF                MOV     R7,A
+00D4 110000      E     ACALL   _SOsd_Enable
+                                           ; SOURCE LINE # 358
+00D7 E4                CLR     A
+00D8 FD                MOV     R5,A
+00D9 FC                MOV     R4,A
+00DA FF                MOV     R7,A
+00DB 110000      E     ACALL   _SOsd_SetLutOffset
+                                           ; SOURCE LINE # 361
+00DE 7F01              MOV     R7,#01H
+00E0 110000      E     ACALL   _WaitVBlank
+                                           ; SOURCE LINE # 363
+00E3 110000      R     ACALL   L?0064
+00E6 FF                MOV     R7,A
+00E7 FE                MOV     R6,A
+00E8 7D60              MOV     R5,#060H
+00EA 110000      R     ACALL   L?0054
+00ED 110000      E     ACALL   _SOsd_SetLut
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 20  
+
+                                           ; SOURCE LINE # 364
+00F0 E4                CLR     A
+00F1 FD                MOV     R5,A
+00F2 FF                MOV     R7,A
+00F3 110000      E     ACALL   _SOsd_UpdateLut
+                                           ; SOURCE LINE # 365
+                                           ; SOURCE LINE # 367
+                                           ; SOURCE LINE # 368
+                                           ; SOURCE LINE # 369
+00F6         ?C0005:
+                                           ; SOURCE LINE # 370
+00F6 7F01              MOV     R7,#01H
+00F8 110000      E     ACALL   _WaitVBlank
+                                           ; SOURCE LINE # 371
+00FB E4                CLR     A
+00FC FD                MOV     R5,A
+00FD FF                MOV     R7,A
+00FE 110000      E     ACALL   _SOsd_UpdateReg
+                                           ; SOURCE LINE # 373
+0101 7D03              MOV     R5,#03H
+0103 7F03              MOV     R7,#03H
+0105 110000      E     ACALL   _SOsd_UpdateReg
+                                           ; SOURCE LINE # 375
+0108 7B00        R     MOV     R3,#MBYTE ?SC_108
+010A 7A00        R     MOV     R2,#HIGH ?SC_108
+010C 7900        R     MOV     R1,#LOW ?SC_108
+010E 010000      E     AJMP    _dPuts
+             ; FUNCTION MovingGridInit (END)
+
+             ; FUNCTION _MovingGridDemo (BEGIN)
+                                           ; SOURCE LINE # 382
+;---- Variable 'n' assigned to Register 'R3' ----
+0000 AB07              MOV     R3,AR7
+                                           ; SOURCE LINE # 383
+                                           ; SOURCE LINE # 388
+0002 EB                MOV     A,R3
+0003 75F008            MOV     B,#08H
+0006 A4                MUL     AB
+0007 2400        R     ADD     A,#LOW d_grid_IMG
+0009 F582              MOV     DPL,A
+000B E4                CLR     A
+000C 3400        R     ADDC    A,#HIGH d_grid_IMG
+000E F583              MOV     DPH,A
+0010 759300      E     MOV     DPX,#?C?CODESEG
+0013 110000      E     ACALL   ?C?LLDCODE
+0016 90000000    R     MOV     DPTR,#offset
+001A 110000      E     ACALL   ?C?LSTXDATA
+                                           ; SOURCE LINE # 389
+001D EB                MOV     A,R3
+001E 90000000    R     MOV     DPTR,#d_grid_rle
+0022 93                MOVC    A,@A+DPTR
+0023 90000000    R     MOV     DPTR,#rle_byte
+0027 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 392
+0028 90000000    R     MOV     DPTR,#offset
+002C E0                MOVX    A,@DPTR
+002D FC                MOV     R4,A
+002E A3                INC     DPTR
+002F E0                MOVX    A,@DPTR
+0030 FD                MOV     R5,A
+0031 A3                INC     DPTR
+0032 E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 21  
+
+0033 FE                MOV     R6,A
+0034 A3                INC     DPTR
+0035 E0                MOVX    A,@DPTR
+0036 FF                MOV     R7,A
+0037 110000      R     ACALL   L?0060
+003A 7F03              MOV     R7,#03H
+003C 110000      E     ACALL   _SOsd_SetSpiStartOffset
+                                           ; SOURCE LINE # 394
+003F 7F01              MOV     R7,#01H
+0041 110000      E     ACALL   _WaitVBlank
+                                           ; SOURCE LINE # 395
+0044 90000000    R     MOV     DPTR,#rle_byte
+0048 E0                MOVX    A,@DPTR
+0049 110000      R     ACALL   L?0062
+004C 110000      E     ACALL   _SOsd_SetRlc
+                                           ; SOURCE LINE # 396
+004F 110000      E     ACALL   SOsd_UpdateRlc
+                                           ; SOURCE LINE # 397
+0052 7D03              MOV     R5,#03H
+0054 7F03              MOV     R7,#03H
+0056 010000      E     AJMP    _SOsd_UpdateReg
+             ; FUNCTION _MovingGridDemo (END)
+
+             ; FUNCTION _MovingGridLUT (BEGIN)
+                                           ; SOURCE LINE # 407
+;---- Variable 'n' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 408
+                                           ; SOURCE LINE # 411
+0000 90000000    R     MOV     DPTR,#offset
+0004 E4                CLR     A
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 EF                MOV     A,R7
+0008 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 412
+0009 E0                MOVX    A,@DPTR
+000A F8                MOV     R0,A
+000B E4                CLR     A
+000C F0                MOVX    @DPTR,A
+000D E8                MOV     A,R0
+000E 25E0              ADD     A,ACC
+0010 25E0              ADD     A,ACC
+0012 90000000    R     MOV     DPTR,#offset
+0016 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 413
+0017 7F01              MOV     R7,#01H
+0019 110000      E     ACALL   _WaitVBlank
+                                           ; SOURCE LINE # 415
+001C 110000      R     ACALL   L?0064
+001F 90000000    R     MOV     DPTR,#offset
+0023 E0                MOVX    A,@DPTR
+0024 FE                MOV     R6,A
+0025 A3                INC     DPTR
+0026 E0                MOVX    A,@DPTR
+0027 FF                MOV     R7,A
+0028 E4                CLR     A
+0029 2F                ADD     A,R7
+002A FF                MOV     R7,A
+002B E4                CLR     A
+002C 3E                ADDC    A,R6
+002D FE                MOV     R6,A
+002E E4                CLR     A
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 22  
+
+002F 3460              ADDC    A,#060H
+0031 FD                MOV     R5,A
+0032 E4                CLR     A
+0033 33                RLC     A
+0034 90000000    E     MOV     DPTR,#?_SOsd_SetLut?BYTE+06H
+0038 110000      R     ACALL   L?0055
+003B 110000      E     ACALL   _SOsd_SetLut
+                                           ; SOURCE LINE # 416
+003E E4                CLR     A
+003F FD                MOV     R5,A
+0040 FF                MOV     R7,A
+0041 110000      E     ACALL   _SOsd_UpdateLut
+                                           ; SOURCE LINE # 417
+                                           ; SOURCE LINE # 419
+                                           ; SOURCE LINE # 420
+                                           ; SOURCE LINE # 421
+                                           ; SOURCE LINE # 425
+0044         ?C0009:
+0044 22                RET     
+             ; FUNCTION _MovingGridLUT (END)
+
+             ; FUNCTION MovingGridTask_init (BEGIN)
+                                           ; SOURCE LINE # 440
+                                           ; SOURCE LINE # 441
+                                           ; SOURCE LINE # 442
+0000 7F01              MOV     R7,#01H
+0002 110000      E     ACALL   _TaskSetGrid
+                                           ; SOURCE LINE # 443
+0005 E4                CLR     A
+0006 90000000    R     MOV     DPTR,#Task_Grid_direction
+000A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 444
+000B 90000000    R     MOV     DPTR,#Task_Grid_dt
+000F 740A              MOV     A,#0AH
+0011 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 445
+0012 E4                CLR     A
+0013 90000000    R     MOV     DPTR,#Task_Grid_n
+0017 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 446
+0018 90000000    R     MOV     DPTR,#Task_Grid_lut
+001C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 447
+001D A3                INC     DPTR
+001E 110000      R     ACALL   L?0052
+                                           ; SOURCE LINE # 451
+0021 22                RET     
+             ; FUNCTION MovingGridTask_init (END)
+
+             ; FUNCTION MovingGridTask (BEGIN)
+                                           ; SOURCE LINE # 460
+                                           ; SOURCE LINE # 461
+                                           ; SOURCE LINE # 464
+0000 C3                CLR     C
+0001 90000000    R     MOV     DPTR,#Task_Grid_timer+01H
+0005 E0                MOVX    A,@DPTR
+0006 9500        E     SUBB    A,tic_task+01H
+0008 90000000    R     MOV     DPTR,#Task_Grid_timer
+000C E0                MOVX    A,@DPTR
+000D 9500        E     SUBB    A,tic_task
+000F 4003              JC      $ + 5H
+0011 010000      R     AJMP    ?C0014
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 23  
+
+                                           ; SOURCE LINE # 465
+                                           ; SOURCE LINE # 466
+0014 110000      E     ACALL   TaskGetGridCmd
+0017 90000000    R     MOV     DPTR,#GridCmd
+001B EF                MOV     A,R7
+001C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 467
+001D 7003              JNZ     $ + 5H
+001F 010000      R     AJMP    ?C0012
+                                           ; SOURCE LINE # 468
+0022 7B00        R     MOV     R3,#MBYTE ?SC_132
+0024 7A00        R     MOV     R2,#HIGH ?SC_132
+0026 7900        R     MOV     R1,#LOW ?SC_132
+0028 E0                MOVX    A,@DPTR
+0029 90000000    E     MOV     DPTR,#?_dPrintf?BYTE+03H
+002D F0                MOVX    @DPTR,A
+002E 110000      E     ACALL   _dPrintf
+                                           ; SOURCE LINE # 469
+0031 90000000    R     MOV     DPTR,#GridCmd
+0035 E0                MOVX    A,@DPTR
+0036 6401              XRL     A,#01H
+0038 702D              JNZ     ?C0013
+                                           ; SOURCE LINE # 470
+003A FF                MOV     R7,A
+003B 110000      E     ACALL   _TaskSetGrid
+                                           ; SOURCE LINE # 471
+003E E4                CLR     A
+003F FF                MOV     R7,A
+0040 110000      E     ACALL   _TaskSetGridCmd
+                                           ; SOURCE LINE # 472
+0043 7F01              MOV     R7,#01H
+0045 110000      E     ACALL   _WaitVBlank
+                                           ; SOURCE LINE # 473
+0048 E4                CLR     A
+0049 FD                MOV     R5,A
+004A FF                MOV     R7,A
+004B 110000      E     ACALL   _SOsd_Enable
+                                           ; SOURCE LINE # 474
+004E E4                CLR     A
+004F FD                MOV     R5,A
+0050 FF                MOV     R7,A
+0051 110000      E     ACALL   _SOsd_UpdateReg
+                                           ; SOURCE LINE # 475
+0054 E4                CLR     A
+0055 FD                MOV     R5,A
+0056 7F03              MOV     R7,#03H
+0058 110000      E     ACALL   _SOsd_Enable
+                                           ; SOURCE LINE # 476
+005B 7D03              MOV     R5,#03H
+005D 7F03              MOV     R7,#03H
+005F 110000      E     ACALL   _SOsd_UpdateReg
+                                           ; SOURCE LINE # 477
+0062 E4                CLR     A
+0063 FF                MOV     R7,A
+0064 010000      E     AJMP    _SpiOsdEnable
+                                           ; SOURCE LINE # 480
+0067         ?C0013:
+                                           ; SOURCE LINE # 481
+0067 90000000    R     MOV     DPTR,#GridCmd
+006B E0                MOVX    A,@DPTR
+006C B4020B            CJNE    A,#02H,?C0015
+                                           ; SOURCE LINE # 482
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 24  
+
+006F 90000000    R     MOV     DPTR,#Task_Grid_dt
+0073 E0                MOVX    A,@DPTR
+0074 6004              JZ      ?C0015
+                                           ; SOURCE LINE # 483
+0076 14                DEC     A
+                                           ; SOURCE LINE # 484
+                                           ; SOURCE LINE # 485
+0077 110000      R     ACALL   L?0051
+                                           ; SOURCE LINE # 486
+                                           ; SOURCE LINE # 487
+007A         ?C0015:
+                                           ; SOURCE LINE # 488
+007A 90000000    R     MOV     DPTR,#GridCmd
+007E E0                MOVX    A,@DPTR
+007F F9                MOV     R1,A
+0080 B40311            CJNE    A,#03H,?C0017
+                                           ; SOURCE LINE # 489
+0083 90000000    R     MOV     DPTR,#Task_Grid_dt
+0087 E0                MOVX    A,@DPTR
+0088 C3                CLR     C
+0089 9414              SUBB    A,#014H
+008B 502B              JNC     ?C0019
+                                           ; SOURCE LINE # 490
+008D E0                MOVX    A,@DPTR
+008E 04                INC     A
+                                           ; SOURCE LINE # 491
+                                           ; SOURCE LINE # 492
+008F 110000      R     ACALL   L?0051
+                                           ; SOURCE LINE # 493
+                                           ; SOURCE LINE # 494
+0092 8024              SJMP    ?C0019
+0094         ?C0017:
+                                           ; SOURCE LINE # 495
+0094 E9                MOV     A,R1
+0095 B40508            CJNE    A,#05H,?C0020
+                                           ; SOURCE LINE # 496
+0098 90000000    R     MOV     DPTR,#Task_Grid_lut
+009C E0                MOVX    A,@DPTR
+009D 04                INC     A
+                                           ; SOURCE LINE # 497
+                                           ; SOURCE LINE # 498
+                                           ; SOURCE LINE # 499
+009E 800F              SJMP    ?C0048
+00A0         ?C0020:
+                                           ; SOURCE LINE # 500
+00A0 90000000    R     MOV     DPTR,#GridCmd
+00A4 E0                MOVX    A,@DPTR
+00A5 B40410            CJNE    A,#04H,?C0019
+                                           ; SOURCE LINE # 501
+00A8 90000000    R     MOV     DPTR,#Task_Grid_lut
+00AC E0                MOVX    A,@DPTR
+00AD 2403              ADD     A,#03H
+00AF         ?C0048:
+00AF F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 502
+00B0 E0                MOVX    A,@DPTR
+00B1 5403              ANL     A,#03H
+00B3 FF                MOV     R7,A
+00B4 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 503
+00B5 110000      R     ACALL   _MovingGridLUT
+                                           ; SOURCE LINE # 504
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 25  
+
+00B8         ?C0019:
+                                           ; SOURCE LINE # 506
+00B8 E4                CLR     A
+00B9 FF                MOV     R7,A
+00BA 110000      E     ACALL   _TaskSetGridCmd
+                                           ; SOURCE LINE # 507
+00BD         ?C0012:
+                                           ; SOURCE LINE # 509
+00BD 90000000    R     MOV     DPTR,#Task_Grid_direction
+00C1 E0                MOVX    A,@DPTR
+00C2 602F              JZ      ?C0023
+                                           ; SOURCE LINE # 510
+00C4 90000000    R     MOV     DPTR,#Task_Grid_n
+00C8 E0                MOVX    A,@DPTR
+00C9 FF                MOV     R7,A
+00CA D3                SETB    C
+00CB 940A              SUBB    A,#0AH
+00CD 4005              JC      ?C0024
+                                           ; SOURCE LINE # 511
+00CF E0                MOVX    A,@DPTR
+00D0 04                INC     A
+00D1 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 512
+00D2 800F              SJMP    ?C0025
+00D4         ?C0024:
+                                           ; SOURCE LINE # 513
+                                           ; SOURCE LINE # 514
+00D4 EF                MOV     A,R7
+00D5 90000000    R     MOV     DPTR,#Task_Grid_n
+00D9 6005              JZ      ?C0026
+                                           ; SOURCE LINE # 515
+00DB E0                MOVX    A,@DPTR
+00DC 14                DEC     A
+00DD F0                MOVX    @DPTR,A
+00DE 8003              SJMP    ?C0025
+00E0         ?C0026:
+                                           ; SOURCE LINE # 517
+00E0 740B              MOV     A,#0BH
+00E2 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 518
+00E3         ?C0025:
+                                           ; SOURCE LINE # 519
+00E3 90000000    R     MOV     DPTR,#Task_Grid_n
+00E7 E0                MOVX    A,@DPTR
+00E8 6414              XRL     A,#014H
+00EA 7032              JNZ     ?C0029
+                                           ; SOURCE LINE # 520
+00EC 90000000    R     MOV     DPTR,#Task_Grid_direction
+00F0 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 521
+00F1 802B              SJMP    ?C0029
+00F3         ?C0023:
+                                           ; SOURCE LINE # 522
+                                           ; SOURCE LINE # 523
+00F3 90000000    R     MOV     DPTR,#Task_Grid_n
+00F7 E0                MOVX    A,@DPTR
+00F8 C3                CLR     C
+00F9 940A              SUBB    A,#0AH
+00FB 5005              JNC     ?C0030
+                                           ; SOURCE LINE # 524
+00FD E0                MOVX    A,@DPTR
+00FE 04                INC     A
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 26  
+
+00FF F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 525
+0100 800D              SJMP    ?C0031
+0102         ?C0030:
+                                           ; SOURCE LINE # 526
+                                           ; SOURCE LINE # 527
+0102 90000000    R     MOV     DPTR,#Task_Grid_n
+0106 E0                MOVX    A,@DPTR
+0107 14                DEC     A
+0108 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 528
+0109 E0                MOVX    A,@DPTR
+010A B40A02            CJNE    A,#0AH,?C0031
+                                           ; SOURCE LINE # 529
+010D E4                CLR     A
+010E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 530
+010F         ?C0031:
+                                           ; SOURCE LINE # 531
+010F 90000000    R     MOV     DPTR,#Task_Grid_n
+0113 E0                MOVX    A,@DPTR
+0114 B40A07            CJNE    A,#0AH,?C0029
+                                           ; SOURCE LINE # 532
+0117 90000000    R     MOV     DPTR,#Task_Grid_direction
+011B 7401              MOV     A,#01H
+011D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 533
+011E         ?C0029:
+                                           ; SOURCE LINE # 534
+011E 90000000    R     MOV     DPTR,#Task_Grid_n
+0122 E0                MOVX    A,@DPTR
+0123 FF                MOV     R7,A
+0124 110000      R     ACALL   _MovingGridDemo
+                                           ; SOURCE LINE # 536
+0127 E4                CLR     A
+0128 F500        E     MOV     tic_task,A
+012A F500        E     MOV     tic_task+01H,A
+                                           ; SOURCE LINE # 538
+                                           ; SOURCE LINE # 539
+012C         ?C0014:
+012C 22                RET     
+             ; FUNCTION MovingGridTask (END)
+
+             ; FUNCTION _ReadOutputPixel (BEGIN)
+                                           ; SOURCE LINE # 585
+0000 90000000    R     MOV     DPTR,#end_x
+0004 EA                MOV     A,R2
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 EB                MOV     A,R3
+0008 F0                MOVX    @DPTR,A
+0009 90000000    R     MOV     DPTR,#start_x
+000D 110000      R     ACALL   L?0063
+                                           ; SOURCE LINE # 586
+                                           ; SOURCE LINE # 596
+0010 7B00        R     MOV     R3,#MBYTE ?SC_151
+0012 7A00        R     MOV     R2,#HIGH ?SC_151
+0014 7900        R     MOV     R1,#LOW ?SC_151
+0016 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+001A 110000      R     ACALL   L?0063
+001D 90000000    R     MOV     DPTR,#end_x
+0021 E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 27  
+
+0022 FF                MOV     R7,A
+0023 A3                INC     DPTR
+0024 E0                MOVX    A,@DPTR
+0025 90000000    E     MOV     DPTR,#?_Printf?BYTE+07H
+0029 CF                XCH     A,R7
+002A F0                MOVX    @DPTR,A
+002B A3                INC     DPTR
+002C EF                MOV     A,R7
+002D F0                MOVX    @DPTR,A
+002E 90000000    R     MOV     DPTR,#end_y
+0032 E0                MOVX    A,@DPTR
+0033 FF                MOV     R7,A
+0034 A3                INC     DPTR
+0035 E0                MOVX    A,@DPTR
+0036 90000000    E     MOV     DPTR,#?_Printf?BYTE+09H
+003A CF                XCH     A,R7
+003B F0                MOVX    @DPTR,A
+003C A3                INC     DPTR
+003D EF                MOV     A,R7
+003E F0                MOVX    @DPTR,A
+003F 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 597
+0042 C3                CLR     C
+0043 90000000    R     MOV     DPTR,#end_y+01H
+0047 E0                MOVX    A,@DPTR
+0048 94E0              SUBB    A,#0E0H
+004A 90000000    R     MOV     DPTR,#end_y
+004E E0                MOVX    A,@DPTR
+004F 9401              SUBB    A,#01H
+0051 4007              JC      ?C0034
+                                           ; SOURCE LINE # 598
+0053 7401              MOV     A,#01H
+0055 F0                MOVX    @DPTR,A
+0056 A3                INC     DPTR
+0057 74DF              MOV     A,#0DFH
+0059 F0                MOVX    @DPTR,A
+005A         ?C0034:
+                                           ; SOURCE LINE # 600
+005A C3                CLR     C
+005B 90000000    R     MOV     DPTR,#end_x+01H
+005F E0                MOVX    A,@DPTR
+0060 9420              SUBB    A,#020H
+0062 90000000    R     MOV     DPTR,#end_x
+0066 E0                MOVX    A,@DPTR
+0067 9403              SUBB    A,#03H
+0069 4007              JC      ?C0035
+                                           ; SOURCE LINE # 601
+006B 7403              MOV     A,#03H
+006D F0                MOVX    @DPTR,A
+006E A3                INC     DPTR
+006F 741F              MOV     A,#01FH
+0071 F0                MOVX    @DPTR,A
+0072         ?C0035:
+                                           ; SOURCE LINE # 602
+0072 90000000    R     MOV     DPTR,#end_x
+0076 E0                MOVX    A,@DPTR
+0077 FF                MOV     R7,A
+0078 A3                INC     DPTR
+0079 E0                MOVX    A,@DPTR
+007A 90000000    R     MOV     DPTR,#max_x
+007E CF                XCH     A,R7
+007F F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 28  
+
+0080 A3                INC     DPTR
+0081 EF                MOV     A,R7
+0082 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 603
+0083 759300      E     MOV     DPX,#?C?XDATASEG
+0086 E500        E     MOV     A,regTW88+01H
+0088 240D              ADD     A,#0DH
+008A 110000      R     ACALL   L?0056
+008D E0                MOVX    A,@DPTR
+008E 5423              ANL     A,#023H
+0090 90000000    R     MOV     DPTR,#bTemp
+0094 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 605
+0095 110000      R     ACALL   L?0065
+0098 90000000    R     MOV     DPTR,#bTemp
+009C E0                MOVX    A,@DPTR
+009D FB                MOV     R3,A
+009E 5403              ANL     A,#03H
+00A0 2401              ADD     A,#01H
+00A2 FD                MOV     R5,A
+00A3 E4                CLR     A
+00A4 33                RLC     A
+00A5 FC                MOV     R4,A
+00A6 110000      E     ACALL   ?C?IMUL
+00A9 90000000    R     MOV     DPTR,#max_x
+00AD EE                MOV     A,R6
+00AE F0                MOVX    @DPTR,A
+00AF A3                INC     DPTR
+00B0 EF                MOV     A,R7
+00B1 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 606
+00B2 EB                MOV     A,R3
+00B3 30E50C            JNB     ACC.5,?C0036
+                                           ; SOURCE LINE # 607
+00B6 90000000    R     MOV     DPTR,#max_x
+00BA E0                MOVX    A,@DPTR
+00BB C3                CLR     C
+00BC 13                RRC     A
+00BD F0                MOVX    @DPTR,A
+00BE A3                INC     DPTR
+00BF E0                MOVX    A,@DPTR
+00C0 13                RRC     A
+00C1 F0                MOVX    @DPTR,A
+00C2         ?C0036:
+                                           ; SOURCE LINE # 609
+00C2 7B00        R     MOV     R3,#MBYTE ?SC_187
+00C4 7A00        R     MOV     R2,#HIGH ?SC_187
+00C6 7900        R     MOV     R1,#LOW ?SC_187
+00C8 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 610
+00CB 90000000    R     MOV     DPTR,#bTemp
+00CF E0                MOVX    A,@DPTR
+00D0 B42208            CJNE    A,#022H,?C0037
+00D3 7B00        R     MOV     R3,#MBYTE ?SC_196
+00D5 7A00        R     MOV     R2,#HIGH ?SC_196
+00D7 7900        R     MOV     R1,#LOW ?SC_196
+00D9 8014              SJMP    ?C0049
+00DB         ?C0037:
+                                           ; SOURCE LINE # 611
+                                           ; SOURCE LINE # 612
+00DB 90000000    R     MOV     DPTR,#bTemp
+00DF E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 29  
+
+00E0 5403              ANL     A,#03H
+00E2 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 613
+00E3 7B00        R     MOV     R3,#MBYTE ?SC_200
+00E5 7A00        R     MOV     R2,#HIGH ?SC_200
+00E7 7900        R     MOV     R1,#LOW ?SC_200
+00E9 04                INC     A
+00EA 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+00EE F0                MOVX    @DPTR,A
+00EF         ?C0049:
+00EF 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 614
+00F2         ?C0038:
+                                           ; SOURCE LINE # 623
+00F2 7F01              MOV     R7,#01H
+00F4 110000      E     ACALL   _WaitVBlank
+                                           ; SOURCE LINE # 624
+00F7 7F08              MOV     R7,#08H
+00F9 7E00              MOV     R6,#00H
+00FB 110000      E     ACALL   _delay1ms
+                                           ; SOURCE LINE # 625
+00FE 90000000    R     MOV     DPTR,#start_y
+0102 E0                MOVX    A,@DPTR
+0103 FF                MOV     R7,A
+0104 A3                INC     DPTR
+0105 E0                MOVX    A,@DPTR
+0106 90000000    R     MOV     DPTR,#y
+010A CF                XCH     A,R7
+010B F0                MOVX    @DPTR,A
+010C A3                INC     DPTR
+010D EF                MOV     A,R7
+010E F0                MOVX    @DPTR,A
+010F         ?C0039:
+010F 90000000    R     MOV     DPTR,#end_y
+0113 E0                MOVX    A,@DPTR
+0114 FE                MOV     R6,A
+0115 A3                INC     DPTR
+0116 E0                MOVX    A,@DPTR
+0117 FF                MOV     R7,A
+0118 90000000    R     MOV     DPTR,#y
+011C E0                MOVX    A,@DPTR
+011D FC                MOV     R4,A
+011E A3                INC     DPTR
+011F E0                MOVX    A,@DPTR
+0120 FD                MOV     R5,A
+0121 D3                SETB    C
+0122 9F                SUBB    A,R7
+0123 EC                MOV     A,R4
+0124 9E                SUBB    A,R6
+0125 4003              JC      $ + 5H
+0127 010000      R     AJMP    ?C0040
+                                           ; SOURCE LINE # 626
+012A 7B00        R     MOV     R3,#MBYTE ?SC_204
+012C 7A00        R     MOV     R2,#HIGH ?SC_204
+012E 7900        R     MOV     R1,#LOW ?SC_204
+0130 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0134 EC                MOV     A,R4
+0135 F0                MOVX    @DPTR,A
+0136 A3                INC     DPTR
+0137 ED                MOV     A,R5
+0138 F0                MOVX    @DPTR,A
+0139 90000000    R     MOV     DPTR,#max_x
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 30  
+
+013D E0                MOVX    A,@DPTR
+013E FF                MOV     R7,A
+013F A3                INC     DPTR
+0140 E0                MOVX    A,@DPTR
+0141 90000000    E     MOV     DPTR,#?_Printf?BYTE+05H
+0145 CF                XCH     A,R7
+0146 F0                MOVX    @DPTR,A
+0147 A3                INC     DPTR
+0148 EF                MOV     A,R7
+0149 F0                MOVX    @DPTR,A
+014A 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 627
+014D 90000000    R     MOV     DPTR,#start_x
+0151 E0                MOVX    A,@DPTR
+0152 FF                MOV     R7,A
+0153 A3                INC     DPTR
+0154 E0                MOVX    A,@DPTR
+0155 90000000    R     MOV     DPTR,#x
+0159 CF                XCH     A,R7
+015A F0                MOVX    @DPTR,A
+015B A3                INC     DPTR
+015C EF                MOV     A,R7
+015D F0                MOVX    @DPTR,A
+015E         ?C0042:
+015E 110000      R     ACALL   L?0065
+0161 90000000    R     MOV     DPTR,#x
+0165 E0                MOVX    A,@DPTR
+0166 FC                MOV     R4,A
+0167 A3                INC     DPTR
+0168 E0                MOVX    A,@DPTR
+0169 FD                MOV     R5,A
+016A C3                CLR     C
+016B 9F                SUBB    A,R7
+016C EC                MOV     A,R4
+016D 9E                SUBB    A,R6
+016E 4003              JC      $ + 5H
+0170 010000      R     AJMP    ?C0041
+                                           ; SOURCE LINE # 629
+0173 AF05              MOV     R7,AR5
+0175 759300      E     MOV     DPX,#?C?XDATASEG
+0178 E500        E     MOV     A,regTW88+01H
+017A 24F0              ADD     A,#0F0H
+017C 110000      R     ACALL   L?0056
+017F EF                MOV     A,R7
+0180 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 630
+0181 90000000    R     MOV     DPTR,#y
+0185 A3                INC     DPTR
+0186 E0                MOVX    A,@DPTR
+0187 FF                MOV     R7,A
+0188 759300      E     MOV     DPX,#?C?XDATASEG
+018B E500        E     MOV     A,regTW88+01H
+018D 24F1              ADD     A,#0F1H
+018F 110000      R     ACALL   L?0057
+0192 EF                MOV     A,R7
+0193 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 631
+0194 90000000    R     MOV     DPTR,#y
+0198 E0                MOVX    A,@DPTR
+0199 C4                SWAP    A
+019A F8                MOV     R0,A
+019B 540F              ANL     A,#0FH
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 31  
+
+019D C8                XCH     A,R0
+019E 68                XRL     A,R0
+019F FF                MOV     R7,A
+01A0 90000000    R     MOV     DPTR,#y_high
+01A4 EF                MOV     A,R7
+01A5 F0                MOVX    @DPTR,A
+01A6 FB                MOV     R3,A
+                                           ; SOURCE LINE # 632
+01A7 EC                MOV     A,R4
+01A8 4B                ORL     A,R3
+01A9 FF                MOV     R7,A
+01AA 759300      E     MOV     DPX,#?C?XDATASEG
+01AD E500        E     MOV     A,regTW88+01H
+01AF 24F2              ADD     A,#0F2H
+01B1 110000      R     ACALL   L?0057
+01B4 EF                MOV     A,R7
+                                           ; SOURCE LINE # 634
+01B5 110000      R     ACALL   L?0066
+01B8 24F3              ADD     A,#0F3H
+01BA 110000      R     ACALL   L?0057
+01BD E0                MOVX    A,@DPTR
+01BE 90000000    R     MOV     DPTR,#r
+                                           ; SOURCE LINE # 635
+01C2 110000      R     ACALL   L?0066
+01C5 24F4              ADD     A,#0F4H
+01C7 110000      R     ACALL   L?0057
+01CA E0                MOVX    A,@DPTR
+01CB 90000000    R     MOV     DPTR,#g
+                                           ; SOURCE LINE # 636
+01CF 110000      R     ACALL   L?0067
+01D2 24F5              ADD     A,#0F5H
+01D4 110000      R     ACALL   L?0057
+01D7 E0                MOVX    A,@DPTR
+01D8 90000000    R     MOV     DPTR,#b
+01DC F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 638
+01DD 7B00        R     MOV     R3,#MBYTE ?SC_225
+01DF 7A00        R     MOV     R2,#HIGH ?SC_225
+01E1 7900        R     MOV     R1,#LOW ?SC_225
+01E3 90000000    R     MOV     DPTR,#r
+01E7 E0                MOVX    A,@DPTR
+01E8 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+01EC F0                MOVX    @DPTR,A
+01ED 90000000    R     MOV     DPTR,#g
+01F1 E0                MOVX    A,@DPTR
+01F2 90000000    E     MOV     DPTR,#?_Printf?BYTE+04H
+01F6 F0                MOVX    @DPTR,A
+01F7 90000000    R     MOV     DPTR,#b
+01FB E0                MOVX    A,@DPTR
+01FC 90000000    E     MOV     DPTR,#?_Printf?BYTE+05H
+0200 F0                MOVX    @DPTR,A
+0201 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 639
+0204 90000000    R     MOV     DPTR,#x+01H
+0208 E0                MOVX    A,@DPTR
+0209 04                INC     A
+020A F0                MOVX    @DPTR,A
+020B 7007              JNZ     ?C0046
+020D 90000000    R     MOV     DPTR,#x
+0211 E0                MOVX    A,@DPTR
+0212 04                INC     A
+0213 F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   DEMOMAIN                                                          07/18/2018 10:45:00 PAGE 32  
+
+0214         ?C0046:
+0214 010000      R     AJMP    ?C0042
+                                           ; SOURCE LINE # 640
+0217         ?C0041:
+0217 90000000    R     MOV     DPTR,#y+01H
+021B E0                MOVX    A,@DPTR
+021C 04                INC     A
+021D F0                MOVX    @DPTR,A
+021E 7007              JNZ     ?C0047
+0220 90000000    R     MOV     DPTR,#y
+0224 E0                MOVX    A,@DPTR
+0225 04                INC     A
+0226 F0                MOVX    @DPTR,A
+0227         ?C0047:
+0227 010000      R     AJMP    ?C0039
+022A         ?C0040:
+                                           ; SOURCE LINE # 648
+022A 7B00        R     MOV     R3,#MBYTE ?SC_244
+022C 7A00        R     MOV     R2,#HIGH ?SC_244
+022E 7900        R     MOV     R1,#LOW ?SC_244
+0230 010000      E     AJMP    _Printf
+             ; FUNCTION _ReadOutputPixel (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1793    ----
+   CONSTANT SIZE    =    441    ----
+   XDATA SIZE       =      7      27
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  2 WARNING(S),  0 ERROR(S)

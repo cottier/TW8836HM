@@ -1,0 +1,1875 @@
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE DRV_REGSET
+OBJECT MODULE PLACED IN .\Output\DRV_regset.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source\drv\DRV_regset.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(
+                    -.\Output\TW8836B_EVB11.ORC) BROWSE INCDIR(.\source\app;.\source\common;.\source\drv;.\source\HW;.\source\utils;.\source\
+                    -test) DEFINE(EVB_11,nullFn=//) DEBUG CODE PRINT(.\List\DRV_regset.lst) TABS(2) OBJECT(.\Output\DRV_regset.obj)
+
+line level    source
+
+   1          #include "HWconf.h"
+   2          
+   3          CODE REG_IDX_DATA_t InitHwDefault_Table[] = {
+   4                    //-----------------
+   5                    //clock
+   6                    //use 27MHz. SYNC.
+   7                    //-----------------
+   8          
+   9            {0x4DF, 0x00},  //ASync control
+  10          
+  11            {0x4E0, 0x00},  //ASyncWait:0,PLLCLK:0:SSPLL
+  12            {0x4E1, 0x06},  //-Edge,0_delay,27MHz,PLLCLK_DIV:6:div4.
+  13          
+  14            {0x4F0, 0x00},  //MCU_DIV:0:div1, MCU_WAIT_OFF:0:Note
+  15            {0x4F2, 0x00},  //MCU_SYNC,DMA_SYNC
+  16          
+  17                    //-----------------
+  18                    //SSPLL2
+  19            {0x0E7, 0x16},  //
+  20            {0x0E8, 0x01},  //60.750MHz
+  21            {0x0E9, 0x20},  //
+  22            {0x0EA, 0x00},  //
+  23            {0x0EB, 0x40},  //FSS2  
+  24            {0x0EC, 0xB0},  //PD_SSPLL2.Note
+  25            {0x0ED, 0x11},  //POST:0,VCO:27~54,pump:2.5
+  26          
+  27                    //-----------------
+  28            {0x0F6, 0x04},  //PCLK_DIV:4:div3.
+  29          
+  30                    //-----------------
+  31                    //SSPLL1
+  32            {0x0F7, 0x16},  //
+  33            {0x0F8, 0x01},  //60.750MHz
+  34            {0x0F9, 0x20},  //
+  35            {0x0FA, 0x00},  //
+  36            {0x0FB, 0x40},  //FSS
+  37            {0x0FC, 0xB0},  //PD_SSPLL1.Note
+  38            {0x0FD, 0x11},  //POST:0,VCO:27~54,pump:2.5
+  39          
+  40            //FYI. before 131114, FW used below values.
+  41            //{0x0F6, 0x00},
+  42            //{0x0FC, 0x23},
+  43          
+  44          
+  45          
+  46            //REG000    ID def:36   TW8836
+  47            //REG001    REV def:11    B2        
+  48                    //-----------------
+  49                    //interrupt
+  50          #if 0 //InitCore already updates it. Do not check this two registers.
+                {0x003, 0xFF},  //irq mask first.  def:FF
+                {0x002, 0xFF},  //and then clean.  def:CA
+              #endif
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 2   
+
+  54          
+  55          
+  56            //REG004    STATUS readonly
+  57            //REG005    IRQ&MASK def:F0
+  58            {0x006, 0x00},  //SRST def:00
+  59                    //[7] SRST. SW chip reset. Do not execute it with SSPLL1.
+  60                    //[6] SwapBT656_OUT 1:swap
+  61                    //[5] i2c auto idx increase. 1:disable
+  62                    //[4:0] TCon output
+  63                    //BKTODO131125 :move to InitSwDefault_Table[] 
+  64          #ifdef  PANEL_FP_LSB
+                {0x007, 0x02},  //
+              #else
+  67            {0x007, 0x00},  //OUTPUT CTRL I. def:00
+  68          #endif
+  69                    //[7] FP data port swap R<->B
+  70                    //[6] swap MSB and LSB
+  71                    //[5:4] FP data port bit shifting
+  72                    //[3] En BT656Enc interface
+  73                    //[2:0] TCON pin output mode
+  74            {0x008, 0x30},  //Output CTL II def:30
+  75                    //[7:6] TCCLK driver strength. TCON uses 8mA. cfg file error
+  76                    //    00:0 01:4mA 10:8mA 11:12mA
+  77                    //      TCON only.
+  78                    //[5] TRI_FPD   1:Tristate all FP data pins
+  79                    //[4] TRI_EN  1:Tristate all output pins
+  80                    //[3:0] GPO pin mode
+  81                    //    TW8836 EVB uses GPOSEL=tcpol, because REMO uses INT11(TCPOLP).
+  82            //REG009      for FW I2C Server
+  83            //REG00F      INT0 Write Port
+  84            {0x01F, 0x00},  //test mode def:00
+  85          
+  86                    //-----------------
+  87            {0x040, 0x00},  //input control I. def:00
+  88                    //[7:6] hStart[9:8]
+  89                    //[5] VDCLK_POL
+  90                    //[4] Scaler Input Clk Pol
+  91                    //[3]   En DTVDE
+  92                    //[2]   En DTVCLK2 for BT656Loop
+  93                    //[1:0] Input Selection
+  94            {0x041, 0xC0},  //input control II, def:C0 FW uses 0x00
+  95                    //[7] DTV input threshold 0:1.8V 1:3.3V DEF:1 
+  96                    //[6] BT656 input threshold 0:1.8V 1:3.3V DEF:1
+  97                    //[5] Field control for progressive input
+  98                    //[4] Implicit DE => Explicit DE
+  99                    //[3] vSync Pol
+ 100                    //[2] hSync Pol
+ 101                    //[1] field pol
+ 102                    //[0] data format 0:YCbCr 1:RGB
+ 103          
+ 104          
+ 105                    //-----------------
+ 106                    //input crop
+ 107                    //def   hStart 0x020 = 32
+ 108                    //    hLen   0x2D0 = 720
+ 109                    //    vStart 0x20  = 32
+ 110                    //    vLen   0x0F0 = 240
+ 111            {0x042,0x02}, //    def:02
+ 112            //          [7] Enable P10 pin(#60) as MUTE pin input
+ 113            //                [6:4] vLen[10:8]
+ 114            //          [3:0] hLen[11:8]
+ 115            //0x043       [7:0] vStart[7:0]
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 3   
+
+ 116            //0x044       [7:0] vLen[7:0], with REG042[6:4]
+ 117            //0x045       [7:0] hStart[7:0], with REG040[7:6]
+ 118            //0x046       [7:0] hLen[7:0], with REG042[3:0]
+ 119            {0x047, 0x00},  //BT656Dec CTRL I def:00
+ 120                    //[7] internal pattern
+ 121                    //[6] 1=50Hz
+ 122                    //[5] DTV input clock control.
+ 123                    //[4:0] BT656Dec input V delay.
+ 124            //REG048          BT656 Dec CTRL II def:00
+ 125            //REG04B      VSYNC input cnotrol def:00
+ 126                    //[7] En delay. BKTODO:Unknown.
+ 127                    //[6] UART1_SWAP. swap UART1 pins form 120,121 to 60,61.
+ 128                    //[5] SPI clk PLL select. 0:SSPLL1, 1:SSPLL2
+ 129                    //[4] PCLK PLL select. 0:SSPLL2,1:SSPLL1
+ 130                    //[3:0] VSync input delay
+ 131                    //-----------------
+ 132                    //DTV
+ 133            //REG050~REG056
+ 134            {0x057, 0x00},  //SEQUENCUAL RGB def:00
+ 135                    //-----------------
+ 136            {0x05F, 0x00},  // test pattern def:00
+ 137          
+ 138            //REG060~REG061
+ 139            //REG062~REG06F BT656
+ 140            //REG077~REG07F
+ 141          
+ 142                    //-----------------
+ 143                    //GPIO
+ 144            {0x080, 0x00},
+ 145            {0x081, 0x00},
+ 146            {0x082, 0x00},
+ 147            {0x083, 0x00},
+ 148            {0x084, 0x00},
+ 149            {0x085, 0x00},
+ 150            {0x086, 0x00},
+ 151            {0x088, 0x00},
+ 152            {0x089, 0x00},
+ 153            {0x08A, 0x00},
+ 154            {0x08B, 0x00},
+ 155            {0x08C, 0x00},
+ 156            {0x08D, 0x00},
+ 157            {0x08E, 0x00},
+ 158            {0x090, 0x00},
+ 159            {0x091, 0x00},
+ 160            {0x092, 0x00},
+ 161            {0x093, 0x00},
+ 162            {0x094, 0x00},
+ 163            {0x095, 0x00},
+ 164            {0x096, 0x00},
+ 165                    //-----------------
+ 166            {0x0A0, 0x00},  //MBIST
+ 167                    //-----------------
+ 168                    //TSC
+ 169            {0x0B0, 0x87},  //TSC CTRL I. def:87
+ 170                    //[7] PD
+ 171                    //[2:0] TSC mode
+ 172            {0x0B1, 0x00},  //TSC CTRL II. def:00
+ 173                    //[7] 1:disable Ready Interrupt
+ 174                    //[6] 1:disable Pen Interrupt
+ 175                    //[5:3] Tsc sensitivity R selection.
+ 176                    //    FYI. InitAux() updates it as 10K.
+ 177                    //[2:0] ADC test mode
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 4   
+
+ 178            //REG0B2      TSC DATA HI
+ 179            //          [7:0] TSC_ADOUT[11:4]
+ 180            //REG0B3      TSC DATA LO
+ 181            //          [3:0] TSC_ADOUT[3:0]
+ 182            {0x0B4, 0x00},  //TSC ADC SAMPLE & Clock. def:00
+ 183                    //[7:4] reserved
+ 184                    //[3] 1:continus sampling.
+ 185                    //[2:0] TSC_ADC clock
+ 186                    //      FYI. InitAux() updates [3] and [2:0]. and uses div8.
+ 187                    //-----------------
+ 188            {0x0D4, 0x00},  //LOPOR def:00
+ 189                    //-----------------         
+ 190            {0x0D6, 0x00},  //PWM def:00
+ 191            //REG0D7      def:00      
+ 192            //REG0D8      def:80      
+ 193            //REG0D9      def:00      
+ 194            //REG0DA      def:80      
+ 195            //REG0DB      def:55      
+ 196            //REG0DC      def:00      
+ 197            //REG0DD      def:80      
+ 198            //REG0DE      def:00      
+ 199            //REG0DF      def:80      
+ 200          
+ 201            //        SSPLL2
+ 202            //          SSPLL2:60.75Mhz,PCLK:20.25MHz
+ 203            //REG0E7      def:16
+ 204            //REG0E8      def:01
+ 205            //REG0E9      def:20
+ 206            //REG0EA      def:00
+ 207            //REG0EB      def:40
+ 208            //REG0EC      def:B0
+ 209            //REG0ED      def:11
+ 210            //REG0F6    CLOCK_DIV def:04
+ 211            //        SSPLL1
+ 212            //          SSPLL1:60.75MHz,PLLCLK:15.1875MHz,SPICLK:27MHz,MCUCLK:27MHz
+ 213            //REG0F7      def:16
+ 214            //REG0F8      def:01
+ 215            //REG0F9      def:20
+ 216            //REG0FA      def:00
+ 217            //REG0FB      def:40
+ 218            //REG0FC      def:B0
+ 219            //REG0FD      def:11
+ 220          
+ 221                    //-----------------
+ 222                    //decoder
+ 223            //REG101      CSTATUS readonly
+ 224            {0x102, 0x6C},  //INFORM. def:40
+ 225                    //[7] CSEL_HI
+ 226                    //[6] 1:27MHz 0:Square pixel, 60Hz:24.54MHz, 50Hz:29.5MHz.
+ 227                    //[5:4]
+ 228                    //[3:2]
+ 229                    //[1] CSEL_LO
+ 230                    //[0] VSEL
+ 231            //REG103      LLC mode. def:00 read:24
+ 232            //          [5] 1:Enable LLCMode
+ 233            {0x104, 0x00},  //hSync Delay  def:00
+ 234                    //[6:5] Color Killer time constant. 0:Fast..3:Slow
+ 235            {0x105, 0x00},  //BT656Enc output ctrl II. def:00
+ 236            {0x106, 0x00},  //ACNTL def:00
+ 237                    //..
+ 238                    //[2] Y_PDN
+ 239                    //[1] C_PDN
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 5   
+
+ 240                    //[0] V_PDN
+ 241                    //BKTODO131125. def was inforrect. and disable [2] on HDMI.
+ 242                    //---------------------------
+ 243                    //decoder output crop       Normal      OverScan    
+ 244                    //            def   table NTSC  PAL   NTSC  PAL
+ 245                    //    hDelay: 0x00A  = 10 10    10    7   8   6
+ 246                    //    hActive:0x2D0 = 720 720   720   720   716   716
+ 247                    //    vDelay: 0x012 = 18  18    20    24    21    27
+ 248                    //    vActive:0x120 = 288 240   241   288   238   285
+ 249          //  {0x107, 0x12},  //DEC Crop Hi. def:12
+ 250          //          //[7:6] vDelay_hi
+ 251          //          //[5:4] vActive_hi
+ 252          //          //[3:2] hDelay_hi
+ 253          //          //[1:0] hActive_hi
+ 254            {0x108, 0x12},  //vDelay def:12
+ 255          //  {0x109, 0x20},  //vActive def:20
+ 256          //  {0x10A, 0x0A},  //hDelay def:0A
+ 257            {0x10B, 0xD0},  //hActive def:D0
+ 258          
+ 259            {0x10C, 0xCC},  //CTRL1 def:CC
+ 260            {0x10D, 0x00},  //SS/WSS CTRL. def:15 read:00
+ 261                    //[4:0] closed caption decoding line number on odd field.
+ 262                    //color
+ 263            {0x110, 0x00},  //Brightness def:00
+ 264            {0x111, 0x5C},  //contrase def:5C
+ 265            {0x112, 0x11},  //sharpness def:11
+ 266            {0x113, 0x80},  //chroma SAT_U def:80
+ 267            {0x114, 0x80},  //chroma SAT_V def:80
+ 268            {0x115, 0x00},  //hue def:00
+ 269            {0x117, 0x80},  //vertical peak def:40 read:80
+ 270                    //[7:4] coring for sharpness control
+ 271                    //[2:0] vertical peaking control
+ 272                    //FYI FW uses 0x30
+ 273            {0x118, 0x44},  //corning def:44
+ 274            {0x11A, 0x00},  //SS_STATUS def:00 read:0x10
+ 275                    //[6]
+ 276                    //[5]
+ 277                    //other readonly
+ 278            //REG11B    CC_DATA readonly
+ 279            {0x11C, 0x07},  //SDT  def:07
+ 280                    //[3]
+ 281                    //[2:0]
+ 282                    //other readonly
+ 283            {0x11D, 0x7F},  //SDTR def:7F
+ 284            {0x11E, 0x00},  //comp video format def:00
+ 285                    //[3:0]
+ 286                    //other readonly
+ 287            {0x120, 0x50},  //def:50
+ 288            {0x121, 0x22},  //def:22
+ 289            {0x122, 0xF0},  //def:F0
+ 290            {0x123, 0xD8},  //def:D8
+ 291            {0x124, 0xBC},  //def:BC
+ 292            {0x125, 0xB8},  //def:B8
+ 293            {0x126, 0x44},  //def:44
+ 294            {0x127, 0x38},  //def:38
+ 295            {0x128, 0x00},  //def:00
+ 296            {0x129, 0x00},  //def:00
+ 297            {0x12A, 0x78},  //def:78
+ 298            {0x12B, 0x44},  //def:44
+ 299            {0x12C, 0x30},  //def:30
+ 300            {0x12D, 0x14},  //def:14
+ 301            {0x12E, 0xA5},  //def:A5
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 6   
+
+ 302            {0x12F, 0xE0},  //def:E0
+ 303            //REG131 readonly
+ 304            //REG132 readonly
+ 305            {0x133, 0x05},  //def:05
+ 306            {0x134, 0x1A},  //def:1A
+ 307            {0x135, 0x00},  //def:00
+ 308            //REG140 readonly
+ 309            //REG141 readonly
+ 310            //REG142 readonly
+ 311          
+ 312                    //-----------------
+ 313                    //LLPLL
+ 314            {0x1C0, 0x18},  //LLPLL input ctrl def:00 
+ 315            //REG1C1      LLPLL input detection, readonly
+ 316            {0x1C2, 0xE2},  //LLPLL CTRL def:01. FW uses D2
+ 317            {0x1C3, 0x04},  //LLPLL DIV def:03
+ 318            {0x1C4, 0x25},  //LLPLL DIV def:5A
+ 319            {0x1C5, 0x00},  //LLPLL Clock Phase def:00
+ 320            {0x1C6, 0x20},  //LLPLL Loop ctrl def:20
+ 321            {0x1C7, 0x04},  //LLPLL vco def:04
+ 322            {0x1C8, 0x00},  //LLPLL vco def:00
+ 323            {0x1C9, 0x06},  //LLPLL PreCoast def:06
+ 324            {0x1CA, 0x06},  //LLPLL PostCoast def:06
+ 325            {0x1CB, 0x54},  //SOG Threshold def:30
+ 326                    //  COMP starts from 0xD6
+ 327                    //  PC   starts from 0x56
+ 328                    //[7] SOG power down. 1:Power up
+ 329                    //[6] PLL power down. 1:Power up
+ 330                    //[5] PLL coast control. 1:Enable
+ 331                    //[4:0] SOG slicer threshold
+ 332            {0x1CC, 0x00},  //Scaler Sync Selection. def:00
+ 333            {0x1CD, 0x54},  //PLL init. def:54
+ 334          
+ 335            {0x1D0, 0x00},  //CLAMP gain control def:00
+ 336            {0x1D1, 0xF0},  //Y gain def:F0
+ 337            {0x1D2, 0xF0},  //C gain def:F0
+ 338            {0x1D3, 0xF0},  //V gain def:F0
+ 339            {0x1D4, 0x00},  //clamp mode control def:00 FW uses 0x20. rising.
+ 340                    //[5] ref edge
+ 341            {0x1D5, 0x00},  //clamp start position def:00
+ 342            {0x1D6, 0x10},  //clamp stop position def:10
+ 343            {0x1D7, 0x70},  //clamp master location def:0x70 FW starts from 0x00 and changes that depend on mode.
+ 344            {0x1D8, 0x00},  //ADC Test def:00
+ 345            {0x1D9, 0x04},  //Y clamp ref. def:04 FW uses 0x02
+ 346            {0x1DA, 0x80},  //C clamp ref. def:80
+ 347            {0x1DB, 0x80},  //V clamp ref. def:80
+ 348            {0x1DC, 0x20},  // def:0x20 FW uses 0x10.
+ 349                    //[7] Edge Select
+ 350                    //[5:0] Output HS width in number of output clocks
+ 351            {0x1E0, 0x00},  //LLPLL CTRL def:00
+ 352            {0x1E1, 0x05},  //LLPLL CTRL def:05 Note:1E1[5]:GPLL_PD
+ 353            {0x1E2, 0xD9},  //ADC CTRL I def:59 or D9
+ 354            {0x1E3, 0x07},  //ADC CTRL II def:87 read:0x07 DEC:0x07, aREG:0x37. error on datasheet
+ 355                    //[7] Bias current 0:Normal 1=half
+ 356                    //[6:4] Bias Control 0=10uA(Dec) 3=40uA(RGB)
+ 357                    //[3:0] Clamp current control
+ 358            {0x1E4, 0x33},  //ADC CTRL III def:33 DEC:0x33, aREG:0x55
+ 359            {0x1E5, 0x31},  //ADC CTRL IV def:31 DEC:0x33, aRGB:0x55
+ 360            {0x1E6, 0x00},  //ADC CTRL V  def:00 DEC:0x00, aRGB:0x20
+ 361            {0x1E7, 0x2A},  //ADC CTRL VI def:2A
+ 362            {0x1E8, 0x01},  //ADC CTRL VII  def:01  DEC:0x0F, aRGB:0x00
+ 363            {0x1E9, 0x00},  //CLOCK CTRL I  def:00
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 7   
+
+ 364            {0x1EA, 0x03},  //CLOCK CTRL II def:03
+ 365          
+ 366            {0x1F6, 0x30},  //DIFF CLAMP CTRL I   def:30 On CM_SLEEP.
+ 367            //REG1F7      DIFF CLAMP CTRL II  def:00
+ 368            //REG1F8      DIFF CLAMP CTRL III def:00
+ 369            //REG1F9      DIFF CLAMP CTRL IV  def:00
+ 370            //REG1FA      DIFF CLAMP CTRL V   def:38
+ 371                    //-----------------
+ 372                    //scaler
+ 373            {0x201, 0x00},  //general scaler ctrl def:00  
+ 374            {0x202, 0x20},  //SCALING OFFSET    DEF:20
+ 375            {0x203, 0x00},  //XScale_Lo       def:00
+ 376            {0x204, 0x20},  //XScale_hi       def:20
+ 377            {0x205, 0x00},  //YScale_lo       def:00
+ 378            {0x206, 0x20},  //YScale_hi       def:20
+ 379            {0x207, 0x80},  //PXScale       def:80 FW uses 0x40
+ 380            {0x208, 0x10},  //PXInc_Lo        def:10 FW uses 0x20
+ 381            {0x209, 0x00},  //HDScale_Lo      def:00
+ 382            {0x20A, 0x04},  //HDScale_hi      def:04
+ 383            {0x20B, 0x30},  //HDelay2       def:30 FW uses 0x10(16).
+ 384            {0x20C, 0xD0},  //HACTIVE2 withREG20E[6:4]    def:D0  
+ 385            {0x20D, 0x00},  //LNTT_HI def:00    see InitSwDefault_Table[]
+ 386            {0x20E, 0x20},  //HPADJ_HI    def:20
+ 387                    //[7] 
+ 388                    //[6:4] HACTIVE2_HI
+ 389                    //[3:0] HPADJ_HI
+ 390            {0x20F, 0x00},  //HPADJ_LO  def:00 FW uses 0x02
+ 391          
+ 392            {0x210, 0x10},  //HA_POS_LO with REG221[5:4] def:10 FW uses 0x30. it should be REG20B[]+0x20.
+ 393            {0x211, 0x00},  //HA_LEN_LO with def:00. depend on PANEL_H
+ 394            {0x212, 0x03},  //HA_LEN_Hi def:03
+ 395            {0x213, 0x10},  //HA_POS_Lo with def:10
+ 396            {0x214, 0x20},  //HS_LEN def:20
+ 397            {0x215, 0x20},  //def:20
+ 398            {0x216, 0x00},  //def:00
+ 399            {0x217, 0x03},  //def:03
+ 400            {0x218, 0x00},  //def:00
+ 401            {0x219, 0x00},  //def:00
+ 402            {0x21A, 0x00},  //def:00
+ 403            {0x21B, 0x00},  //def:00
+ 404            {0x21C, 0x00},  //def:40 read:0x00  BUGBUG130327 need manual.
+ 405            {0x21D, 0x00},  //def:00
+ 406            {0x21E, 0x00},  //def:00
+ 407            {0x220, 0x00},  //def:00
+ 408            {0x221, 0x00},  //def:00
+ 409          
+ 410                    //-----------------
+ 411                    // scaler output timing. for No video at first time.
+ 412                    //-----------------
+ 413          
+ 414                    //TCON
+ 415            {0x240, 0x10},  //def:10
+ 416            {0x241, 0x00},  //def:00
+ 417            {0x242, 0x01},  //def:01
+ 418            {0x243, 0x00},  //def:00
+ 419            {0x244, 0x00},  //def:00
+ 420            {0x245, 0x01},  //def:01
+ 421            {0x246, 0x00},  //def:00
+ 422            {0x247, 0x00},  //def:00
+ 423            {0x248, 0x01},  //def:01
+ 424            {0x249, 0x10},  //def:10
+ 425            {0x24A, 0x00},  //def:00
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 8   
+
+ 426            {0x24B, 0x00},  //def:00
+ 427            {0x24C, 0x10},  //def:10
+ 428            {0x24D, 0x80},  //def:80
+ 429            {0x24E, 0x00},  //def:00
+ 430            //REG24F      def:00
+ 431            //REG250      def:00
+ 432            //REG251      def:00
+ 433                    //-----------------
+ 434                    //Image Adjustment
+ 435            {0x280, 0x20},  //def:20
+ 436            {0x281, 0x80},  //def:80
+ 437            {0x282, 0x80},  //def:80
+ 438            {0x283, 0x80},  //def:80
+ 439            {0x284, 0x80},  //def:80
+ 440            {0x285, 0x80},  //def:80
+ 441            {0x286, 0x80},  //def:80
+ 442            {0x287, 0x80},  //def:80
+ 443            {0x288, 0x80},  //def:80
+ 444            {0x289, 0x80},  //def:80
+ 445            {0x28A, 0x80},  //def:80
+ 446            {0x28B, 0x30},  //def:30  FW uses 0x40
+ 447            {0x28C, 0x00},  //def:00
+ 448                    //-----------------
+ 449                    //Test Pattern
+ 450            {0x2BF, 0x00},
+ 451                    //-----------------
+ 452                    //Gamma
+ 453            {0x2E0, 0x00}, 
+ 454                    //-----------------
+ 455                    //Dither option
+ 456            {0x2E4, 0x00},  //def:00  FW starts from 0x21
+ 457                    //-----------------
+ 458                    //8bit PANEL Interface
+ 459            {0x2F8, 0x00},
+ 460            {0x2F9, 0x80},
+ 461                    //-----------------
+ 462                    //FOSD
+ 463          // Font download have to be exec when 
+ 464          //  {0x30C, 0x40},
+ 465            {0x30C, 0x00},  //turn on FOSD
+ 466            {0x310, 0x00},  //diable WIN1..WIN8
+ 467            {0x320, 0x00},
+ 468            {0x330, 0x00},
+ 469            {0x340, 0x00},
+ 470            {0x350, 0x00},
+ 471            {0x360, 0x00},
+ 472            {0x370, 0x00},
+ 473            {0x380, 0x00},
+ 474                    //-----------------
+ 475                    //SOSD
+ 476            {0x400, 0x00},
+ 477                    //-----------------
+ 478                    //LVDS Tx
+ 479            {0x640, 0x00},
+ 480            {0x641, 0x00},
+ 481            {0x642, 0x00},
+ 482            {0x643, 0x00},
+ 483            {0x644, 0x00},
+ 484            {0x647, 0x00},
+ 485                    //-----------------
+ 486                    //LVDS Rx
+ 487            {0x648, 0x00},  //def:01, read:00
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 9   
+
+ 488            {0x649, 0x00},
+ 489            {0x64A, 0x00},
+ 490            {0x64B, 0x00},
+ 491            {0x64C, 0x00},
+ 492            {0x64D, 0x00},
+ 493            {0x64E, 0x00},
+ 494            {0x64F, 0x00},
+ 495                    //-----------------
+ 496            {0xFFF, 0xFF} //EOF
+ 497          };
+ 498          
+ 499          
+ 500          
+ 501          CODE REG_IDX_DATA_t VGA_Table[]=
+ 502          {
+ 503          {0x000, 0x36},
+ 504          {0x002, 0xEB},
+ 505          {0x003, 0xE8},
+ 506          {0x004, 0x00},
+ 507          {0x006, 0x06},
+ 508          {0x007, 0x0A},
+ 509          {0x008, 0xC6},
+ 510          {0x00F, 0x80},
+ 511          {0x01F, 0x00},
+ 512          {0x040, 0x01},
+ 513          {0x041, 0x01},
+ 514          {0x042, 0x23},
+ 515          {0x043, 0x17},
+ 516          {0x044, 0x62},
+ 517          {0x045, 0xD8},
+ 518          {0x046, 0x5C},
+ 519          {0x047, 0x00},
+ 520          {0x048, 0x00},
+ 521          {0x04B, 0x11},
+ 522          {0x050, 0x02},
+ 523          {0x051, 0x09},
+ 524          {0x052, 0x00},
+ 525          {0x053, 0x04},
+ 526          {0x054, 0x11},
+ 527          {0x056, 0x03},
+ 528          {0x057, 0x14},
+ 529          {0x05F, 0x20},
+ 530          {0x060, 0x00},
+ 531          {0x066, 0x00},
+ 532          {0x067, 0x00},
+ 533          {0x068, 0x00},
+ 534          {0x069, 0x02},
+ 535          {0x06A, 0x45},
+ 536          {0x06B, 0xF0},
+ 537          {0x06C, 0x20},
+ 538          {0x06D, 0x02},
+ 539          {0x06E, 0x10},
+ 540          {0x06F, 0x10},
+ 541          {0x070, 0x00},
+ 542          {0x071, 0x00},
+ 543          {0x080, 0x00},
+ 544          {0x081, 0x00},
+ 545          {0x082, 0x00},
+ 546          {0x083, 0x00},
+ 547          {0x084, 0x02},
+ 548          {0x085, 0x00},
+ 549          {0x086, 0xE0},
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 10  
+
+ 550          {0x088, 0x00},
+ 551          {0x089, 0x00},
+ 552          {0x08A, 0x00},
+ 553          {0x08B, 0x00},
+ 554          {0x08C, 0x02},
+ 555          {0x08D, 0x00},
+ 556          {0x08E, 0xE0},
+ 557          {0x090, 0x00},
+ 558          {0x091, 0x00},
+ 559          {0x092, 0x00},
+ 560          {0x093, 0x00},
+ 561          {0x094, 0x00},
+ 562          {0x095, 0x00},
+ 563          {0x096, 0xA0},
+ 564          {0x098, 0x00},
+ 565          {0x099, 0x00},
+ 566          {0x09A, 0x66},
+ 567          {0x09B, 0x4A},
+ 568          {0x09C, 0x3C},
+ 569          {0x09D, 0x00},
+ 570          {0x09E, 0xA8},
+ 571          {0x0A0, 0x00},
+ 572          {0x0A1, 0x00},
+ 573          {0x0A2, 0x20},
+ 574          {0x0A3, 0x00},
+ 575          {0x0A4, 0xC0},
+ 576          {0x0B0, 0x97},
+ 577          {0x0B1, 0x00},
+ 578          {0x0B2, 0x00},
+ 579          {0x0B3, 0x00},
+ 580          {0x0B4, 0x00},
+ 581          {0x0D4, 0x00},
+ 582          {0x0D6, 0x00},
+ 583          {0x0D7, 0x00},
+ 584          {0x0D8, 0x80},
+ 585          {0x0D9, 0x00},
+ 586          {0x0DA, 0x80},
+ 587          {0x0DB, 0x55},
+ 588          {0x0DC, 0x00},
+ 589          {0x0DD, 0x80},
+ 590          {0x0DE, 0x00},
+ 591          {0x0DF, 0x80},
+ 592          {0x0E6, 0x00},
+ 593          {0x0E7, 0x16},
+ 594          {0x0E8, 0x02},
+ 595          {0x0E9, 0x00},
+ 596          {0x0EA, 0x00},
+ 597          {0x0EB, 0x40},
+ 598          {0x0EC, 0x30},
+ 599          {0x0ED, 0x11},
+ 600          {0x0EE, 0x00},
+ 601          {0x0EF, 0x00},
+ 602          {0x0F6, 0x00},
+ 603          {0x0F7, 0x16},
+ 604          {0x0F8, 0x02},
+ 605          {0x0F9, 0x00},
+ 606          {0x0FA, 0x49},
+ 607          {0x0FB, 0x40},
+ 608          {0x0FC, 0x23},
+ 609          {0x0FD, 0x34},
+ 610          {0x101, 0x80},
+ 611          {0x102, 0x6C},
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 11  
+
+ 612          {0x104, 0x00},
+ 613          {0x105, 0x0D},
+ 614          {0x106, 0x00},
+ 615          {0x107, 0x02},
+ 616          {0x108, 0x15},
+ 617          {0x109, 0xF0},
+ 618          {0x10A, 0x0F},
+ 619          {0x10B, 0xCA},
+ 620          {0x10C, 0xCC},
+ 621          {0x10D, 0x00},
+ 622          {0x110, 0x00},
+ 623          {0x111, 0x5C},
+ 624          {0x112, 0x11},
+ 625          {0x113, 0x80},
+ 626          {0x114, 0x80},
+ 627          {0x115, 0x00},
+ 628          {0x117, 0x30},
+ 629          {0x118, 0x44},
+ 630          {0x11A, 0x10},
+ 631          {0x11B, 0x00},
+ 632          {0x11C, 0x07},
+ 633          {0x11D, 0x7F},
+ 634          {0x11E, 0x35},
+ 635          {0x11F, 0x00},
+ 636          {0x120, 0x50},
+ 637          {0x121, 0x22},
+ 638          {0x122, 0xF0},
+ 639          {0x123, 0xD8},
+ 640          {0x124, 0xBC},
+ 641          {0x125, 0xB8},
+ 642          {0x126, 0x44},
+ 643          {0x127, 0x38},
+ 644          {0x128, 0x00},
+ 645          {0x129, 0x00},
+ 646          {0x12A, 0x78},
+ 647          {0x12B, 0x44},
+ 648          {0x12C, 0x30},
+ 649          {0x12D, 0x14},
+ 650          {0x12E, 0xA5},
+ 651          {0x12F, 0xE0},
+ 652          {0x130, 0x14},
+ 653          {0x131, 0x00},
+ 654          {0x132, 0x00},
+ 655          {0x133, 0x05},
+ 656          {0x134, 0x1A},
+ 657          {0x135, 0x00},
+ 658          {0x136, 0x03},
+ 659          {0x137, 0x28},
+ 660          {0x138, 0xAF},
+ 661          {0x140, 0x00},
+ 662          {0x141, 0x80},
+ 663          {0x142, 0x00},
+ 664          {0x1C0, 0x18},
+ 665          {0x1C1, 0xFF},
+ 666          {0x1C2, 0xE2},
+ 667          {0x1C3, 0x04},
+ 668          {0x1C4, 0x25},
+ 669          {0x1C5, 0x06},
+ 670          {0x1C6, 0x26},
+ 671          {0x1C7, 0x04},
+ 672          {0x1C8, 0x00},
+ 673          {0x1C9, 0x00},
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 12  
+
+ 674          {0x1CA, 0x00},
+ 675          {0x1CB, 0x54},
+ 676          {0x1CC, 0x10},
+ 677          {0x1CD, 0x44},
+ 678          {0x1D0, 0x00},
+ 679          {0x1D1, 0x80},
+ 680          {0x1D2, 0x80},
+ 681          {0x1D3, 0x80},
+ 682          {0x1D4, 0x20},
+ 683          {0x1D5, 0x00},
+ 684          {0x1D6, 0x10},
+ 685          {0x1D7, 0x00},
+ 686          {0x1D8, 0x00},
+ 687          {0x1D9, 0x01},
+ 688          {0x1DA, 0x00},
+ 689          {0x1DB, 0x00},
+ 690          {0x1DC, 0x10},
+ 691          {0x1E0, 0x00},
+ 692          {0x1E1, 0x05},
+ 693          {0x1E2, 0x60},
+ 694          {0x1E3, 0x10},
+ 695          {0x1E4, 0x34},
+ 696          {0x1E5, 0x33},
+ 697          {0x1E6, 0x20},
+ 698          {0x1E7, 0x2A},
+ 699          {0x1E8, 0x20},
+ 700          {0x1E9, 0x00},
+ 701          {0x1EA, 0x03},
+ 702          {0x1F6, 0xB0},
+ 703          {0x1F7, 0x00},
+ 704          {0x1F8, 0x00},
+ 705          {0x1F9, 0x00},
+ 706          {0x1FA, 0x38},
+ 707          {0x201, 0x00},
+ 708          {0x202, 0x20},
+ 709          {0x203, 0x00},
+ 710          {0x204, 0x20},
+ 711          {0x205, 0xD5},
+ 712          {0x206, 0x27},
+ 713          {0x207, 0x40},
+ 714          {0x208, 0x20},
+ 715          {0x209, 0x00},
+ 716          {0x20A, 0x04},
+ 717          {0x20B, 0x0F},
+ 718          {0x20C, 0x20},
+ 719          {0x20D, 0xC2},
+ 720          {0x20E, 0x30},
+ 721          {0x20F, 0x02},
+ 722          {0x210, 0x2F},
+ 723          {0x211, 0x20},
+ 724          {0x212, 0x03},
+ 725          {0x213, 0x00},
+ 726          {0x214, 0x02},
+ 727          {0x215, 0x12},
+ 728          {0x216, 0x58},
+ 729          {0x217, 0x02},
+ 730          {0x218, 0x00},
+ 731          {0x219, 0x1C},
+ 732          {0x21A, 0x00},
+ 733          {0x21B, 0x00},
+ 734          {0x21C, 0x42},
+ 735          {0x21D, 0xA0},
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 13  
+
+ 736          {0x21E, 0x02},
+ 737          {0x220, 0x00},
+ 738          {0x221, 0x00},
+ 739          {0x240, 0x10},
+ 740          {0x241, 0x00},
+ 741          {0x242, 0x05},
+ 742          {0x243, 0x01},
+ 743          {0x244, 0x64},
+ 744          {0x245, 0xF4},
+ 745          {0x246, 0x00},
+ 746          {0x247, 0x0A},
+ 747          {0x248, 0x36},
+ 748          {0x249, 0x10},
+ 749          {0x24A, 0x00},
+ 750          {0x24B, 0x00},
+ 751          {0x24C, 0x00},
+ 752          {0x24D, 0x44},
+ 753          {0x24E, 0x04},
+ 754          {0x280, 0x20},
+ 755          {0x281, 0x80},
+ 756          {0x282, 0x80},
+ 757          {0x283, 0x80},
+ 758          {0x284, 0x80},
+ 759          {0x285, 0x80},
+ 760          {0x286, 0x80},
+ 761          {0x287, 0x80},
+ 762          {0x288, 0x80},
+ 763          {0x289, 0x80},
+ 764          {0x28A, 0x80},
+ 765          {0x28B, 0x30},
+ 766          {0x28C, 0x00},
+ 767          {0x2B0, 0x10},
+ 768          {0x2B1, 0x40},
+ 769          {0x2B2, 0x40},
+ 770          {0x2B6, 0x67},
+ 771          {0x2B7, 0x94},
+ 772          {0x2BF, 0x00},
+ 773          {0x2E0, 0x00},
+ 774          {0x2E1, 0x00},
+ 775          {0x2E2, 0x00},
+ 776          {0x2E3, 0x00},
+ 777          {0x2E4, 0x21},
+ 778          {0x2F0, 0x00},
+ 779          {0x2F1, 0x00},
+ 780          {0x2F2, 0x00},
+ 781          {0x2F3, 0x30},
+ 782          {0x2F4, 0x48},
+ 783          {0x2F5, 0x48},
+ 784          {0x2F8, 0x00},
+ 785          {0x2F9, 0x80},
+ 786          {0xFFF, 0xFF}
+ 787          };
+ 788          CODE REG_IDX_DATA_t LVDS_Table[]=
+ 789          {
+ 790          {0x000, 0x36},
+ 791          {0x002, 0x6b},
+ 792          {0x003, 0xe8},
+ 793          {0x004, 0x00},
+ 794          {0x006, 0x06},
+ 795          {0x007, 0x0a},
+ 796          {0x008, 0xc6},
+ 797          {0x00f, 0x80},
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 14  
+
+ 798          {0x01f, 0x00},
+ 799          {0x040, 0x03},
+ 800          {0x041, 0x01},
+ 801          {0x042, 0x34},
+ 802          {0x043, 0x15},
+ 803          {0x044, 0x20},
+ 804          {0x045, 0xbf},
+ 805          {0x046, 0x80},
+ 806          {0x047, 0x00},
+ 807          {0x048, 0x00},
+ 808          {0x04b, 0x11},
+ 809          {0x050, 0x02},
+ 810          {0x051, 0x09},
+ 811          {0x052, 0x00},
+ 812          {0x053, 0x04},
+ 813          {0x054, 0x11},
+ 814          {0x056, 0x03},
+ 815          {0x057, 0x14},
+ 816          {0x05f, 0x20},
+ 817          {0x060, 0x00},
+ 818          {0x066, 0x00},
+ 819          {0x067, 0x00},
+ 820          {0x068, 0x00},
+ 821          {0x069, 0x02},
+ 822          {0x06a, 0x45},
+ 823          {0x06b, 0xf0},
+ 824          {0x06c, 0x20},
+ 825          {0x06d, 0x02},
+ 826          {0x06e, 0x10},
+ 827          {0x06f, 0x10},
+ 828          {0x070, 0x00},
+ 829          {0x071, 0x00},
+ 830          {0x080, 0x00},
+ 831          {0x081, 0x00},
+ 832          {0x082, 0x00},
+ 833          {0x083, 0x00},
+ 834          {0x084, 0x03},
+ 835          {0x085, 0x00},
+ 836          {0x086, 0xe0},
+ 837          {0x088, 0x00},
+ 838          {0x089, 0x00},
+ 839          {0x08a, 0x00},
+ 840          {0x08b, 0x00},
+ 841          {0x08c, 0x03},
+ 842          {0x08d, 0x00},
+ 843          {0x08e, 0xe0},
+ 844          {0x090, 0x00},
+ 845          {0x091, 0x00},
+ 846          {0x092, 0x00},
+ 847          {0x093, 0x00},
+ 848          {0x094, 0x00},
+ 849          {0x095, 0x00},
+ 850          {0x096, 0xa0},
+ 851          {0x098, 0x00},
+ 852          {0x099, 0x00},
+ 853          {0x09a, 0x00},
+ 854          {0x09b, 0x00},
+ 855          {0x09c, 0x3c},
+ 856          {0x09d, 0x00},
+ 857          {0x09e, 0xa1},
+ 858          {0x0a0, 0x00},
+ 859          {0x0a1, 0x00},
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 15  
+
+ 860          {0x0a2, 0x20},
+ 861          {0x0a3, 0x00},
+ 862          {0x0a4, 0xc0},
+ 863          {0x0b0, 0x97},
+ 864          {0x0b1, 0x00},
+ 865          {0x0b2, 0x00},
+ 866          {0x0b3, 0x00},
+ 867          {0x0b4, 0x00},
+ 868          {0x0d4, 0x00},
+ 869          {0x0d6, 0x00},
+ 870          {0x0d7, 0x00},
+ 871          {0x0d8, 0x80},
+ 872          {0x0d9, 0x00},
+ 873          {0x0da, 0x80},
+ 874          {0x0db, 0x55},
+ 875          {0x0dc, 0x00},
+ 876          {0x0dd, 0x80},
+ 877          {0x0de, 0x00},
+ 878          {0x0df, 0x80},
+ 879          {0x0e6, 0x00},
+ 880          {0x0e7, 0x16},
+ 881          {0x0e8, 0x02},
+ 882          {0x0e9, 0x00},
+ 883          {0x0ea, 0x00},
+ 884          {0x0eb, 0x40},
+ 885          {0x0ec, 0x30},
+ 886          {0x0ed, 0x11},
+ 887          {0x0ee, 0x00},
+ 888          {0x0ef, 0x00},
+ 889          {0x0f6, 0x00},
+ 890          {0x0f7, 0x16},
+ 891          {0x0f8, 0x02},
+ 892          {0x0f9, 0x00},
+ 893          {0x0fa, 0x49},
+ 894          {0x0fb, 0x40},
+ 895          {0x0FC, 0x23},
+ 896          {0x0FD, 0x34},
+ 897          {0x101, 0xB1},
+ 898          {0x102, 0x6C},
+ 899          {0x104, 0x00},
+ 900          {0x105, 0x0D},
+ 901          {0x106, 0x00},
+ 902          {0x107, 0x02},
+ 903          {0x108, 0x15},
+ 904          {0x109, 0xF0},
+ 905          {0x10A, 0x0F},
+ 906          {0x10B, 0xCA},
+ 907          {0x10C, 0xCC},
+ 908          {0x10D, 0x00},
+ 909          {0x110, 0x00},
+ 910          {0x111, 0x5C},
+ 911          {0x112, 0x11},
+ 912          {0x113, 0x80},
+ 913          {0x114, 0x80},
+ 914          {0x115, 0x00},
+ 915          {0x117, 0x30},
+ 916          {0x118, 0x44},
+ 917          {0x11A, 0x10},
+ 918          {0x11B, 0x00},
+ 919          {0x11C, 0x27},
+ 920          {0x11D, 0x7F},
+ 921          {0x11E, 0x05},
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 16  
+
+ 922          {0x11F, 0x00},
+ 923          {0x120, 0x50},
+ 924          {0x121, 0x22},
+ 925          {0x122, 0xF0},
+ 926          {0x123, 0xD8},
+ 927          {0x124, 0xBC},
+ 928          {0x125, 0xB8},
+ 929          {0x126, 0x44},
+ 930          {0x127, 0x38},
+ 931          {0x128, 0x00},
+ 932          {0x129, 0x00},
+ 933          {0x12A, 0x78},
+ 934          {0x12B, 0x44},
+ 935          {0x12C, 0x30},
+ 936          {0x12D, 0x14},
+ 937          {0x12E, 0xA5},
+ 938          {0x12F, 0xE0},
+ 939          {0x130, 0xC0},
+ 940          {0x131, 0x00},
+ 941          {0x132, 0x00},
+ 942          {0x133, 0x05},
+ 943          {0x134, 0x1A},
+ 944          {0x135, 0x00},
+ 945          {0x136, 0x03},
+ 946          {0x137, 0x28},
+ 947          {0x138, 0xAF},
+ 948          {0x140, 0x00},
+ 949          {0x141, 0x80},
+ 950          {0x142, 0x00},
+ 951          {0x1C0, 0x1C},
+ 952          {0x1C1, 0xC7},
+ 953          {0x1C2, 0xE2},
+ 954          {0x1C3, 0x05},
+ 955          {0x1C4, 0xDB},
+ 956          {0x1C5, 0x06},
+ 957          {0x1C6, 0x26},
+ 958          {0x1C7, 0x04},
+ 959          {0x1C8, 0x00},
+ 960          {0x1C9, 0x00},
+ 961          {0x1CA, 0x00},
+ 962          {0x1CB, 0x54},
+ 963          {0x1CC, 0x10},
+ 964          {0x1CD, 0x44},
+ 965          {0x1D0, 0x00},
+ 966          {0x1D1, 0x80},
+ 967          {0x1D2, 0x80},
+ 968          {0x1D3, 0x80},
+ 969          {0x1D4, 0x20},
+ 970          {0x1D5, 0x00},
+ 971          {0x1D6, 0x10},
+ 972          {0x1D7, 0x00},
+ 973          {0x1D8, 0x00},
+ 974          {0x1D9, 0x01},
+ 975          {0x1DA, 0x00},
+ 976          {0x1DB, 0x00},
+ 977          {0x1DC, 0x10},
+ 978          {0x1E0, 0x00},
+ 979          {0x1E1, 0x05},
+ 980          {0x1E2, 0x60},
+ 981          {0x1E3, 0x10},
+ 982          {0x1E4, 0x34},
+ 983          {0x1E5, 0x33},
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 17  
+
+ 984          {0x1E6, 0x20},
+ 985          {0x1E7, 0x2A},
+ 986          {0x1E8, 0x20},
+ 987          {0x1E9, 0x00},
+ 988          {0x1EA, 0x03},
+ 989          {0x1F6, 0xB0},
+ 990          {0x1F7, 0x00},
+ 991          {0x1F8, 0x00},
+ 992          {0x1F9, 0x00},
+ 993          {0x1FA, 0x38},
+ 994          {0x201, 0x00},
+ 995          {0x202, 0x20},
+ 996          {0x203, 0x00},
+ 997          {0x204, 0x20},
+ 998          {0x205, 0x00},
+ 999          {0x206, 0x20},
+1000          {0x207, 0x40},
+1001          {0x208, 0x20},
+1002          {0x209, 0x00},
+1003          {0x20A, 0x04},
+1004          {0x20B, 0x0F},
+1005          {0x20C, 0x20},
+1006          {0x20D, 0xCA},
+1007          {0x20E, 0x30},
+1008          {0x20F, 0x02},
+1009          {0x210, 0x2F},
+1010          {0x211, 0x20},
+1011          {0x212, 0x03},
+1012          {0x213, 0x00},
+1013          {0x214, 0x02},
+1014          {0x215, 0x12},
+1015          {0x216, 0x58},
+1016          {0x217, 0x02},
+1017          {0x218, 0x00},
+1018          {0x219, 0x1C},
+1019          {0x21A, 0x00},
+1020          {0x21B, 0x00},
+1021          {0x21C, 0x42},
+1022          {0x21D, 0x76},
+1023          {0x21E, 0x02},
+1024          {0x220, 0x00},
+1025          {0x221, 0x00},
+1026          {0x240, 0x10},
+1027          {0x241, 0x00},
+1028          {0x242, 0x05},
+1029          {0x243, 0x01},
+1030          {0x244, 0x64},
+1031          {0x245, 0xF4},
+1032          {0x246, 0x00},
+1033          {0x247, 0x0A},
+1034          {0x248, 0x36},
+1035          {0x249, 0x10},
+1036          {0x24A, 0x00},
+1037          {0x24B, 0x00},
+1038          {0x24C, 0x00},
+1039          {0x24D, 0x44},
+1040          {0x24E, 0x04},
+1041          {0x280, 0x20},
+1042          {0x281, 0x80},
+1043          {0x282, 0x80},
+1044          {0x283, 0x80},
+1045          {0x284, 0x80},
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 18  
+
+1046          {0x285, 0x80},
+1047          {0x286, 0x80},
+1048          {0x287, 0x80},
+1049          {0x288, 0x80},
+1050          {0x289, 0x80},
+1051          {0x28A, 0x80},
+1052          {0x28B, 0x30},
+1053          {0x28C, 0x00},
+1054          {0x2B0, 0x10},
+1055          {0x2B1, 0x40},
+1056          {0x2B2, 0x40},
+1057          {0x2B6, 0x67},
+1058          {0x2B7, 0x94},
+1059          {0x2BF, 0x00},
+1060          {0x2E0, 0x00},
+1061          {0x2E1, 0x00},
+1062          {0x2E2, 0x00},
+1063          {0x2E3, 0x00},
+1064          {0x2E4, 0x21},
+1065          {0x2F0, 0x00},
+1066          {0x2F1, 0x00},
+1067          {0x2F2, 0x00},
+1068          {0x2F3, 0x00},
+1069          {0x2F4, 0xFC},
+1070          {0x2F5, 0x08},
+1071          {0x2F8, 0x00},
+1072          {0x2F9, 0x80},
+1073          {0x300, 0x00},
+1074          {0x301, 0x06},
+1075          {0x302, 0x06},
+1076          {0x303, 0x06},
+1077          {0x304, 0x00},
+1078          {0x305, 0x00},
+1079          {0x306, 0x00},
+1080          {0x307, 0xF9},
+1081          {0x308, 0xF0},
+1082          {0x309, 0x00},
+1083          {0x30A, 0x1A},
+1084          {0x30B, 0x31},
+1085          {0x30C, 0x00},
+1086          {0x30D, 0x00},
+1087          {0x30E, 0x00},
+1088          {0x310, 0x00},
+1089          {0x311, 0x00},
+1090          {0x312, 0x00},
+1091          {0x313, 0x00},
+1092          {0x314, 0x00},
+1093          {0x315, 0x00},
+1094          {0x316, 0x00},
+1095          {0x317, 0x00},
+1096          {0x318, 0x00},
+1097          {0x319, 0x00},
+1098          {0x31A, 0x00},
+1099          {0x31B, 0x00},
+1100          {0x31C, 0x00},
+1101          {0x31D, 0x00},
+1102          {0x31E, 0x00},
+1103          {0x31F, 0x00},
+1104          {0x320, 0x00},
+1105          {0x321, 0x00},
+1106          {0x322, 0x00},
+1107          {0x323, 0x00},
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 19  
+
+1108          {0x324, 0x00},
+1109          {0x325, 0x00},
+1110          {0x326, 0x00},
+1111          {0x327, 0x00},
+1112          {0x328, 0x00},
+1113          {0x329, 0x00},
+1114          {0x32A, 0x00},
+1115          {0x32B, 0x00},
+1116          {0x32C, 0x00},
+1117          {0x32D, 0x00},
+1118          {0x32E, 0x00},
+1119          {0x32F, 0x00},
+1120          {0x330, 0x00},
+1121          {0x331, 0x00},
+1122          {0x332, 0x00},
+1123          {0x333, 0x00},
+1124          {0x334, 0x00},
+1125          {0x335, 0x00},
+1126          {0x336, 0x00},
+1127          {0x337, 0x00},
+1128          {0x338, 0x00},
+1129          {0x339, 0x00},
+1130          {0x33A, 0x00},
+1131          {0x33B, 0x00},
+1132          {0x33C, 0x00},
+1133          {0x33D, 0x00},
+1134          {0x33E, 0x00},
+1135          {0x33F, 0x00},
+1136          {0x340, 0x00},
+1137          {0x341, 0x00},
+1138          {0x342, 0x00},
+1139          {0x343, 0x00},
+1140          {0x344, 0x00},
+1141          {0x345, 0x00},
+1142          {0x346, 0x00},
+1143          {0x347, 0x00},
+1144          {0x348, 0x00},
+1145          {0x349, 0x00},
+1146          {0x34A, 0x00},
+1147          {0x34B, 0x00},
+1148          {0x34C, 0x00},
+1149          {0x34D, 0x00},
+1150          {0x34E, 0x00},
+1151          {0x34F, 0x00},
+1152          {0x350, 0x00},
+1153          {0x351, 0x00},
+1154          {0x352, 0x00},
+1155          {0x353, 0x00},
+1156          {0x354, 0x00},
+1157          {0x355, 0x00},
+1158          {0x356, 0x00},
+1159          {0x357, 0x00},
+1160          {0x358, 0x00},
+1161          {0x359, 0x00},
+1162          {0x35A, 0x00},
+1163          {0x35B, 0x00},
+1164          {0x35C, 0x00},
+1165          {0x35D, 0x00},
+1166          {0x35E, 0x00},
+1167          {0x35F, 0x00},
+1168          {0x360, 0x00},
+1169          {0x361, 0x00},
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 20  
+
+1170          {0x362, 0x00},
+1171          {0x363, 0x00},
+1172          {0x364, 0x00},
+1173          {0x365, 0x00},
+1174          {0x366, 0x00},
+1175          {0x367, 0x00},
+1176          {0x368, 0x00},
+1177          {0x369, 0x00},
+1178          {0x36A, 0x00},
+1179          {0x36B, 0x00},
+1180          {0x36C, 0x00},
+1181          {0x36D, 0x00},
+1182          {0x36E, 0x00},
+1183          {0x36F, 0x00},
+1184          {0x370, 0x00},
+1185          {0x371, 0x00},
+1186          {0x372, 0x00},
+1187          {0x373, 0x00},
+1188          {0x374, 0x00},
+1189          {0x375, 0x00},
+1190          {0x376, 0x00},
+1191          {0x377, 0x00},
+1192          {0x378, 0x00},
+1193          {0x379, 0x00},
+1194          {0x37A, 0x00},
+1195          {0x37B, 0x00},
+1196          {0x37C, 0x00},
+1197          {0x37D, 0x00},
+1198          {0x37E, 0x00},
+1199          {0x37F, 0x00},
+1200          {0x380, 0x00},
+1201          {0x381, 0x00},
+1202          {0x382, 0x00},
+1203          {0x383, 0x00},
+1204          {0x384, 0x00},
+1205          {0x385, 0x00},
+1206          {0x386, 0x00},
+1207          {0x387, 0x00},
+1208          {0x388, 0x00},
+1209          {0x389, 0x00},
+1210          {0x38A, 0x00},
+1211          {0x38B, 0x00},
+1212          {0x38C, 0x00},
+1213          {0x38D, 0x00},
+1214          {0x38E, 0x00},
+1215          {0x38F, 0x00},
+1216          {0x390, 0x12},
+1217          {0x391, 0x1B},
+1218          {0x392, 0x00},
+1219          {0x393, 0x71},
+1220          {0x394, 0xB1},
+1221          {0x400, 0x00},
+1222          {0x404, 0x00},
+1223          {0x405, 0x00},
+1224          {0x406, 0x00},
+1225          {0x407, 0x00},
+1226          {0x40E, 0x00},
+1227          {0x40F, 0x45},
+1228          {0x410, 0x00},
+1229          {0x411, 0x00},
+1230          {0x412, 0x00},
+1231          {0x420, 0x00},
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 21  
+
+1232          {0x421, 0x00},
+1233          {0x422, 0x00},
+1234          {0x423, 0x00},
+1235          {0x424, 0x00},
+1236          {0x425, 0x00},
+1237          {0x426, 0x00},
+1238          {0x427, 0x00},
+1239          {0x428, 0x00},
+1240          {0x429, 0x00},
+1241          {0x42A, 0x00},
+1242          {0x42B, 0x00},
+1243          {0x42C, 0x00},
+1244          {0x42D, 0x00},
+1245          {0x42E, 0x00},
+1246          {0x42F, 0x00},
+1247          {0x430, 0x00},
+1248          {0x431, 0x00},
+1249          {0x432, 0x00},
+1250          {0x433, 0x00},
+1251          {0x434, 0x00},
+1252          {0x435, 0x00},
+1253          {0x436, 0x00},
+1254          {0x440, 0x00},
+1255          {0x441, 0x00},
+1256          {0x442, 0x00},
+1257          {0x443, 0x00},
+1258          {0x444, 0x00},
+1259          {0x445, 0x00},
+1260          {0x446, 0x00},
+1261          {0x447, 0x00},
+1262          {0x448, 0x00},
+1263          {0x449, 0x00},
+1264          {0x44A, 0x00},
+1265          {0x44B, 0x00},
+1266          {0x44C, 0x00},
+1267          {0x44D, 0x00},
+1268          {0x44E, 0x00},
+1269          {0x450, 0x00},
+1270          {0x451, 0x00},
+1271          {0x452, 0x00},
+1272          {0x453, 0x00},
+1273          {0x454, 0x00},
+1274          {0x455, 0x00},
+1275          {0x456, 0x00},
+1276          {0x457, 0x00},
+1277          {0x458, 0x00},
+1278          {0x459, 0x00},
+1279          {0x45A, 0x00},
+1280          {0x45B, 0x00},
+1281          {0x45C, 0x00},
+1282          {0x45D, 0x00},
+1283          {0x45E, 0x00},
+1284          {0x460, 0x00},
+1285          {0x461, 0x00},
+1286          {0x462, 0x00},
+1287          {0x463, 0x00},
+1288          {0x464, 0x00},
+1289          {0x465, 0x00},
+1290          {0x466, 0x00},
+1291          {0x467, 0x00},
+1292          {0x468, 0x00},
+1293          {0x469, 0x00},
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 22  
+
+1294          {0x46A, 0x00},
+1295          {0x46B, 0x00},
+1296          {0x46C, 0x00},
+1297          {0x46D, 0x00},
+1298          {0x46E, 0x00},
+1299          {0x470, 0x00},
+1300          {0x471, 0x00},
+1301          {0x472, 0x00},
+1302          {0x473, 0x00},
+1303          {0x474, 0x00},
+1304          {0x475, 0x00},
+1305          {0x476, 0x00},
+1306          {0x477, 0x00},
+1307          {0x478, 0x00},
+1308          {0x479, 0x04},
+1309          {0x47A, 0x00},
+1310          {0x47B, 0x00},
+1311          {0x47C, 0x00},
+1312          {0x47D, 0x00},
+1313          {0x47E, 0x00},
+1314          {0x480, 0x00},
+1315          {0x481, 0x00},
+1316          {0x482, 0x00},
+1317          {0x483, 0x00},
+1318          {0x484, 0x00},
+1319          {0x485, 0x00},
+1320          {0x486, 0x00},
+1321          {0x487, 0x00},
+1322          {0x488, 0x00},
+1323          {0x489, 0x00},
+1324          {0x48A, 0x00},
+1325          {0x48B, 0x00},
+1326          {0x48C, 0x00},
+1327          {0x48D, 0x00},
+1328          {0x48E, 0x00},
+1329          {0x490, 0x00},
+1330          {0x491, 0x00},
+1331          {0x492, 0x00},
+1332          {0x493, 0x00},
+1333          {0x494, 0x00},
+1334          {0x495, 0x00},
+1335          {0x496, 0x00},
+1336          {0x497, 0x00},
+1337          {0x498, 0x00},
+1338          {0x499, 0x00},
+1339          {0x49A, 0x00},
+1340          {0x49B, 0x00},
+1341          {0x49C, 0x00},
+1342          {0x49D, 0x00},
+1343          {0x49E, 0x00},
+1344          {0x4A0, 0x00},
+1345          {0x4A1, 0x00},
+1346          {0x4A2, 0x00},
+1347          {0x4A3, 0x00},
+1348          {0x4A4, 0x00},
+1349          {0x4A5, 0x00},
+1350          {0x4A6, 0x00},
+1351          {0x4A7, 0x00},
+1352          {0x4A8, 0x00},
+1353          {0x4A9, 0x00},
+1354          {0x4AA, 0x00},
+1355          {0x4AB, 0x00},
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 23  
+
+1356          {0x4AC, 0x00},
+1357          {0x4AD, 0x00},
+1358          {0x4AE, 0x00},
+1359          {0x4B0, 0x00},
+1360          {0x4B1, 0x00},
+1361          {0x4B2, 0x00},
+1362          {0x4B3, 0x00},
+1363          {0x4B4, 0x00},
+1364          {0x4B5, 0x00},
+1365          {0x4B6, 0x00},
+1366          {0x4B7, 0x00},
+1367          {0x4B8, 0x00},
+1368          {0x4B9, 0x00},
+1369          {0x4BA, 0x00},
+1370          {0x4BB, 0x00},
+1371          {0x4BC, 0x00},
+1372          {0x4BD, 0x00},
+1373          {0x4BE, 0x00},
+1374          {0x4C0, 0x00},
+1375          {0x4C1, 0x60},
+1376          {0x4C2, 0x00},
+1377          {0x4C3, 0x40},
+1378          {0x4C4, 0x80},
+1379          {0x4C5, 0x80},
+1380          {0x4C6, 0x04},
+1381          {0x4C7, 0xD0},
+1382          {0x4C8, 0x00},
+1383          {0x4C9, 0x00},
+1384          {0x4CA, 0x00},
+1385          {0x4CB, 0x00},
+1386          {0x4CC, 0x00},
+1387          {0x4CD, 0x00},
+1388          {0x4CE, 0x00},
+1389          {0x4CF, 0x1F},
+1390          {0x4D0, 0x00},
+1391          {0x4D1, 0x00},
+1392          {0x4D2, 0x00},
+1393          {0x4D3, 0x00},
+1394          {0x4D4, 0x00},
+1395          {0x4D5, 0x00},
+1396          {0x4D6, 0x00},
+1397          {0x4D7, 0x00},
+1398          {0x4D8, 0x05},
+1399          {0x4D9, 0x08},
+1400          {0x4DA, 0x00},
+1401          {0x4DB, 0x00},
+1402          {0x4DC, 0x05},
+1403          {0x4DD, 0x31},
+1404          {0x4DE, 0x00},
+1405          {0x4DF, 0x00},
+1406          {0x4E0, 0x00},
+1407          {0x4E1, 0x06},
+1408          {0x4E2, 0x00},
+1409          {0x4E3, 0x90},
+1410          {0x4E4, 0x00},
+1411          {0x4E5, 0x90},
+1412          {0x4E6, 0x00},
+1413          {0x4E7, 0x90},
+1414          {0x4E8, 0x00},
+1415          {0x4E9, 0x0C},
+1416          {0x4EA, 0x00},
+1417          {0x4EB, 0x0C},
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 24  
+
+1418          {0x4F0, 0x00},
+1419          {0x4F1, 0x00},
+1420          {0x4F2, 0x00},
+1421          {0x4F3, 0x40},
+1422          {0x4F4, 0x80},
+1423          {0x4F5, 0x00},
+1424          {0x4F6, 0x04},
+1425          {0x4F7, 0x90},
+1426          {0x4F8, 0x00},
+1427          {0x4F9, 0x00},
+1428          {0x4FA, 0x00},
+1429          {0x4FB, 0x00},
+1430          {0x4FC, 0x00},
+1431          {0x4FD, 0x00},
+1432          {0x4FE, 0x00},
+1433          {0x500, 0x00},
+1434          {0x501, 0x02},
+1435          {0x502, 0x0F},
+1436          {0x503, 0xFF},
+1437          {0x504, 0x00},
+1438          {0x505, 0x20},
+1439          {0x506, 0x0F},
+1440          {0x507, 0xFF},
+1441          {0x508, 0x18},
+1442          {0x509, 0x00},
+1443          {0x50A, 0x00},
+1444          {0x50B, 0x8C},
+1445          {0x510, 0x00},
+1446          {0x511, 0x00},
+1447          {0x512, 0x7F},
+1448          {0x513, 0x40},
+1449          {0x514, 0x00},
+1450          {0x515, 0x2E},
+1451          {0x516, 0x48},
+1452          {0x517, 0x80},
+1453          {0x518, 0x00},
+1454          {0x519, 0x50},
+1455          {0x51A, 0x38},
+1456          {0x51B, 0xC0},
+1457          {0x51C, 0x78},
+1458          {0x51D, 0x0C},
+1459          {0x51E, 0x00},
+1460          {0x51F, 0xF8},
+1461          {0x520, 0xFC},
+1462          {0x521, 0xF0},
+1463          {0x522, 0x01},
+1464          {0x523, 0xFC},
+1465          {0x524, 0x0D},
+1466          {0x525, 0x62},
+1467          {0x526, 0x04},
+1468          {0x527, 0x20},
+1469          {0x528, 0x00},
+1470          {0x529, 0x04},
+1471          {0x52A, 0x00},
+1472          {0x52B, 0x0E},
+1473          {0x52C, 0x04},
+1474          {0x52D, 0x20},
+1475          {0x52E, 0x00},
+1476          {0x52F, 0x02},
+1477          {0x530, 0x00},
+1478          {0x531, 0xBC},
+1479          {0x532, 0x04},
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 25  
+
+1480          {0x533, 0x1C},
+1481          {0x534, 0x03},
+1482          {0x535, 0xDD},
+1483          {0x536, 0x00},
+1484          {0x537, 0x20},
+1485          {0x538, 0x00},
+1486          {0x539, 0x20},
+1487          {0x53A, 0x01},
+1488          {0x53B, 0xF5},
+1489          {0x53C, 0x01},
+1490          {0x53D, 0xF5},
+1491          {0x540, 0xFF},
+1492          {0x541, 0x00},
+1493          {0x542, 0xFF},
+1494          {0x543, 0x06},
+1495          {0x544, 0xA2},
+1496          {0x545, 0xA1},
+1497          {0x640, 0x08},
+1498          {0x641, 0x00},
+1499          {0x642, 0x51},
+1500          {0x643, 0x00},
+1501          {0x644, 0x00},
+1502          {0x645, 0x00},
+1503          {0x646, 0x00},
+1504          {0x647, 0x00},
+1505          {0x648, 0x07},
+1506          {0x649, 0x00},
+1507          {0x64A, 0x00},
+1508          {0x64B, 0x30},
+1509          {0x64C, 0x40},
+1510          {0x64D, 0x17},
+1511          {0x64E, 0x00},  
+1512          {0xFFF, 0xFF}
+1513          };
+1514          
+1515          
+1516          /**
+1517          * Description: download indexed register value
+1518          * @param
+1519          * pTbl : REG_IDX_DATA pointer.
+1520          */
+1521          static void Init8836Register(REG_IDX_DATA_t *pTbl, BYTE fCheck)
+1522          {
+1523   1        BYTE bTemp;
+1524   1      
+1525   1        if(fCheck) {
+1526   2          while(1) {
+1527   3            if(pTbl->idx==0xFFF)
+1528   3              break;
+1529   3            bTemp = ReadTW88(pTbl->idx);
+1530   3            //these two regs complain the readonly area. let's mask it.
+1531   3            if(pTbl->idx == 0x11A)
+1532   3              bTemp &= 0xE0;
+1533   3            else if(pTbl->idx == 0x11C)
+1534   3              bTemp &= 0x0F;
+1535   3      
+1536   3            if(bTemp != pTbl->value) {
+1537   4        //      wPrintf("\n\rREG%03X R:%02bx W:%02bx", pTbl->idx, bTemp,pTbl->value); 
+1538   4              WriteTW88(pTbl->idx,pTbl->value);
+1539   4            }
+1540   3            pTbl++;
+1541   3          }
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 26  
+
+1542   2        }
+1543   1        else {
+1544   2          while(1) {
+1545   3            if(pTbl->idx==0xFFF /*&& pTbl->value==0xFF*/)
+1546   3              break;
+1547   3            WriteTW88(pTbl->idx,pTbl->value);
+1548   3            pTbl++;
+1549   3          }
+1550   2        }
+1551   1      }
+1552          
+1553          void Init8836AsDefault(BYTE _InputMain, BYTE _fPowerOn)
+1554          {
+1555   1        if(_fPowerOn) {
+1556   2          //If power on, download HW default & SW default.
+1557   2          Puts("\n\rInit8836AsDefault");
+1558   2        //  Init8836Register(InitHwDefault_Table, 0);
+1559   2          Init8836Register(LVDS_Table, 0);
+1560   2          return;
+1561   2        }
+1562   1        
+1563   1        //--- recover
+1564   1        Puts("\n\rRecover8836AsDefault(");
+1565   1        Puts(")");
+1566   1      }
+*** WARNING C280 IN LINE 1553 OF source\drv\DRV_regset.c: '_InputMain': unreferenced local variable
+1567          
+1568          /**************************************************
+1569          *函数名：void RegReset(void)
+1570          *参数：无
+1571          *功能：复位所有外设寄存器，上电初始化调用
+1572          *
+1573          *
+1574          ***************************************************/
+1575          void RegReset(void)
+1576          {
+1577   1        Init8836Register(InitHwDefault_Table,0);
+1578   1      }
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 27  
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com0013 (BEGIN)
+0000         L?0020:
+0000         L?0021:
+0000 90000000    R     MOV     DPTR,#pTbl
+0004 E0                MOVX    A,@DPTR
+0005 FB                MOV     R3,A
+0006         L?0022:
+0006 A3                INC     DPTR
+0007 E0                MOVX    A,@DPTR
+0008 FA                MOV     R2,A
+0009 A3                INC     DPTR
+000A E0                MOVX    A,@DPTR
+000B F9                MOV     R1,A
+000C 010000      E     AJMP    ?C?ILDPTR
+000F         L?0023:
+000F ACF0              MOV     R4,B
+0011 759300      E     MOV     DPX,#?C?XDATASEG
+0014 2500        E     ADD     A,regTW88+01H
+0016 F582              MOV     DPL,A
+0018 E500        E     MOV     A,regTW88
+001A 3C                ADDC    A,R4
+001B F583              MOV     DPH,A
+001D 759300      E     MOV     DPX,#?C?XDATASEG
+0020 EF                MOV     A,R7
+0021 F0                MOVX    @DPTR,A
+0022 22                RET     
+0023         L?0024:
+0023 90000000    R     MOV     DPTR,#pTbl+01H
+0027 E4                CLR     A
+0028 75F003            MOV     B,#03H
+002B 010000      E     AJMP    ?C?IILDX
+002E         L?0025:
+002E 2402              ADD     A,#02H
+0030 F9                MOV     R1,A
+0031 E4                CLR     A
+0032 3A                ADDC    A,R2
+0033 FA                MOV     R2,A
+0034 110000      E     ACALL   ?C?CLDPTR
+0037 FF                MOV     R7,A
+0038 22                RET     
+             ; FUNCTION Com0013 (END)
+
+             ; FUNCTION _Init8836Register (BEGIN)
+                                           ; SOURCE LINE # 1521
+0000 90000000    R     MOV     DPTR,#pTbl
+0004 EB                MOV     A,R3
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 EA                MOV     A,R2
+0008 F0                MOVX    @DPTR,A
+0009 A3                INC     DPTR
+000A E9                MOV     A,R1
+000B F0                MOVX    @DPTR,A
+;---- Variable 'fCheck' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 1522
+                                           ; SOURCE LINE # 1525
+000C ED                MOV     A,R5
+000D 6060              JZ      ?C0010
+000F         ?C0002:
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 28  
+
+                                           ; SOURCE LINE # 1526
+                                           ; SOURCE LINE # 1527
+000F 110000      R     ACALL   L?0020
+0012 F4                CPL     A
+0013 7004              JNZ     ?C0017
+0015 E5F0              MOV     A,B
+0017 640F              XRL     A,#0FH
+0019         ?C0017:
+0019 606F              JZ      ?C0013
+                                           ; SOURCE LINE # 1528
+001B         ?C0004:
+                                           ; SOURCE LINE # 1529
+001B 110000      R     ACALL   L?0020
+001E FF                MOV     R7,A
+001F AEF0              MOV     R6,B
+0021 759300      E     MOV     DPX,#?C?XDATASEG
+0024 2500        E     ADD     A,regTW88+01H
+0026 F582              MOV     DPL,A
+0028 E500        E     MOV     A,regTW88
+002A 3E                ADDC    A,R6
+002B F583              MOV     DPH,A
+002D 759300      E     MOV     DPX,#?C?XDATASEG
+0030 E0                MOVX    A,@DPTR
+0031 FD                MOV     R5,A
+;---- Variable 'bTemp' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 1531
+0032 BE0108            CJNE    R6,#01H,?C0005
+0035 BF1A05            CJNE    R7,#01AH,?C0005
+                                           ; SOURCE LINE # 1532
+0038 54E0              ANL     A,#0E0H
+003A FD                MOV     R5,A
+003B 8010              SJMP    ?C0006
+003D         ?C0005:
+                                           ; SOURCE LINE # 1533
+003D 110000      R     ACALL   L?0021
+0040 FF                MOV     R7,A
+0041 AEF0              MOV     R6,B
+0043 BE0107            CJNE    R6,#01H,?C0006
+0046 BF1C04            CJNE    R7,#01CH,?C0006
+                                           ; SOURCE LINE # 1534
+0049 ED                MOV     A,R5
+004A 540F              ANL     A,#0FH
+004C FD                MOV     R5,A
+004D         ?C0006:
+                                           ; SOURCE LINE # 1536
+004D 90000000    R     MOV     DPTR,#pTbl
+0051 E0                MOVX    A,@DPTR
+0052 FB                MOV     R3,A
+0053 A3                INC     DPTR
+0054 E0                MOVX    A,@DPTR
+0055 FA                MOV     R2,A
+0056 A3                INC     DPTR
+0057 E0                MOVX    A,@DPTR
+0058 110000      R     ACALL   L?0025
+005B AE05              MOV     R6,AR5
+005D 6D                XRL     A,R5
+005E 600A              JZ      ?C0008
+                                           ; SOURCE LINE # 1538
+0060 90000000    R     MOV     DPTR,#pTbl
+0064 110000      R     ACALL   L?0022
+0067 110000      R     ACALL   L?0023
+                                           ; SOURCE LINE # 1539
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 29  
+
+006A         ?C0008:
+                                           ; SOURCE LINE # 1540
+006A 110000      R     ACALL   L?0024
+                                           ; SOURCE LINE # 1541
+006D 80A0              SJMP    ?C0002
+                                           ; SOURCE LINE # 1542
+                                           ; SOURCE LINE # 1543
+006F         ?C0010:
+                                           ; SOURCE LINE # 1544
+                                           ; SOURCE LINE # 1545
+006F 110000      R     ACALL   L?0021
+0072 F4                CPL     A
+0073 7004              JNZ     ?C0018
+0075 E5F0              MOV     A,B
+0077 640F              XRL     A,#0FH
+0079         ?C0018:
+0079 600F              JZ      ?C0013
+                                           ; SOURCE LINE # 1546
+007B         ?C0012:
+                                           ; SOURCE LINE # 1547
+007B E9                MOV     A,R1
+007C 110000      R     ACALL   L?0025
+007F 110000      R     ACALL   L?0021
+0082 110000      R     ACALL   L?0023
+                                           ; SOURCE LINE # 1548
+0085 110000      R     ACALL   L?0024
+                                           ; SOURCE LINE # 1549
+0088 80E5              SJMP    ?C0010
+                                           ; SOURCE LINE # 1550
+                                           ; SOURCE LINE # 1551
+008A         ?C0013:
+008A 22                RET     
+             ; FUNCTION _Init8836Register (END)
+
+             ; FUNCTION _Init8836AsDefault (BEGIN)
+                                           ; SOURCE LINE # 1553
+0000 90000000    R     MOV     DPTR,#_InputMain
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+;---- Variable '_fPowerOn' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 1554
+                                           ; SOURCE LINE # 1555
+0006 ED                MOV     A,R5
+0007 6014              JZ      ?C0014
+                                           ; SOURCE LINE # 1557
+0009 7B00        R     MOV     R3,#MBYTE ?SC_0
+000B 7A00        R     MOV     R2,#HIGH ?SC_0
+000D 7900        R     MOV     R1,#LOW ?SC_0
+000F 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 1559
+0012 7B00        R     MOV     R3,#MBYTE LVDS_Table
+0014 7A00        R     MOV     R2,#HIGH LVDS_Table
+0016 7900        R     MOV     R1,#LOW LVDS_Table
+0018 E4                CLR     A
+0019 FD                MOV     R5,A
+001A 010000      R     AJMP    _Init8836Register
+                                           ; SOURCE LINE # 1561
+001D         ?C0014:
+                                           ; SOURCE LINE # 1564
+001D 7B00        R     MOV     R3,#MBYTE ?SC_20
+001F 7A00        R     MOV     R2,#HIGH ?SC_20
+0021 7900        R     MOV     R1,#LOW ?SC_20
+C51 COMPILER V9.56.0.0   DRV_REGSET                                                        08/24/2018 16:22:01 PAGE 30  
+
+0023 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 1565
+0026 7B00        R     MOV     R3,#MBYTE ?SC_44
+0028 7A00        R     MOV     R2,#HIGH ?SC_44
+002A 7900        R     MOV     R1,#LOW ?SC_44
+002C 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 1566
+002F         ?C0015:
+002F 22                RET     
+             ; FUNCTION _Init8836AsDefault (END)
+
+             ; FUNCTION RegReset (BEGIN)
+                                           ; SOURCE LINE # 1575
+                                           ; SOURCE LINE # 1576
+                                           ; SOURCE LINE # 1577
+0000 7B00        R     MOV     R3,#MBYTE InitHwDefault_Table
+0002 7A00        R     MOV     R2,#HIGH InitHwDefault_Table
+0004 7900        R     MOV     R1,#LOW InitHwDefault_Table
+0006 E4                CLR     A
+0007 FD                MOV     R5,A
+0008 010000      R     AJMP    _Init8836Register
+             ; FUNCTION RegReset (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    255    ----
+   CONSTANT SIZE    =   3739    ----
+   XDATA SIZE       =   ----       4
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  1 WARNING(S),  0 ERROR(S)

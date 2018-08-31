@@ -1,0 +1,3855 @@
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE SPI
+OBJECT MODULE PLACED IN .\Output\SPI.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source36\SPI.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\Output\
+                    -TW8836B_EVB11.ORC) BROWSE INCDIR(SiI-SW;SiI-SW\HAL;SiI-SW\DEBUG;SiI-SW\CEC;.\Source36\LIB) DEFINE(EVB_11,nullFn=//) DEBU
+                    -G CODE PRINT(.\List\SPI.lst) TABS(2) OBJECT(.\Output\SPI.obj)
+
+line level    source
+
+   1          /**
+   2           * @file
+   3           * SPI.c 
+   4           * @author Brian Kang
+   5           * @version 1.0
+   6           * @section LICENSE
+   7           *  Copyright (C) 2011~2012 Intersil Corporation
+   8           * @section DESCRIPTION
+   9           *  a device driver for the spi-bus interface 
+  10           ******************************************************************************
+  11           */
+  12           /*
+  13          Disclaimer: THIS INFORMATION IS PROVIDED 'AS-IS' FOR EVALUATION PURPOSES ONLY.  
+  14          INTERSIL CORPORATION AND ITS SUBSIDIARIES ('INTERSIL') DISCLAIM ALL WARRANTIES, 
+  15          INCLUDING WITHOUT LIMITATION FITNESS FOR A PARTICULAR PURPOSE AND MERCHANTABILITY.  
+  16          Intersil provides evaluation platforms to help our customers to develop products. 
+  17          However, factors beyond Intersil's control could significantly affect Intersil 
+  18          product performance. 
+  19          It remains the customers' responsibility to verify the actual system performance.
+  20          */
+  21          #include "Config.h"
+  22          #include "reg.h"
+  23          #include "typedefs.h"
+  24          #include "TW8836.h"
+  25          
+  26          #include "global.h"
+  27          #include "printf.h"
+  28          #include "CPU.h"
+  29          #include "util.h"
+  30          
+  31          #include "I2C.h"
+  32          #include "SPI.h"
+  33          #include "Settings.h"
+  34          #include "SOsd.h"
+  35          
+  36          
+  37          /**
+  38          * SpiFlash command routine that using a ChipRegister 0x4D0.
+  39          *
+  40          * use SPI_CmdBuffer[] for Write & Read.
+  41          *
+  42          * SpiFlashChipRegCmd(SPICMD_RDID,0,3)
+  43          * SpiFlashChipRegCmd(SPICMD_WREN,0,0)
+  44          *
+  45          * need REG4C1[0] before you use.
+  46          * SPICMD_READ_QUAD_IO can read only 1 byte on the chip buffer. See TW8835 Errata.
+  47          * SPICMD_PP on SFLASH_VENDOR_MICRON_512, must use XMEM, not DMA_BUFF_REG. See TW8836 Errata. 
+  48          */
+  49          /*
+  50          options
+  51            REG4C3[7:6] destination(source on write mode)
+  52            REG4C3[5:4] index mode
+  53            REG4C1[0:0] start mode
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 2   
+
+  54            REG4C4[2:2} enable busy check
+  55            REG4C4[1:1] dma(cmd) read/write mode
+  56            REG4C5[7:4] DMA read wait cycle
+  57            REG4C5[3:0] SPI read/write wait cycle
+  58          others
+  59            SPI read mode   REG4C0[2:0]
+  60            DMA(cmd) start    REG4C4[0:0]
+  61            cmd buff      REG4CA[]~REG4CE[]
+  62            cmd count     REG4C3[3:0]
+  63            buff index      REG4C6[7:0]REG4C7[7:0]
+  64            data count      REG4DA[7:0]REG4C8[7:0]REG4C9[7:0] 
+  65            busy check cmd    REG4D8[7:0]
+  66            busy check bit    REG4D9[2:0]
+  67            busy check pol    REG4D9[3:3]
+  68            chip data buff    REG4D0[]~REG4D7[]
+  69          
+  70          
+  71          if cmd is FAST DUAL_O/DUAL_IO/QUAD_O/QUAD_IO READ, use XMDM.
+  72          chip buff can read only 1 byte only
+  73          the dummy cycle is fixed on TW8836.
+  74          
+  75          extern
+  76            SPI_Buffer[128]
+  77            SPI_CmdBuffer[8]
+  78          
+  79          
+  80          wait done flag
+  81          
+  82          external registers
+  83            
+  84          */
+  85          
+  86          
+  87          //----------------- SPI Mode Definition ---------------------
+  88          /*!
+  89           * SPI_Buffer[] is located at 0 on XMem.
+  90           * It can make some room for I2CSPI routines.
+  91           * SPI_CmdBuffer[] can be 4bytes. You can reduce it.
+  92           */
+  93          XDATA BYTE SPI_Buffer[SPI_BUFFER_SIZE] _at_ 0;
+  94          XDATA BYTE SPI_CmdBuffer[8] _at_ SPI_BUFFER_SIZE;
+  95          
+  96          /*!
+  97           * SPI Read Command & Bytes.
+  98           * On TW8836B, we are using REG4C3[3:0]; cmd length to make a dummy.
+  99           *
+ 100           * mode         command  DummyCycle cmd_length
+ 101           * 0:Slow(single) 0x03  (no dummy)  4
+ 102           * 1:Fast(1-1-1)  0x0B  8     5
+ 103           * 2:Dual(1-1-2)  0x3B    8     5
+ 104           * 3:Quad(1-1-4)  0x6B  8     5
+ 105           * 4:DualIO(1-2-2)  0xBB  4     5
+ 106           * 5:QuadIO(1-4-4)  0xEB  6       7
+ 107           * 6:D-Edge     0xED        12
+ 108           */
+ 109          //test
+ 110          #if 1 //test
+ 111          BYTE SPICMD_x_READ;
+ 112          BYTE SPICMD_x_BYTES;    /*without 4B */
+ 113          #else
+              BYTE SPICMD_x_READ        = 0x03; /* slow */
+              BYTE SPICMD_x_BYTES     = 4;    /*without 4B */
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 3   
+
+              #endif
+ 117          
+ 118          /*!
+ 119           * Spi 4byte address mode for 256Mbit or bigger SpiFlash chip.
+ 120           * If FW executes SPICMD_EN4B, SpiFlash4ByteAddr will be '1'.
+ 121           * If SpiFlash4ByteAddr is '1', FW will add '1' when it uses SPICMD_x_BYTES.
+ 122           * Use SpiFlash_4B_DmaCmd(), SpiFlashSetAddress2CmdBuffer().
+ 123           */
+ 124          #if 1 //WATCHDOG_DATA_TEST
+ 125          BYTE SpiFlash4ByteAddr;
+ 126          #else
+              BYTE SpiFlash4ByteAddr=0;
+              #endif
+ 129          
+ 130          /* Wait for BUSY. (unit mS)
+ 131                        MX25L25635F   N25Q256A
+ 132          cmd             typ Max     typ Max   
+ 133          SPICMD_WRSR Write Status    40      1.3 8   
+ 134          SPICMD_SE SE(4K)      43  200     250 800   
+ 135          SPICMD_BE BE(64K)     340 2000    700 3000  
+ 136          SPICMD_PP PageProgram   0.6 3     0.15 5    
+ 137          */
+ 138          
+ 139          /*
+ 140            TIME
+ 141            clock frequency for all command   108MHz
+ 142                                READ command  54MHz      50MHz
+ 143            S# deselect time after a READ command 20:: ns
+ 144            WRITE STATUS register cycle time  :1.3:8 ms
+ 145            WRITE Volatile configuration    :40: ns
+ 146            PageProgram(256)          :0.5:5 ms   => 10mS
+ 147            SectorErase             :0.25:0.8s    => 1000ms
+ 148            BlockErase              :0.7:3s     => 2500ms
+ 149          
+ 150          Write in progress bit         micron           macronix   
+ 151            WRITE STATUS REGISTER       x:1.3:8   ms          this is WRSR, not WREN
+ 152            WRITE NONVOLATILE CONFIG REGISTER x:200:3000 ms
+ 153            PROGRAM               x:0.5:5   ms    x:0.33:1.2
+ 154            ERASE(SE)             x:250:800 ms    x:25:200
+ 155            ERASE(BE)             x:700:3000 ms     x:250:1000
+ 156          These commands need a BUSY check. 
+ 157            
+ 158          PP and Read those are using buff_len, need a wait_done() function.                    
+ 159          */
+ 160          
+ 161          #define SPIFLASH_WAIT_W_STATUS  4
+ 162          #define SPIFLASH_WAIT_SE    20
+ 163          #define SPIFLASH_WAIT_BE    250
+ 164          #define SPIFLASH_WAIT_PP    20
+ 165          #define SPIFLASH_WAIT_100MS   10
+ 166          #define SPIFLASH_WAIT_200MS   20
+ 167          
+ 168          
+ 169          /* Micron 151218
+ 170            (Good)    (Bad)
+ 171            25Q256A   25Q256A
+ 172            13E40   13E40     65nm -40~85C STD(not Auto)
+ 173            (e4) PHL  (e4) CHN
+ 174            782505773 6053513LE2
+ 175                          marketing part#:N25Q256A13ESF40F or G 
+ 176            Status Register
+ 177              [1] write enable
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 4   
+
+ 178              [0] write in progress
+ 179            read: 0x05      SPICMD_RDSR
+ 180            write: 0x01     SPICMD_WRSR
+ 181            write enable:0x06 SPICMD_WREN
+ 182          
+ 183          
+ 184            NonVolatile Config Register (Low Byte is read first)
+ 185              [15:12] dummy     6=QuadIO, 8=QuadO
+ 186              [4]   Reset/hold    0=Disable
+ 187            read: 0xB5      SPICMD_RDNVREG
+ 188            write:0xB1      SPICMD_WDNVREG
+ 189          
+ 190            Volatile Config Register
+ 191              [7:4] dummy       6=QuadIO, 8=QuadO
+ 192            read: 0x85      SPICMD_RDVREG
+ 193            write: 0x81     SPICMD_WDVREG
+ 194          
+ 195            Enhanced Volatile Config Register
+ 196              [4] Reset/Hold      0=Disable
+ 197            read: 0x65      SPICMD_RDVEREG
+ 198            write: 0x61     SPICMD_WDVEREG
+ 199          
+ 200            Flag Status Register
+ 201              [7] Program   0:Busy,1=Ready
+ 202              [6] Erase suspend 1=in effect
+ 203              [0] address   0=3byte, 1=4byte
+ 204            read: 0x70      SPICMD_RDFREG
+ 205            clear(?): 0x50    SPICMD_CLRFREG
+ 206          */
+ 207          
+ 208          
+ 209          //-----------------------------------------------
+ 210          //internal prototype
+ 211          //-----------------------------------------------
+ 212          
+ 213          
+ 214          /*!
+ 215          * wait REG4C4[0] done status.
+ 216          * This flag is cleared when HW executes SPI command.
+ 217          *
+ 218          *   For WRSR,SE,BE,PP, it does not means the command is finished.
+ 219          * You have to assign SPI_CMD_OPT_BUSY(or _WRITE_BUSY), and executes SpiFlash_check_busy().
+ 220          * For more detail info, see SpiFlash_check_busy() function. 
+ 221          *
+ 222          * For the read family commands, it is cleared when HW finishes the DMA.
+ 223          * On the internal MCU, you do not need to wait, because, the code fetch routine is blocked.
+ 224          *   So, you do not need a SpiFlash_wait_done() on the internal MCU.
+ 225          *   But, on the external CPU that using I2C, CPU have to wait and check this flag.
+ 226          *
+ 227          * When TW8836B HW executes the DMA, it also blocks the I2C host.
+ 228          * so, the external CPU also can use ReadI2C(0xFF); Page register.
+ 229          *
+ 230          * @param wait - count
+ 231          * @param unit - 1ms delay unit
+ 232          * @return 0:success 1:fail
+ 233          */
+ 234          BYTE SpiFlash_wait_done(BYTE wait, BYTE unit)
+ 235          {
+ 236   1        BYTE i;
+ 237   1        volatile BYTE vdata;
+ 238   1      
+ 239   1        for(i=0; i<wait; i++) {
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 5   
+
+ 240   2          vdata = ReadTW88(REG4C4);
+ 241   2          if((vdata & 0x01)==0)
+ 242   2            break;
+ 243   2          delay1ms((WORD)unit);
+ 244   2        }
+ 245   1        if(i==wait) {
+ 246   2          Printf("DmaFail cmd:%02bx loop:%bd unit:%bd\n",
+ 247   2            ReadTW88(REG4DA), wait, unit);
+ 248   2          return 1;
+ 249   2        }
+ 250   1        return 0;
+ 251   1      }
+ 252          
+ 253          
+ 254          /*!
+ 255          * execute DMA command
+ 256          *
+ 257          * REG4DA is for pBuff length high bytes.
+ 258          * this function has 16bit size parameter,
+ 259          *  and do not control REG4DA register.
+ 260          * If you need a 3Bytes size, assign REG4DA, execute it, and then clear REG4DA.
+ 261          *  see, SpiFlash_FastRead_Fixed_ChipReg().
+ 262          *
+ 263          * @param cmd
+ 264          * @param target_cmd_len 
+ 265          * [7:6} target, 
+ 266          * [5:4] access mode, 
+ 267          * [3:0] SPI_CmdBuffer[] length 
+ 268          * @param pBuff
+ 269          * @param buff_len
+ 270          * @param option 
+ 271          * [2] busy check  
+ 272          * [1]:write. related with pBuff.
+ 273          *
+ 274          * if you are using "busy check", execute
+ 275          * SpiFlash_wait_done();
+ 276          *   SpiFlash_check_busy();
+ 277          *
+ 278          * if buff_len is 0, we don't need a pBuff.
+ 279          * for example: SpiFlash_DmaCmd(cmd, DMA_TARGET_CHIP, 0, 0.... 
+ 280          *
+ 281          * if ExtI2c, use REG4C1[0]=1, At Vertical Blank. 
+ 282          */
+ 283          void SpiFlash_DmaCmd(BYTE cmd, BYTE target_cmd_len, WORD pBuff, WORD buff_len, BYTE option)
+ 284          {
+ 285   1        BYTE i;
+ 286   1        BYTE cmd_buff_len;
+ 287   1        BYTE r4e1;
+ 288   1      
+ 289   1        cmd_buff_len = target_cmd_len & 0x0F;
+ 290   1        if(cmd_buff_len > 4)  //for FastRead dummy control.
+ 291   1          cmd_buff_len = 4;
+ 292   1      
+ 293   1        WriteTW88(REG4C3, target_cmd_len +1);   // target & cmd_len that includes cmd.
+ 294   1        WriteTW88(REG4C6, (BYTE)(pBuff>>8));    // pBuff high
+ 295   1        WriteTW88(REG4C7, (BYTE)pBuff);       // pBuff low
+ 296   1        WriteTW88(REG4C8, (BYTE)(buff_len>>8));   // data Buff count middle
+ 297   1        WriteTW88(REG4C9, (BYTE)buff_len);      // data Buff count Lo
+ 298   1        //--WriteTW88(REG4DA, 0);         // data Buff count high
+ 299   1        WriteTW88(REG4CA, cmd);
+ 300   1        for(i=0; i < cmd_buff_len; i++)       // cmd buffer.
+ 301   1          WriteTW88(REG4CB+i, SPI_CmdBuffer[i]);  // normally address.
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 6   
+
+ 302   1        
+ 303   1        if(spiflash_chip->pllclk_dma) {
+ 304   2          //for SHSL issue on Micron. only related with an internal MCU.
+ 305   2          r4e1 = ReadTW88(REG4E1);
+ 306   2          if((r4e1 & 0x30) == 0x20) {
+ 307   3            WriteTW88(REG4E1, (r4e1 & 0xF0) | spiflash_chip->pllclk_dma);
+ 308   3            WriteTW88(REG4C4, 0x01 | option); 
+ 309   3            WriteTW88(REG4E1, r4e1);
+ 310   3          }
+ 311   2          else
+ 312   2            WriteTW88(REG4C4, 0x01 | option);
+ 313   2        }
+ 314   1        else
+ 315   1          WriteTW88(REG4C4, 0x01 | option);
+ 316   1        return;
+ 317   1      }
+ 318          
+ 319          /*!
+ 320          * BUSY check
+ 321          *
+ 322          * If you executes DMA_OPT_BUSY (or DMA_OPT_BUSY_WRITE), 
+ 323          * TW8836B will clear REG4C4[0], and keep checks the BUSY status register
+ 324          * with REG4D8 and REG4D9 registers that normally has SPICMD_RDSR.
+ 325          * It means, the command is executed, but, it is on the processing state, and it does not finished.
+ 326          * If you execute the other SPIFlash command without check the status register flag on SpiFlash,
+ 327          * this new command should be buffered and blocked until the status register becomes the done state.
+ 328          *
+ 329          * we have 2 method.
+ 330          * Method 1:
+ 331          * Do not use REG4C4[2];BUSY, and read the status register from SpiFlash unitl the WIP(WriteInProgress) bit
+             - is cleared.
+ 332          *   It is a logically correct, and easy to understand, but...
+ 333          *   This method have to use a several SpiFlash Commands and have to use a compare routine.
+ 334          * Method 2:
+ 335          * Use REG4C4[2];BUSY, and execute any SpiFlash command, and then check REG4C4[0] flag.
+ 336          * TW8836B HW will executes SPICMD_RDSR and compare WIP.
+ 337          * It uses only one SpiFlash command, and several REG4C4 read routine.
+ 338          * It is good for the internal MCU.
+ 339          * 
+ 340          */
+ 341          BYTE SpiFlash_check_busy(BYTE wait, BYTE unit)
+ 342          {
+ 343   1        BYTE i;
+ 344   1        BYTE ret;
+ 345   1      
+ 346   1        for(i=0; i < wait; i++) {
+ 347   2          SpiFlash_DmaCmd(SPICMD_RDSR, DMA_TARGET_CHIP, 0x04D0, (WORD)0, 0);
+ 348   2          ret=SpiFlash_wait_done(10,10);
+ 349   2          if(ret==0) 
+ 350   2            break;
+ 351   2          delay1ms((WORD)unit);
+ 352   2        }
+ 353   1        if(i==wait) {
+ 354   2          Printf("BUSY fail loop:%bd unit:%bd\n", wait, unit);
+ 355   2          return 1; /* failed */
+ 356   2        }
+ 357   1        return 0; /* success */
+ 358   1      }
+ 359          
+ 360          /*!
+ 361          * WriteEnable
+ 362          */
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 7   
+
+ 363          BYTE SpiFlash_WriteEnable(void)
+ 364          {
+ 365   1        BYTE ret;
+ 366   1        SpiFlash_DmaCmd(SPICMD_WREN, DMA_TARGET_CHIP, 0, 0, DMA_OPT_NONE);
+ 367   1        ret=SpiFlash_wait_done(2,5);
+ 368   1        return ret;
+ 369   1      }
+ 370          
+ 371          
+ 372          /**
+ 373          * If you use SPICMD_EN4B, TW8836B will use 4Bytes address.
+ 374          */
+ 375          BYTE SpiFlash_4B_DmaCmd(BYTE cmd)
+ 376          {
+ 377   1        BYTE ret;
+ 378   1      
+ 379   1        if     (cmd==SPICMD_EN4B)   SpiFlash4ByteAddr = 1;
+ 380   1        else if(cmd==SPICMD_EX4B)   SpiFlash4ByteAddr = 0;
+ 381   1        else
+ 382   1          return 1; /* fail */
+ 383   1      
+ 384   1        if(is_micron_256or512())
+ 385   1          SpiFlash_WriteEnable();
+ 386   1      
+ 387   1        SpiFlash_DmaCmd(cmd, DMA_TARGET_CHIP, 0, 0, DMA_OPT_NONE);
+ 388   1        ret=SpiFlash_wait_done(10,10);
+ 389   1        return ret;
+ 390   1      }
+ 391          
+ 392          /**
+ 393          * set 4Bytes address mode to support more than 128Mbit.
+ 394          * call after SpiFlash_SetReadModeByRegister()
+ 395          *
+ 396          * #define SPICMD_EN4B       0xB7  //enter 4Byte mode
+ 397          * #define SPICMD_EX4B       0xE9  //exit 4Byte mode
+ 398          *
+ 399          * SpiFlash4ByteAddr value will be used to check the 4Byte mode or not.
+ 400          */
+ 401          void SpiFlash_Set4BytesAddress(BYTE fOn)
+ 402          { 
+ 403   1        if(fOn) {
+ 404   2          if(SpiFlash4ByteAddr==0)
+ 405   2            SpiFlash_4B_DmaCmd(SPICMD_EN4B);
+ 406   2        }
+ 407   1        else { 
+ 408   2          if(SpiFlash4ByteAddr)
+ 409   2            SpiFlash_4B_DmaCmd(SPICMD_EX4B);
+ 410   2        }
+ 411   1      }
+ 412          
+ 413          //-----------------------------------------------------------------------------
+ 414          /**
+ 415          * assign a SpiFlash address
+ 416          *
+ 417          * To support 4BYTE address mode,
+ 418          * use extern: SpiFlash4ByteAddr.
+ 419          */
+ 420          #if 0
+              BYTE SpiFlashSetAddress2Hw(DWORD addr)
+              {
+                if(SpiFlash4ByteAddr) {
+                  WriteTW88(REG4CB, (BYTE)(addr >> 24));
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 8   
+
+                  WriteTW88(REG4CC, (BYTE)(addr >> 16));
+                  WriteTW88(REG4CD, (BYTE)(addr >> 8));
+                  WriteTW88(REG4CE, (BYTE)(addr));
+                  return 4;
+                }
+                else {
+                  WriteTW88(REG4CB, (BYTE)(addr >> 16));
+                  WriteTW88(REG4CC, (BYTE)(addr >> 8));
+                  WriteTW88(REG4CD, (BYTE)(addr));
+                  return 3;
+                }
+              }
+              #endif
+ 438          BYTE SpiFlashSetAddress2CmdBuffer(DWORD spiaddr)
+ 439          {
+ 440   1        if(SpiFlash4ByteAddr) {
+ 441   2          SPI_CmdBuffer[0] = spiaddr >> 24;
+ 442   2          SPI_CmdBuffer[1] = spiaddr >> 16;
+ 443   2          SPI_CmdBuffer[2] = spiaddr >> 8;
+ 444   2          SPI_CmdBuffer[3] = spiaddr;
+ 445   2          return 4;
+ 446   2        }
+ 447   1        else {
+ 448   2          SPI_CmdBuffer[0] = spiaddr >> 16;
+ 449   2          SPI_CmdBuffer[1] = spiaddr >> 8;
+ 450   2          SPI_CmdBuffer[2] = spiaddr;
+ 451   2          return 3;
+ 452   2        }
+ 453   1      }
+ 454          
+ 455          /*!
+ 456          * SectorErase. 4KB
+ 457          * SE need a BUSY check.
+ 458          */
+ 459          BYTE SpiFlash_SectorErase(DWORD spiaddr)
+ 460          {
+ 461   1        BYTE cmd_buff_len;
+ 462   1        BYTE ret;
+ 463   1      
+ 464   1        SpiFlash_WriteEnable();
+ 465   1      
+ 466   1        cmd_buff_len=SpiFlashSetAddress2CmdBuffer(spiaddr);
+ 467   1      
+ 468   1        SpiFlash_DmaCmd(SPICMD_SE, DMA_TARGET_CHIP | cmd_buff_len, 0x04D0, 0, SPI_CMD_OPT_BUSY);
+ 469   1        SpiFlash_wait_done(2, 5);
+ 470   1        ret=SpiFlash_check_busy(10,100);  /*20*50=1000ms*/
+ 471   1        return ret;
+ 472   1      }
+ 473          
+ 474          /*!
+ 475          * BlockErase. 64KB
+ 476          * BE need a BUSY check.
+ 477          */
+ 478          BYTE SpiFlash_BlockErase(DWORD spiaddr)
+ 479          {
+ 480   1        BYTE cmd_buff_len;
+ 481   1        BYTE ret;
+ 482   1      
+ 483   1        SpiFlash_WriteEnable();
+ 484   1      
+ 485   1        cmd_buff_len=SpiFlashSetAddress2CmdBuffer(spiaddr);
+ 486   1      
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 9   
+
+ 487   1        SpiFlash_DmaCmd(SPICMD_BE, DMA_TARGET_CHIP | cmd_buff_len, 0x04D0, 0, SPI_CMD_OPT_BUSY);
+ 488   1        SpiFlash_wait_done(2, 5);
+ 489   1        ret=SpiFlash_check_busy(30,100); /*30*100=3000ms*/
+ 490   1        return ret;
+ 491   1      }
+ 492          
+ 493          /*! 
+ 494          * PageProgram with ChipReg
+ 495          * PP need a BUSY check.
+ 496          *
+ 497          * @param len - max 8.
+ 498          */
+ 499          BYTE SpiFlash_PageProgram_ChipReg(DWORD spiaddr, BYTE *pBuff, BYTE len)
+ 500          {
+ 501   1        BYTE cmd_buff_len;
+ 502   1        BYTE i;
+ 503   1        BYTE ret;
+ 504   1      
+ 505   1        if(len>8)
+ 506   1          return 1; //fail
+ 507   1      
+ 508   1        SpiFlash_WriteEnable();
+ 509   1      
+ 510   1        cmd_buff_len=SpiFlashSetAddress2CmdBuffer(spiaddr);
+ 511   1        for(i=0; i < len; i++)
+ 512   1          WriteTW88(REG4D0+i, *pBuff++);
+ 513   1      
+ 514   1        SpiFlash_DmaCmd(SPICMD_PP, DMA_TARGET_CHIP | cmd_buff_len, 0x04D0, len, SPI_CMD_OPT_WRITE_BUSY);
+ 515   1        SpiFlash_wait_done(2, 5);
+ 516   1        ret=SpiFlash_check_busy(5,50); /*5*50=250ms*/
+ 517   1        return ret; 
+ 518   1      }
+ 519          
+ 520          /*! 
+ 521          * PageProgram with XMem
+ 522          * PP need a BUSY check.
+ 523          * PP need a REG4C4[1].
+ 524          */
+ 525          BYTE SpiFlash_PageProgram_XMem(DWORD spiaddr, WORD xaddr, WORD xlen)
+ 526          {
+ 527   1        BYTE cmd_buff_len;
+ 528   1        BYTE ret;
+ 529   1      
+ 530   1        SpiFlash_WriteEnable();
+ 531   1        cmd_buff_len=SpiFlashSetAddress2CmdBuffer(spiaddr);
+ 532   1        SpiFlash_DmaCmd(SPICMD_PP, DMA_TARGET_XMEM | cmd_buff_len, xaddr, xlen, SPI_CMD_OPT_WRITE_BUSY);
+ 533   1        SpiFlash_wait_done(2, 5);
+ 534   1      
+ 535   1        ret=SpiFlash_check_busy(5,50); /*5*50=250ms*/
+ 536   1        return ret; 
+ 537   1      }
+ 538          
+ 539          
+ 540          /*! FastRead with ChipReg.
+ 541          *  The Read with ChipReg does not support multi data output lines Read Commands (FastQuad,..).
+ 542           * It can be SlowRead, but SlowRead has a maximum speed limitation about 50MHz.
+ 543           *
+ 544           *  Read need a wait.
+ 545           *  but, 100ms delay on SpiFlash_DmaCmd should be enough.
+ 546           *  if you using it for CRC, use a SpiFlash_SlowRead_Fixed_ChipReg(). 
+ 547          */
+ 548          BYTE SpiFlash_FastRead_ChipReg(DWORD spiaddr, BYTE len) 
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 10  
+
+ 549          {
+ 550   1        BYTE cmd_buff_len;
+ 551   1        BYTE ret;
+ 552   1      
+ 553   1        if(len>8)
+ 554   1          len=8;
+ 555   1      
+ 556   1        cmd_buff_len=SpiFlashSetAddress2CmdBuffer(spiaddr);
+ 557   1        cmd_buff_len +=1; //for FastRead dummy
+ 558   1        SpiFlash_DmaCmd(SPICMD_READ_FAST, DMA_TARGET_CHIP | cmd_buff_len, 0x04D0, len, SPI_CMD_OPT_NONE);
+ 559   1        ret=SpiFlash_wait_done(2, 5);
+ 560   1        return ret;
+ 561   1      }
+ 562          /*!
+ 563          * we using this command to generate CRC.
+ 564          *   len can be big number, so we have to adjust wait.
+ 565          *
+ 566          * BKTODO - try with QuadO(or QuadIO) and then check CRC value.
+ 567          */
+ 568          BYTE SpiFlash_FastRead_Fixed_ChipReg(DWORD spiaddr, DWORD dLen)
+ 569          {
+ 570   1        BYTE cmd_buff_len;
+ 571   1        BYTE wait, unit;
+ 572   1        BYTE ret;
+ 573   1      
+ 574   1        if(dLen & 0xFF000000) {
+ 575   2          //TW8836B use 24bits register. REG4DA,REG4C8,REG4C9.
+ 576   2          Puts("sorry!! too big\n");
+ 577   2          return 1;
+ 578   2        }
+ 579   1        else if(dLen & 0x00FF0000) {
+ 580   2          wait = dLen >> 16;
+ 581   2          unit = 20; /* @27MHz */
+ 582   2        }
+ 583   1        else {
+ 584   2          wait = dLen >> 8;
+ 585   2          unit = 5;
+ 586   2        }
+ 587   1        if(wait==0)
+ 588   1          wait=1;
+ 589   1      
+ 590   1        cmd_buff_len=SpiFlashSetAddress2CmdBuffer(spiaddr);
+ 591   1        cmd_buff_len +=1; //for FastRead dummy
+ 592   1        WriteTW88(REG4DA, dLen >> 16); /* data Buff count high */
+ 593   1        SpiFlash_DmaCmd(SPICMD_READ_FAST, 
+ 594   1          DMA_TARGET_CHIP | DMA_ACCESS_FIX | cmd_buff_len, 
+ 595   1          0x04D0, (WORD)dLen, SPI_CMD_OPT_NONE);  /* dLen use 16bit */
+ 596   1        ret=SpiFlash_wait_done(wait, unit);
+ 597   1        WriteTW88(REG4DA, 0); /* clean the data Buff count high */
+ 598   1        return ret;
+ 599   1      }
+ 600          
+ 601          /*!
+ 602          * Read to XMEM (Max 2048,0x800).
+ 603          * Internal MCU using 128Bytes.
+ 604          *  Read need a wait.
+ 605          */
+ 606          BYTE SpiFlash_Read_XMem(DWORD spiaddr, WORD xaddr, WORD xlen) 
+ 607          {
+ 608   1        BYTE ret;
+ 609   1        BYTE cmd_buff_len;
+ 610   1      
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 11  
+
+ 611   1        cmd_buff_len = SpiFlashSetAddress2CmdBuffer(spiaddr); /* it includes SpiFlash4ByteAddr */
+ 612   1        cmd_buff_len += SPICMD_x_BYTES;             /* it includes the dummy cycle */
+ 613   1        cmd_buff_len -= 4;
+ 614   1        SpiFlash_DmaCmd(SPICMD_x_READ, DMA_TARGET_XMEM | cmd_buff_len, xaddr,xlen, SPI_CMD_OPT_NONE);
+ 615   1        ret = SpiFlash_wait_done(10,10);
+ 616   1        return ret;
+ 617   1      }
+ 618          //void SpiFlashDmaRead2XMem(BYTE * dest_loc, DWORD src_loc, WORD size, BYTE wait)
+ 619          //{
+ 620          //  BYTE bTemp = wait;
+ 621          //  WORD dest_w_loc = (WORD)dest_loc;
+ 622          //
+ 623          //  SpiFlash_Read_XMem(src_loc, dest_w_loc, size);
+ 624          //}
+ 625          
+ 626          /*!
+ 627          * @param spiaddr
+ 628          * @param addr - target LUT index location.
+ 629          * LUTTYPE_ADDR
+ 630          *   addr is (wTemp >> 8) and (wTemp & 0xFF); 
+ 631          * LUTTYPE_BYTE (Column first)
+ 632          *   addr is (wTemp>>6) and (wTemp << 2)      
+ 633          *   background has 256 LUTs (0x000~0x0FF)
+ 634          *   foreground has 512 LUTS (0x000~0x1FF)          
+ 635          *   If we do r-shift twice (<< 2), LUTTYPE_BYTE is becomes LUTTYPE_ADDR.
+ 636          * @param len
+ 637          */
+ 638          BYTE SpiFlash_Read_SOsd(DWORD spiaddr, WORD addr, WORD len)
+ 639          {
+ 640   1        BYTE cmd_buff_len;
+ 641   1        BYTE ret;
+ 642   1      
+ 643   1        cmd_buff_len = SpiFlashSetAddress2CmdBuffer(spiaddr); /* it includes SpiFlash4ByteAddr */
+ 644   1        cmd_buff_len += SPICMD_x_BYTES;             /* it includes the dummy cycle */
+ 645   1        cmd_buff_len -= 4;
+ 646   1        SpiFlash_DmaCmd(SPICMD_x_READ, DMA_TARGET_SOSD + cmd_buff_len, addr,len, SPI_CMD_OPT_NONE);
+ 647   1        ret = SpiFlash_wait_done(10,10);
+ 648   1        return ret;
+ 649   1      }
+ 650          
+ 651          /*!
+ 652          * @param spiaddr
+ 653          * @param addr - target FontRam index location.
+ 654          * @param len
+ 655          */
+ 656          BYTE SpiFlash_Read_FOsd(DWORD spiaddr, WORD addr, WORD len) 
+ 657          {
+ 658   1        BYTE cmd_buff_len;
+ 659   1        BYTE ret;
+ 660   1      
+ 661   1        cmd_buff_len = SpiFlashSetAddress2CmdBuffer(spiaddr); /* it includes SpiFlash4ByteAddr */
+ 662   1        cmd_buff_len += SPICMD_x_BYTES;             /* it includes the dummy cycle */
+ 663   1        cmd_buff_len -= 4;
+ 664   1        SpiFlash_DmaCmd(SPICMD_x_READ, DMA_TARGET_FOSD | cmd_buff_len, addr,len, SPI_CMD_OPT_NONE);
+ 665   1        ret = SpiFlash_wait_done(10,10);
+ 666   1        return ret;
+ 667   1      }
+ 668          
+ 669          
+ 670          /*
+ 671           SPIFLASH chip & speed.
+ 672          
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 12  
+
+ 673          On TW8836B, the SpiFlash is used for the MCU code memory and the SpiOSD data.
+ 674          These two modules fetch the data when it turned on.
+ 675          
+ 676          Below is TW8836B spec. 
+ 677                    Recommand Spec.   Internal target.  
+ 678            SSPLL     150MHz        (more than 150MHz)
+ 679            SPICLK      120MHz        133Mhz
+ 680            MCUCLK on ASync 108MHz        110MHz
+ 681            MCUCLK on Sync  108MHz        (more than 110MHz)  
+ 682          On the panel, SPICLK needs a below minimum value to display SpiOSD.
+ 683          If you need remocon, I recommand to use 108MHz on 1024x600 panel.
+ 684                     1024x600 800x480 panel
+ 685            Minimum SPICLK    94MHz 54MHz
+ 686          And, we are usgin QuadIO or Quad mode with fixed dummy cycle. 
+ 687            Fast Read Mode    DummyCycle
+ 688            QuadIO(1-4-4 mode)  6
+ 689            QuadO(1-1-4 mode) 8
+ 690            Fast(1-1-1 mode)  8
+ 691          
+ 692          When I test same SpiOSD image on Quad and on QuadIO,
+ 693          Quad mode has about 6% overhead, but, Quad mode can be worked on higher speed.
+ 694          we choose Quad mode, if it can support more speed.
+ 695            test micron MT25Q256 with 4Byte address
+ 696          
+ 697              Quad Output mode: 1-1-4 with dummy 8.
+ 698                minimum: 99.984MHz
+ 699                Spec:    115MHz
+ 700              
+ 701              Quad IO mode: 1-4-4 with dummy 6
+ 702                minimum: 94.133MHz
+ 703                Spec:  86MHz
+ 704          
+ 705          We are trying to follow up the recommand speed that is suggested by SpiFlash Vendor.
+ 706          When I test the SpiFlash, "MX25L25635F" has a best performance.
+ 707          "MX25L25635F" is working on 120MHz even its spec. is 104MHz on the Socket board.  
+ 708          
+ 709            Vendor  spec. test result.
+ 710            Macromix  104MHz  Stable. 
+ 711            Micron  108Mhz  unstable
+ 712            Winbond 104MHz  Unstable
+ 713            GigaDev 120MHz  Unstable(even 108Mhz)
+ 714          
+ 715          So, we are provide below code "AS-IS" for evaluation purpose only.
+ 716          */
+ 717          
+ 718                            //SSPLL,     Control
+ 719                        //REG0F8~REG0FA  REG0FD
+ 720          #define SSPLL1_133M_REGS    0x02,0x76,0x85,0x34
+ 721          #define SSPLL1_120M_REGS    0x02,0x38,0xE4,0x34
+ 722          #define SSPLL1_115M_REGS    0x02,0x21,0x30,0x33
+ 723          #define SSPLL1_108M_REGS    0x02,0x00,0x00,0x24
+ 724          #define SSPLL1_105M_REGS    0x01,0xF1,0xC8,0x23
+ 725          #define SSPLL1_104M_REGS    0x01,0xED,0x0A,0x23
+ 726          #define SSPLL1_98M_REGS     0x01,0xD0,0x98,0x23
+ 727          #define SSPLL1_96M_REGS     0x01,0xC7,0x1D,0x23
+ 728          #define SSPLL1_95M_REGS     0x01,0xC2,0x5F,0x23
+ 729          #define SSPLL1_94M_REGS     0x01,0xBD,0xA2,0x23
+ 730          #define SSPLL1_90M_REGS     0x01,0xAA,0xAB,0x23
+ 731          #define SSPLL1_86M_REGS     0x01,0x97,0xB5,0x23
+ 732          #define SSPLL1_84M_REGS     0x01,0x8E,0x39,0x23
+ 733          #define SSPLL1_80M_REGS     0x01,0x7B,0x43,0x23
+ 734          #define SSPLL1_78M_REGS     0x01,0x71,0xC8,0x23
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 13  
+
+ 735          #define SSPLL1_72M_REGS     0x01,0x55,0x56,0x23
+ 736          #define SSPLL1_70M_REGS     0x01,0x4B,0xDB,0x23
+ 737          #define SSPLL1_54M_REGS     0x01,0x00,0x00,0x23
+ 738          #define SSPLL1_50M_REGS     0x01,0xDA,0x13,0x63   
+ 739                          //REG4E1[3:0]
+ 740          #define PLL_CLK_DIV_1     0         //sameas PLLCLK_DIV_
+ 741          #define PLL_CLK_DIV_1P5     1
+ 742          #define PLL_CLK_DIV_2     2
+ 743                          //REG4F0[7:4]
+ 744          #define MCU_CLK_DIV_1     0         //rename as MCUCLK_DIV
+ 745          #define MCU_CLK_DIV_1P5     1 //need wait 3
+ 746          #define MCU_CLK_DIV_2     2 //need wait 5
+ 747          #define MCU_CLK_DIV_3     4 //need wait 8
+ 748          #define MCU_CLK_DIV_4     6 //need wait ?
+ 749          
+ 750          /* wait value on ASYNC mode (when MCU_CLK_DIV is not 1) */
+ 751          code BYTE async_wait_value[] = {
+ 752          /*  1 1.5 2 2.5 3 3.5 4       divider  */
+ 753            0,  3,  5,  7,  8,  9,  10  /*wait value */
+ 754          };
+ 755          
+ 756          /*
+ 757              SPIFLASH CHIP TABLE
+ 758              ===================
+ 759              Remove commnet if you want to use.
+ 760              But, do not use NA or NG column.
+ 761          */
+ 762          code struct SPIFLASH_DIMEMSION spiflash_chip_table[] = {
+ 763          /* Macronix*/
+ 764          //  { 0xC2,0x20,0x16, 32,   SPI_READ_QUADIO,    104, SSPLL1_104M_REGS,  0,0,2,0,    "MX25L3233F"},   /*6 dumm
+             -y, SHSL:15*/
+ 765          //
+ 766          //  { 0xC2,0x20,0x17, 64,   SPI_READ_QUADIO,    86, SSPLL1_86M_REGS,    0,0,2,0,    "MX25L6435E"},   /*6 dumm
+             -y, SHSL:15*/
+ 767          //  { 0xC2,0x20,0x17, 64,   SPI_READ_QUADIO,    104,SSPLL1_104M_REGS,   0,0,0,0,    "MX25L6435E"},   /*NA:8 d
+             -ummy*/
+ 768          //
+ 769              { 0xC2,0x20,0x18, 128,    SPI_READ_QUAD,      104,SSPLL1_104M_REGS,   0,0,0,0,    "MX25L12835F"},   
+ 770          //  { 0xC2,0x20,0x18, 128,    SPI_READ_QUADIO,  84, SSPLL1_84M_REGS,    0,0,0,0,    "MX25L12835F"},   
+ 771          //  { 0xC2,0x20,0x18, 128,    SPI_READ_QUADIO,  133,SSPLL1_133M_REGS,   0,0,0,0,    "MX25L12835F"},  /*NA:8
+             - dummy */ 
+ 772          //  { 0xC2,0x20,0x18, 128,    SPI_READ_QUADIO,  120,SSPLL1_120M_REGS,   0,0,0,0,    "MX25L12835F"},  /*over
+             -clock */ 
+ 773          //  { 0xC2,0x20,0x18, 128,    SPI_READ_QUADIO,  70, SSPLL1_70M_REGS,    0,0,2,0,    "MX25L12835E"},  /* SHS
+             -L:15 */ 
+ 774          //
+ 775          //  { 0xC2,0x20,0x19, 256,  SPI_READ_QUAD,      94, SSPLL1_94M_REGS,    0,0,0,0,  "MX25L25635F"},  /*for SOCK
+             -ET. Bad Quality*/
+ 776            { 0xC2,0x20,0x19, 256,  SPI_READ_QUAD,      104,SSPLL1_104M_REGS,   0,0,0,0,  "MX25L25635F"}, 
+ 777          //  { 0xC2,0x20,0x19, 256,  SPI_READ_QUADIO,    84, SSPLL1_84_REGS,     0,0,0,0,  "MX25L25635F"},  /*6 dummy,
+             - SHSL:7nS */
+ 778          //  { 0xC2,0x20,0x19, 256,  SPI_READ_QUADIO,    133,SSPLL1_133_REGS,    0,0,0,0,  "MX25L25635F"},  /*NA:10 du
+             -mmy */
+ 779          //  { 0xC2,0x20,0x19, 256,  SPI_READ_QUADIO,    70, SSPLL1_70M_REGS,    0,0,2,0,  "MX25L25635E"},  /* SHSL:15
+             - */
+ 780          //
+ 781          //  { 0xC2,0x20,0x1A, 512,  SPI_READ_QUAD,      104,SSPLL1_104M_REGS,   0,0,0,0,  "MX66L51235F"},         
+ 782          //  { 0xC2,0x20,0x1A, 512,  SPI_READ_QUADIO,    84, SSPLL1_84M_REGS,    0,0,0,0,  "MX66L51235F"}, /*6 dummy,
+             - SHSL:7nS */          
+ 783          //  { 0xC2,0x20,0x1A, 512,  SPI_READ_QUADIO,    133,SSPLL1_133M_REGS,   0,0,0,0,  "MX66L51235F"}, /*NA:10 du
+             -mmy */        
+ 784          //
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 14  
+
+ 785          //  { 0xC2,0x20,0x1B, 1024, SPI_READ_QUAD,      108,SSPLL1_108M_REGS,   0,0,0,0,  "MX66L1G45G"},
+ 786          //  { 0xC2,0x20,0x1B, 1024, SPI_READ_QUADIO,    84, SSPLL1_84M_REGS,    0,0,0,0,  "MX66L1G45G"},  /*6 dummy
+             -, SHSL:7nS*/
+ 787          //  { 0xC2,0x20,0x1B, 1024, SPI_READ_QUADIO,    133,SSPLL1_133M_REGS,   0,0,0,0,  "MX66L1G45G"},  /*NA:10 d
+             -ummy */
+ 788          //
+ 789          /*Eon #CS deselect time(SHSL):10nS*/
+ 790          //  { 0x1C,0x30,0x17, 64,   SPI_READ_QUADIO,    50, SSPLL1_50M_REGS,    0,0,0,0,  "EN25QH64"},    
+ 791          //  { 0x1C,0x30,0x17, 64,   SPI_READ_QUADIO,    80, SSPLL1_80M_REGS,    0,0,0,0,  "EN25QH64"},    /*NA:*/   
+ 792          //
+ 793            { 0x1C,0x30,0x18, 128,  SPI_READ_QUADIO,    50, SSPLL1_50M_REGS,    0,0,0,0,  "EN25QH128"},
+ 794          //  { 0x1C,0x30,0x18, 128,  SPI_READ_QUADIO,    104,SSPLL1_105M_REGS,   0,0,0,0,  "EN25QH128"},   /* NA: */
+ 795          //
+ 796          //  { 0x1C,0x70,0x19, 256,  SPI_READ_QUADIO,    50, SSPLL1_50M_REGS,    0,0,0,0,  "EN25Q256A"},
+ 797          //  { 0x1C,0x70,0x19, 256,  SPI_READ_QUADIO,    104,SSPLL1_104M_REGS,   0,0,0,0,  "EN25Q256A"},   /* NA: */
+ 798          //
+ 799          /*Winbond*/
+ 800            { 0xEF,0x40,0x18, 128,  SPI_READ_QUADIO,    104,SSPLL1_104M_REGS,   0,0,0,0,  "W25Q128FV"},
+ 801          //  { 0xEF,0x40,0x19, 256,  SPI_READ_QUADIO,    104,SSPLL1_104M_REGS,   0,0,0,0,  "W25Q256FV"},
+ 802          //  { 0xEF,0x40,0x1A, 512,  SPI_READ_QUADIO,    104,SSPLL1_104M_REGS,   0,0,0,0,  "W25M512JV"},
+ 803          //
+ 804          /*Micron & Nymonix  #CS deselect time(SHSL):20nS  */
+ 805          /* N25Q & MT25Q series has same JEDEC ID. I can not distinglish */
+ 806          #if 1 //OLD N25Q series
+ 807          //  { 0x20,0xBA,0x16, 32,   SPI_READ_QUAD,      108,SSPLL1_108M_REGS,   0,0,2,0,    "N25Q032A"}, /*spec*/   
+             - 
+ 808          //  { 0x20,0xBA,0x16, 32,   SPI_READ_QUAD,      80, SSPLL1_80M_REGS,    0,0,2,0,    "N25Q032A"}, /*real */
+ 809          //  { 0x20,0xBA,0x16, 32,   SPI_READ_QUADIO,    80, SSPLL1_80M_REGS,    0,0,2,0,    "N25Q032A"}, /*6dummy:sp
+             -ec*/
+ 810          //  { 0x20,0xBA,0x16, 32,   SPI_READ_QUADIO,    78, SSPLL1_78M_REGS,    0,0,2,0,    "N25Q032A"}, /*6dummy:re
+             -al*/
+ 811          //  { 0x20,0xBA,0x16, 32,   SPI_READ_QUADIO,    108,SSPLL1_108M_REGS,   0,0,2,0,    "N25Q032A"}, /*NA:10 dum
+             -my*/
+ 812          //
+ 813          //  { 0x20,0xBA,0x17, 64,   SPI_READ_QUAD,      108,SSPLL1_108M_REGS,   0,0,2,0,  "N25Q064A"},  /*spec*/
+ 814            { 0x20,0xBA,0x17, 64,   SPI_READ_QUAD,      104,SSPLL1_104M_REGS,   0,0,2,0,  "N25Q064A"}, /* real*/
+ 815          //  { 0x20,0xBA,0x17, 64,   SPI_READ_QUADIO,  78, SSPLL1_78M_REGS,    0,0,2,0,  "N25Q064A"}, /*6dummy*/
+ 816          //  { 0x20,0xBA,0x17, 64,   SPI_READ_QUADIO,  108,SSPLL1_108M_REGS,   0,0,2,0,  "N25Q064A"}, /*NA:10dummy*/
+ 817          //
+ 818          //  { 0x20,0xBA,0x18, 128,  SPI_READ_QUAD,      108,SSPLL1_108M_REGS,   0,0,2,0,  "N25Q128A"},  /*spec*/
+ 819            { 0x20,0xBA,0x18, 128,  SPI_READ_QUAD,      104,SSPLL1_104M_REGS,   0,0,2,0,  "N25Q128A"}, /* real*/
+ 820          //  { 0x20,0xBA,0x18, 128,  SPI_READ_QUADIO,  80, SSPLL1_80M_REGS,    0,0,2,0,  "N25Q128A"}, /*6dummy*/
+ 821          //  { 0x20,0xBA,0x18, 128,  SPI_READ_QUADIO,  108,SSPLL1_108M_REGS,   0,0,2,0,  "N25Q128A"}, /*NA:10dummy*/
+ 822          //
+ 823          //  { 0x20,0xBA,0x19, 256,  SPI_READ_QUAD,      108,SSPLL1_108M_REGS,   0,0,2,0,  "N25Q256A"},  /*spec*/
+ 824            { 0x20,0xBA,0x19, 256,  SPI_READ_QUAD,      84, SSPLL1_84M_REGS,    0,0,2,0,  "N25Q256A"}, /* real*/
+ 825          //  { 0x20,0xBA,0x19, 256,  SPI_READ_QUADIO,  78, SSPLL1_78M_REGS,    0,0,2,0,  "N25Q128A"}, /*6dummy*/
+ 826          //  { 0x20,0xBA,0x19, 256,  SPI_READ_QUADIO,  108,SSPLL1_108M_REGS,   0,0,2,0,  "N25Q256A"}, /*NA:10dummy*/
+ 827          //
+ 828          //  { 0x20,0xBA,0x20, 512,  SPI_READ_QUAD,      108,SSPLL1_108M_REGS,   0,0,2,0,  "N25Q512A"},  /*spec*/
+ 829            { 0x20,0xBA,0x20, 512,  SPI_READ_QUAD,      104,SSPLL1_104M_REGS,   0,0,2,0,  "N25Q512A"}, /* real*/
+ 830          //  { 0x20,0xBA,0x20, 512,  SPI_READ_QUADIO,  80, SSPLL1_80M_REGS,    0,0,2,0,  "N25Q512A"}, /*6dummy*/
+ 831          //  { 0x20,0xBA,0x20, 512,  SPI_READ_QUADIO,  108,SSPLL1_108M_REGS,   0,0,2,0,  "N25Q512A"}, /*NA:10dummy*/
+ 832          //
+ 833          //  { 0x20,0xBA,0x21, 1024, SPI_READ_QUAD,      108,SSPLL1_108M_REGS,   0,0,2,0,  "N25Q00AA"},  /*spec*/
+ 834            { 0x20,0xBA,0x21, 1024, SPI_READ_QUAD,      104,SSPLL1_104M_REGS,   0,0,2,0,  "N25Q00AA"}, /* real*/
+ 835          //  { 0x20,0xBA,0x21, 1024, SPI_READ_QUADIO,  80, SSPLL1_80M_REGS,    0,0,2,0,  "N25Q00AA"}, /*6dummy*/
+ 836          //  { 0x20,0xBA,0x21, 1024, SPI_READ_QUADIO,  108,SSPLL1_108M_REGS,   0,0,2,0,  "N25Q00AA"}, /*NA:10dummy*/
+ 837          #else //New MT25Q series
+              //  { 0x20,0xBA,0x17, 64,     SPI_READ_QUAD,      104,SSPLL1_104M_REGS,   0,0,2,0,  "MT25QL064"}, 
+                { 0x20,0xBA,0x18, 128,  SPI_READ_QUAD,      104,SSPLL1_104M_REGS,   0,0,2,0,  "MT25QL128"}, 
+                { 0x20,0xBA,0x19, 256,  SPI_READ_QUAD,      104,SSPLL1_104M_REGS,   0,0,2,0,  "MT25QL256"}, 
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 15  
+
+              //  { 0x20,0xBA,0x20, 512,  SPI_READ_QUAD,      104,SSPLL1_104M_REGS,   0,0,2,0,  "MTN25QL512"},
+              //  { 0x20,0xBA,0x21, 1024, SPI_READ_QUAD,      104,SSPLL1_104M_REGS,   0,0,2,0,  "MTN25QL01G"},
+              //  { 0x20,0xBA,0x22, 2048, SPI_READ_QUAD,      108,SSPLL1_108M_REGS,   0,0,2,0,  "MT25QL02G"},
+              #endif
+ 845          //
+ 846          /*spansion #CS deselect time(SHSL):10nS*/
+ 847          /* spansion does not have SPICMD_EN4B(B7h) command, do not try 256 or 512Mbit */
+ 848          //  { 0x01,0x02,0x17, 64,   SPI_READ_QUADIO,    80, SSPLL1_80M_REGS,    0,0,0,0,  "S25FL064P"},
+ 849          //  { 0x01,0x02,0x18, 128,  SPI_READ_QUADIO,    90, SSPLL1_90M_REGS,    0,0,0,0,  "S25FL128S"},
+ 850          //  { 0x01,0x02,0x19, 256,  SPI_READ_QUADIO,    90, SSPLL1_90M_REGS,    0,0,0,0,  "S25FL256S"},
+ 851          //  { 0x01,0x02,0x20, 512,  SPI_READ_QUADIO,    90, SSPLL1_90M_REGS,    0,0,0,0,  "S25FL512S"},
+ 852          //  { 0x01,0x02,0x1B, 1024, SPI_READ_QUADIO,    90, SSPLL1_90M_REGS,    0,0,0,0,  "S70FL01GS"},
+ 853          //
+ 854          /*gigabyte #CS deselect time(SHSL):20nS*/
+ 855          //  { 0xC8,0x40,0x15, 16,   SPI_READ_QUADIO,    108,SSPLL1_108M_REGS,   0,0,2,0,  "GD25Q16B"},
+ 856          //  { 0xC8,0x40,0x16, 32,   SPI_READ_QUADIO,    108,SSPLL1_108M_REGS,   0,0,2,0,  "GD25Q32B"},
+ 857          //  { 0xC8,0x40,0x17, 64,   SPI_READ_QUADIO,    108,SSPLL1_108M_REGS,   0,0,2,0,  "GD25Q64C"},
+ 858          //  { 0xC8,0x40,0x18, 128,  SPI_READ_QUADIO,    80, SSPLL1_80M_REGS,    0,0,2,0,  "GD25Q128C"},
+ 859          /*  { 0xC8,0x40,0x20, 512,  SPI_READ_QUADIO,    104,SSPLL1_104M_REGS,   0,0,2,0,  "GD25Q512MC"}, No Sample*/
+ 860          //
+ 861          /*ISSI*/
+ 862          /*
+ 863           tCEH CE# High Time 7nS
+ 864           tCS CE# Setup Time 6nS
+ 865           tCH CE# Hold Time 6nS
+ 866          */
+ 867            { 0x9D,0x60,0x18, 128,  SPI_READ_QUADIO,    104,SSPLL1_104M_REGS,   0,0,0,0,  "IC25LP128"},
+ 868          //  { 0x9D,0x60,0x18, 128,  SPI_READ_QUAD,      133,SSPLL1_104M_REGS,   0,0,0,0,  "IC25LP128"}, /*NG*/
+ 869          //
+ 870            /* last item need this for unknown SpiFlash */
+ 871            { 0x00,0x00,0x00,}
+ 872          };
+ 873          struct SPIFLASH_DIMEMSION *spiflash_chip;
+ 874          
+ 875          
+ 876          //#if 0
+ 877          //BYTE is_micron_512(void)
+ 878          //{
+ 879          //  if(spiflash_chip->mid==0x20 && spiflash_chip->did1==0x20)
+ 880          //    return TRUE;
+ 881          //  return FALSE;
+ 882          //}
+ 883          //#endif
+ 884          
+ 885          BYTE is_micron_256or512(void)
+ 886          {
+ 887   1        if(spiflash_chip->mid==0x20) {
+ 888   2          if(spiflash_chip->did1==0x19
+ 889   2          || spiflash_chip->did1==0x20)
+ 890   2            return TRUE;
+ 891   2        }
+ 892   1        return FALSE;
+ 893   1      }
+ 894          
+ 895          //#if 0
+ 896          //BYTE is_macronix_256(void)
+ 897          //{
+ 898          //  if(spiflash_chip->mid==0xC2 && spiflash_chip->did1==0x19)
+ 899          //    return TRUE;
+ 900          //  return FALSE;
+ 901          //}
+ 902          //#endif
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 16  
+
+ 903          //#if 0
+ 904          //BYTE is_winbond_256(void)
+ 905          //{
+ 906          //  if(spiflash_chip->mid==0xEF && spiflash_chip->did1==0x19)
+ 907          //    return TRUE;
+ 908          //  return FALSE;
+ 909          //}
+ 910          //#endif
+ 911          
+ 912          /*!
+ 913           * check_spiflash_status_register
+ 914           *
+ 915           * @return TRUE FALSE
+ 916           */
+ 917          BYTE check_spiflash_status_register(BYTE cmd, BYTE rsize, BYTE mask0, BYTE check0, BYTE mask1, BYTE check1
+             -)
+ 918          {
+ 919   1        BYTE bTemp,bTemp1;
+ 920   1      
+ 921   1        SpiFlash_DmaCmd(cmd, DMA_TARGET_CHIP, 0x4D0, (WORD)rsize, SPI_CMD_OPT_NONE);
+ 922   1        SpiFlash_wait_done(2, 5);
+ 923   1      
+ 924   1        /* read back status value from REG4D0 */
+ 925   1        bTemp = ReadTW88(REG4D0);
+ 926   1        /* mask and then check */
+ 927   1        if((bTemp & mask0) != check0)
+ 928   1          return FALSE;
+ 929   1        if(rsize==2) {
+ 930   2          bTemp1 = ReadTW88(REG4D1);
+ 931   2          if((bTemp1 & mask1) != check1)
+ 932   2            return FALSE;
+ 933   2        }
+ 934   1        return TRUE;
+ 935   1      }
+ 936          
+ 937          /*!
+ 938          * function pointer method on uVerion makes RECURSIVE FUNCTION CALL warning.
+ 939          * DO NOT USE a function pointer method...
+ 940          *
+ 941          * @return TRUE FALSE
+ 942          */
+ 943          BYTE quadio_check_all(void)
+ 944          {
+ 945   1        BYTE ret;
+ 946   1        BYTE mid=spiflash_chip->mid;
+ 947   1      
+ 948   1        switch(mid) {
+ 949   2        case SPIFLASH_MID_EON:
+ 950   2        case SPIFLASH_MID_MX:
+ 951   2        case SPIFLASH_MID_ISSI:
+ 952   2          return check_spiflash_status_register(SPICMD_RDSR,1,0x40,0x40,0,0);
+ 953   2      
+ 954   2        case SPIFLASH_MID_WB:
+ 955   2        case SPIFLASH_MID_SPANSION:
+ 956   2        case SPIFLASH_MID_GIGA:
+ 957   2          return check_spiflash_status_register(SPICMD_RDSR2,1,0x02,0x02,0,0);
+ 958   2      
+ 959   2        case SPIFLASH_MID_MICRON:
+ 960   2          /* check Non-volatile */
+ 961   2          if(spiflash_chip->fast_mode ==5)  //QuadIO need 6 dummy. clear RESET/HOLD
+ 962   2            ret=check_spiflash_status_register(SPICMD_RDNVREG,2,0x10,0x00,0xF0,0x60);
+ 963   2          else                //QuadO need 8 dummy. clear RESET/HOLD
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 17  
+
+ 964   2            ret=check_spiflash_status_register(SPICMD_RDNVREG,2,0x10,0x00,0xF0,0x80);
+ 965   2          // if is_micron_512, use SPICMD_RDFREG,0x06.
+ 966   2          //   (pol:low,bit:7.  try bit6)
+ 967   2          if(spiflash_chip->did1==0x20)
+ 968   2            /* read FlagStatus register. bit:6 Pol:Low */
+ 969   2            SpiFlashSetupBusyCheck(SPICMD_RDFREG,0x06);
+ 970   2          return ret;
+ 971   2        default:
+ 972   2          return FALSE;
+ 973   2        } 
+ 974   1      }
+ 975          
+ 976          BYTE quadio_enable_all(void)
+ 977          {
+ 978   1        BYTE mid=spiflash_chip->mid;
+ 979   1        BYTE ret;
+ 980   1      
+ 981   1        switch(mid) {
+ 982   2        case SPIFLASH_MID_EON:
+ 983   2        case SPIFLASH_MID_MX:
+ 984   2        case SPIFLASH_MID_ISSI:
+ 985   2          SpiFlash_WriteEnable();
+ 986   2          SPI_CmdBuffer[0]=0x40; 
+ 987   2          SpiFlash_DmaCmd(SPICMD_WRSR, DMA_TARGET_CHIP | 0x01, 0, 0, SPI_CMD_OPT_BUSY);
+ 988   2          SpiFlash_wait_done(10,10);
+ 989   2          ret=SpiFlash_check_busy(10,10);
+ 990   2          break;
+ 991   2        case SPIFLASH_MID_WB:
+ 992   2          if(spiflash_chip->did1==0x18) { /* quadio_enable_winbond_64 */
+ 993   3            SpiFlash_WriteEnable();
+ 994   3            SPI_CmdBuffer[0]=0x00;
+ 995   3            SPI_CmdBuffer[1]=0x02;
+ 996   3            SpiFlash_DmaCmd(SPICMD_WRSR, DMA_TARGET_CHIP | 0x02, 0, 0, SPI_CMD_OPT_BUSY);
+ 997   3            SpiFlash_wait_done(10,10);
+ 998   3            ret=SpiFlash_check_busy(10,10);
+ 999   3          }
+1000   2          else {
+1001   3            SpiFlash_WriteEnable();
+1002   3            SPI_CmdBuffer[0]=0x02;
+1003   3            SpiFlash_DmaCmd(SPICMD_WRSR2, DMA_TARGET_CHIP | 0x01, 0, 0, SPI_CMD_OPT_BUSY);
+1004   3            SpiFlash_wait_done(10,10);
+1005   3            ret=SpiFlash_check_busy(10,10);
+1006   3          }
+1007   2            break;
+1008   2        case SPIFLASH_MID_MICRON:
+1009   2      #if 0 //micron_NonVolatile:
+                  SpiFlash_WriteEnable();
+                  SPI_CmdBuffer[0]=0xEF;  //LSB. [4] is a disable Reset/Hold. DO not write 0xF7. It will be corruptted.
+                  SPI_CmdBuffer[1]=0x6F;  //MSB. [7:4] is dummy cycle
+                  SpiFlash_DmaCmd(SPICMD_WDNVREG, DMA_TARGET_CHIP | 0x02, 0, 0, SPI_CMD_OPT_BUSY);
+                  SpiFlash_wait_done(10,10);
+                  ret=SpiFlash_check_busy(10,10);
+                  Puts("\n\rNonVolatile set QuadIO and 6 dummy." );
+                  Puts("\n\r==========================================" );
+                  Puts("\n\r===!!!You have to reboot your system!!!===" );
+                  Puts("\n\r==========================================" );
+                  break;
+              #else //micron_volatile
+1022   2          SpiFlash_WriteEnable();
+1023   2        
+1024   2          if(spiflash_chip->fast_mode ==5)
+1025   2            /* for QuadIO 1-4-4 mode with 6 dummy cycle */  
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 18  
+
+1026   2            SPI_CmdBuffer[0]=0x6B;
+1027   2          else
+1028   2            /* for Quad and Fast with 8 dummy cycle. do not try Dual. */
+1029   2            SPI_CmdBuffer[0]=0x8B;  
+1030   2          SpiFlash_DmaCmd(SPICMD_WDVREG, DMA_TARGET_CHIP | 0x01, 0, 0, SPI_CMD_OPT_BUSY);
+1031   2          SpiFlash_wait_done(10,10);
+1032   2          ret=SpiFlash_check_busy(10,10);
+1033   2        
+1034   2          SpiFlash_WriteEnable();
+1035   2        
+1036   2          //Micron has different register meaning depend on thier chip.
+1037   2          //We used 0xCF, and tried 0xEF, and now, we are using 0xE7.
+1038   2          SPI_CmdBuffer[0]=0xE7;
+1039   2          SpiFlash_DmaCmd(SPICMD_WDVEREG, DMA_TARGET_CHIP | 0x01, 0, 0, SPI_CMD_OPT_BUSY);
+1040   2          SpiFlash_wait_done(10,10);
+1041   2          ret=SpiFlash_check_busy(10,10);
+1042   2          break;
+1043   2      #endif
+1044   2        case SPIFLASH_MID_SPANSION:
+1045   2          SpiFlash_WriteEnable();
+1046   2      Printf("\ntest %d",__LINE__);
+1047   2          SpiFlash_DmaCmd(SPICMD_RDSR, DMA_TARGET_CHIP, 0x4D0, 1, DMA_OPT_NONE);
+1048   2          SpiFlash_wait_done(10,10);
+1049   2          SPI_CmdBuffer[0] = ReadTW88(REG4D0);   /* Input Status Register-1 */
+1050   2      
+1051   2          SpiFlash_WriteEnable();
+1052   2              //Configuration Register 1 (CR1)   P58
+1053   2          SPI_CmdBuffer[1]=0x02; /* Input Configuration Register */
+1054   2          SpiFlash_DmaCmd(SPICMD_WRSR, DMA_TARGET_CHIP | 0x02, 0, 0, SPI_CMD_OPT_BUSY);
+1055   2      Printf("\ntest %d",__LINE__);
+1056   2          SpiFlash_wait_done(10,10);
+1057   2      Printf("\ntest %d",__LINE__);
+1058   2          ret=SpiFlash_check_busy(10,10);
+1059   2      Printf("\ntest %d",__LINE__);
+1060   2          break;
+1061   2        case SPIFLASH_MID_GIGA:
+1062   2          if(spiflash_chip->did1==0x15
+1063   2          || spiflash_chip->did1==0x16) { //giga_small
+1064   3            BYTE status0,status1;
+1065   3      
+1066   3            SpiFlash_DmaCmd(SPICMD_RDSR, DMA_TARGET_CHIP, 0x4D0, 1, DMA_OPT_NONE);
+1067   3            SpiFlash_wait_done(10,10);
+1068   3            status0 = ReadTW88(REG4D0);
+1069   3      
+1070   3            SpiFlash_DmaCmd(SPICMD_RDSR2, DMA_TARGET_CHIP, 0x4D0, 1, DMA_OPT_NONE);
+1071   3            SpiFlash_wait_done(10,10);
+1072   3            status1 = ReadTW88(REG4D0);
+1073   3          
+1074   3            SpiFlash_WriteEnable();
+1075   3      
+1076   3            SPI_CmdBuffer[0]=status0;
+1077   3            SPI_CmdBuffer[1]=status1 | 0x02;
+1078   3            SpiFlash_DmaCmd(SPICMD_WRSR, DMA_TARGET_CHIP | 0x02, 0, 0, SPI_CMD_OPT_BUSY);
+1079   3            SpiFlash_wait_done(10,10);
+1080   3            ret=SpiFlash_check_busy(10,10);
+1081   3            break;
+1082   3          }
+1083   2          else {
+1084   3            BYTE status;
+1085   3      
+1086   3            SpiFlash_DmaCmd(SPICMD_RDSR2, DMA_TARGET_CHIP, 0x4D0, 1, DMA_OPT_NONE);
+1087   3            SpiFlash_wait_done(10,10);
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 19  
+
+1088   3            status = ReadTW88(REG4D0);
+1089   3      
+1090   3            SpiFlash_WriteEnable();
+1091   3      
+1092   3            SPI_CmdBuffer[0]= status | 0x02;
+1093   3            SpiFlash_DmaCmd(SPICMD_WRSR2, DMA_TARGET_CHIP | 0x01, 0, 0, SPI_CMD_OPT_BUSY);
+1094   3            SpiFlash_wait_done(10,10);
+1095   3            ret=SpiFlash_check_busy(10,10);
+1096   3            break;
+1097   3          }
+1098   2        }
+1099   1        return 0;
+1100   1      }
+1101          
+1102          BYTE check_4b_all(void)
+1103          {
+1104   1        BYTE mid=spiflash_chip->mid;
+1105   1      
+1106   1        switch(mid) {
+1107   2        case SPIFLASH_MID_MX:
+1108   2          return check_spiflash_status_register(SPICMD_RDCR,1,0x20,0x20,0,0);
+1109   2        case SPIFLASH_MID_MICRON:
+1110   2          return check_spiflash_status_register(SPICMD_RDFREG,1,0x01,0x01,0,0);
+1111   2        case SPIFLASH_MID_WB:
+1112   2          return check_spiflash_status_register(SPICMD_RDSR3,1,0x01,0x01,0,0);
+1113   2        case SPIFLASH_MID_GIGA: /* I have only 128, so I don't know */
+1114   2        case SPIFLASH_MID_ISSI: /* I have only 128, so I don't know */
+1115   2          return FALSE;
+1116   2        case SPIFLASH_MID_EON:
+1117   2        case SPIFLASH_MID_SPANSION:
+1118   2        default:
+1119   2          return check_spiflash_status_register(SPICMD_RDINFO,1,0x04,0x04,0,0);     
+1120   2        }
+1121   1      }
+1122          
+1123          
+1124          /*!
+1125           *  Read JEDEC id and search table.
+1126           *  If fail, it will have a {0x00,0x00,0x00,} table.
+1127           */
+1128          struct SPIFLASH_DIMEMSION *find_spiflash_chip(void)
+1129          {
+1130   1        struct SPIFLASH_DIMEMSION *spiflash1_chip;
+1131   1        BYTE mid,did0,did1;
+1132   1        BYTE ret;
+1133   1        
+1134   1        SpiFlash_DmaCmd(SPICMD_RDID,DMA_TARGET_CHIP, 0x4D0, 3, DMA_OPT_NONE);
+1135   1        ret=SpiFlash_wait_done(10,10);
+1136   1        if(ret) {
+1137   2          Puts(" SPICMD_RDID fail");
+1138   2          mid = 0;
+1139   2          did0 = 0;
+1140   2          did1 = 0;
+1141   2              /* RDID DMA was failed. */
+1142   2              return NULL;
+1143   2        }
+1144   1      
+1145   1        mid  = ReadTW88(REG4D0);  //manufacturer id
+1146   1        did0 = ReadTW88(REG4D1);  //device id0
+1147   1        did1 = ReadTW88(REG4D2);  //device id1
+1148   1        Printf(" %02bx:%02bx:%02bx", mid,did0,did1);
+1149   1      
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 20  
+
+1150   1        spiflash1_chip = spiflash_chip_table; 
+1151   1        while(spiflash1_chip->mid) {
+1152   2          if(spiflash1_chip->mid == mid) {
+1153   3            if(spiflash1_chip->did0 == did0
+1154   3            && spiflash1_chip->did1 == did1) {
+1155   4              /* found */
+1156   4              Printf(" %s", spiflash1_chip->name);
+1157   4              return spiflash1_chip;
+1158   4            }
+1159   3          }
+1160   2          spiflash1_chip++;
+1161   2        }
+1162   1        Puts(" search fail");
+1163   1        Puts("\n\rWarning:Unknown SPIFLASH. System can be corrupted");
+1164   1        return spiflash1_chip; /*unknown chip. It has spiflash_chip->mid=0.*/
+1165   1      }
+1166          
+1167          extern DWORD e3p_spi_start_addr;
+1168          /*!
+1169           * initiaize spiflash
+1170           */
+1171          BYTE init_spiflash_chip(void)
+1172          {
+1173   1        BYTE ret;
+1174   1      
+1175   1        Puts("SpiFlash ");
+1176   1        spiflash_chip = find_spiflash_chip();
+1177   1        if(spiflash_chip == NULL) {
+1178   2              /* something wrong...use NoINIT mode */
+1179   2          return ERR_FAIL;
+1180   2        }
+1181   1        if(spiflash_chip->mid == 0) {
+1182   2          //---------------------
+1183   2              //FW failed to detect SPIFLASH.
+1184   2          //FAST is better than single.
+1185   2          SpiFlash_SetReadModeByRegister(SPI_READ_FAST);
+1186   2          Puts("mid was 0. FW uses FAST mode\n");
+1187   2              //if(fWatchdog)
+1188   2              //    return ERR_FAIL;
+1189   2          return ERR_SUCCESS;
+1190   2        }
+1191   1        /* Check fast read mode. Is it QuadO or QuadIO ? */
+1192   1        ret = quadio_check_all();
+1193   1        if(ret==0) {
+1194   2              /* Quad did not enabled, enable Quad */
+1195   2          Puts(" EnQuad");
+1196   2          ret=quadio_enable_all();
+1197   2          Puts(".");
+1198   2        }
+1199   1      
+1200   1        /* setup fast read mode; Quad or QuadIO */
+1201   1        SpiFlash_SetReadModeByRegister(spiflash_chip->fast_mode);
+1202   1        if(spiflash_chip->fast_mode ==3)  Puts(" QuadO");
+1203   1        else                Puts(" QuadIO");    
+1204   1      
+1205   1        if(spiflash_chip->size > 128) {
+1206   2              /* enable 4Byte address mode */
+1207   2          SpiFlash_Set4BytesAddress(ON);
+1208   2          if(SpiFlash4ByteAddr) 
+1209   2            Puts(" En4B");
+1210   2        }
+1211   1        Puts("\n");
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 21  
+
+1212   1      
+1213   1        if(spiflash_chip->mid==SPIFLASH_MID_SPANSION) {
+1214   2          //S25FL 256 S AG M F I 0 0 1
+1215   2          //                       |
+1216   2          //                       +- Model Number (Sector Type)
+1217   2          //TW8836 need 0. they call it as "Uniform 64-kB sectors"
+1218   2          //    = A hybrid of 32 x 4-kB sectors with all remaining sectors being 64 kB, 
+1219   2              //      with a 256B programming buffer.
+1220   2          //
+1221   2          /*
+1222   2          The main flash array is divided into erase units called sectors. 
+1223   2              The sectors are organized either as a hybrid combination of 4-kB and 64-kB sectors, 
+1224   2              or as uniform 256-kbyte sectors. The sector organization depends on
+1225   2          the device model selected, see Ordering Information on page 149. 
+1226   2      
+1227   2          If it is S25FL256S, I will use 0x01FE0000~0x01FFFFFF.
+1228   2          */
+1229   2          if     (spiflash_chip->did1==0x17) e3p_spi_start_addr = 0x00800000 - 0x20000; //64Mbit
+1230   2          else if(spiflash_chip->did1==0x18) e3p_spi_start_addr = 0x01000000 - 0x20000; //128Mbit
+1231   2          else if(spiflash_chip->did1==0x19) e3p_spi_start_addr = 0x02000000 - 0x20000; //256Mbit
+1232   2          else if(spiflash_chip->did1==0x20) e3p_spi_start_addr = 0x04000000 - 0x20000; //512Mbit
+1233   2          else {
+1234   3            Puts("\n\rError. Spansion (512 or bigger) does not support 4kByte Secotr");
+1235   3          }
+1236   2          }
+1237   1      
+1238   1        return ERR_SUCCESS;
+1239   1      }
+1240          
+1241          
+1242          /**
+1243           *
+1244           * param  cmd   status read command
+1245           * param  control
+1246           *      [3] Busy polarity 0:Low, 1:High
+1247           *      [2:0] Busy bit in the status
+1248           * 
+1249           * register 
+1250            REG4D8[7:0] read status command
+1251            REG4D9[3] busy polarity
+1252            REG4D9[2:0] busy bit
+1253            REG4C4[2] enable busy check
+1254           *      
+1255           */
+1256          /*
+1257          normally the status read command is 0x05
+1258          status has below flags
+1259          [0] WIP(WriteInProgress)  1=write operation
+1260          So, the default is SpiFlashBusyCheck(0x05, 0x08);
+1261          but, N25Q512 has different.
+1262            cmd: 0x05 Read Status Register
+1263            cmd: 0x70 Read Flag Status Register
+1264          
+1265          Status Register
+1266          [0] Write in progress 1:Busy. 
+1267          
+1268          Flag Status Register
+1269          [7] Program or erase controller
+1270          [4] Program 1:Failure 
+1271          */
+1272          #define STATUS_REG_READ_CMD 0x05
+1273          #define STATUS_REG_WIP_LOC  0
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 22  
+
+1274          #define STATUS_REG_WIP_BUSY 1
+1275          
+1276          void SpiFlashSetupBusyCheck(BYTE cmd, BYTE busy_control)
+1277          {
+1278   1        WriteTW88(REG4D8,cmd);
+1279   1        WriteTW88(REG4D9,busy_control); 
+1280   1      }
+1281          
+1282          
+1283          //=============================================================================
+1284          //
+1285          //=============================================================================
+1286          //-----------------------------------------------------------------------------
+1287          /**
+1288          * set SpiFlash ReadMode
+1289          *
+1290          * updata HW and, SPICMD_x_READ and SPICMD_x_BYTES.
+1291          *
+1292          * @param mode
+1293          * - 0: slow CMD:0x03  BYTE:4
+1294          * - 1: fast CMD:0x0B  BYTE:5
+1295          * - 2: dual CMD:0x3B  BYTE:5
+1296          * - 3: quad CMD:0x6B  BYTE:5
+1297          * - 4: Dualo  CMD:0xBB  BYTE:5
+1298          * - 5: QuadIo CMD:0xEB  BYTE:7
+1299          * - 6: Dedge  CMD:0xED  BYTE:12
+1300          */
+1301          void SpiFlash_SetReadModeByRegister( BYTE mode )
+1302          {
+1303   1        WriteTW88(REG4C0, (ReadTW88(REG4C0) & ~0x07) | mode);
+1304   1      
+1305   1        switch( mode ) {
+1306   2          case 0: //--- Slow
+1307   2            //max speed is 50MHz.
+1308   2            //but, normally, 54MHz is working.
+1309   2            SPICMD_x_READ = 0x03; 
+1310   2            SPICMD_x_BYTES  = 4;  //(8+24)/8
+1311   2            break;
+1312   2          case 1: //--- Fast
+1313   2            SPICMD_x_READ = 0x0b; 
+1314   2            SPICMD_x_BYTES  = 5;   //(8+24+8dummy)/8.
+1315   2            break;
+1316   2          case 2: //--- Dual
+1317   2            SPICMD_x_READ = 0x3b;
+1318   2            SPICMD_x_BYTES  = 5;   //(8+24+8dummy)/8
+1319   2            break;
+1320   2          case 3: //--- Quad
+1321   2            SPICMD_x_READ = 0x6b; 
+1322   2            SPICMD_x_BYTES  = 5;   //(8+24+8dummy)/8
+1323   2            break;
+1324   2          case 4: //--- Dual-IO
+1325   2            SPICMD_x_READ = 0xbb; 
+1326   2            SPICMD_x_BYTES  = 5;  //(8+(12+4dummy)*2lines)/8
+1327   2        
+1328   2            break;
+1329   2          case 5: //--- Quad-IO. HW using fixed 6 dummy cycle.
+1330   2            SPICMD_x_READ = 0xeb;  
+1331   2            SPICMD_x_BYTES  = 7;   //(8+(6+6dummy)*4lines)/8
+1332   2            break;
+1333   2      
+1334   2          case 6: //--- DEdge. DTR(Double Transfer Rate). DO NOT USE.
+1335   2            SPICMD_x_READ = 0xed;  
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 23  
+
+1336   2            SPICMD_x_BYTES  = 12;   
+1337   2            break;
+1338   2      
+1339   2          default:
+1340   2            //fast read mode can support Extender/Qual/Quad.
+1341   2            SPICMD_x_READ = 0x0b; 
+1342   2            SPICMD_x_BYTES  = 5;   //(8+24+8)/8. 8 dummy
+1343   2            ePrintf("Unknow SPI rmode:%bx",mode);
+1344   2            ePrintf(" set as fast !!!\n");
+1345   2            break;    
+1346   2        }
+1347   1      }
+1348          
+1349          
+1350          //*****************************************************************************
+1351          //
+1352          //    EEPROM Emulation
+1353          //
+1354          //*****************************************************************************
+1355          //  Format: For each 4 bytes [Index] [Index^FF] [Data] [Data^FF]
+1356          //
+1357          //
+1358          #ifdef USE_SFLASH_EEPROM
+1359          //moved to E3P_c24.lib or E3P_bank.lib
+1360          #endif
+1361          
+1362          //=============================================================================
+1363          // Note
+1364          //=============================================================================
+1365          /*!
+1366           * Micron SpiFlash
+1367          
+1368          //BK131119...0xEF,0x6F is correct N25Q256. It uses a little-endian.
+1369          //micron datasheet description.
+1370          //N25Q256A ID:20_BA_19            //N25Q128A ID:20_BA_18
+1371          //[15:12]   dummy cycles  = 0110      //[15:12]   dummy cycles  = 0110
+1372          //[11:9]    XIP       = 111     //[11:9]    XIP       = 111
+1373          //[8:6]   output      = 111     //[8:6]   output      = 111
+1374          //[5]     reserved    = 1       //[5]     reserved    = 1
+1375          //[4]     Reset/hold    = 1       //[4]     Reset/hold    = 1
+1376          //[3]     QuadIo      = 0       //[3]     QuadIo      = 0
+1377          //[2]     DualIO      = 1       //[2]     DualIO      = 1
+1378          //[1]   128M segment  = 1       //[1]   Reserved    = 1
+1379          //[0]     Address     = 1       //[0]     Lock      = 1. DO NOT WRITE 0.
+1380          //
+1381          //----EF:6F is working. 
+1382          //----if you write F7:6F, N25Q128A & N25Q256A and it can not recover.
+1383          //validated register description.
+1384          //first BYTE
+1385          //[7:3]
+1386          //[4]   Disable Reset/Hold:0 to use DQ3.
+1387          //[3:0]
+1388          //second BYTE
+1389          //[7:4] dummy cycle:6=0110.
+1390          //[3:0]
+1391          */
+1392          
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 24  
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com00A0 (BEGIN)
+0000         L?0161:
+0000         L?0162:
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 24D0              ADD     A,#0D0H
+0007         L?0163:
+0007 F582              MOV     DPL,A
+0009 E500        E     MOV     A,regTW88
+000B 3404              ADDC    A,#04H
+000D F583              MOV     DPH,A
+000F 759300      E     MOV     DPX,#?C?XDATASEG
+0012 22                RET     
+0013         L?0164:
+0013         L?0165:
+0013 90000000    R     MOV     DPTR,#spiflash_chip
+0017         L?0166:
+0017 E0                MOVX    A,@DPTR
+0018 FB                MOV     R3,A
+0019 A3                INC     DPTR
+001A E0                MOVX    A,@DPTR
+001B FA                MOV     R2,A
+001C A3                INC     DPTR
+001D E0                MOVX    A,@DPTR
+001E 22                RET     
+001F         L?0167:
+001F E0                MOVX    A,@DPTR
+0020 FC                MOV     R4,A
+0021 A3                INC     DPTR
+0022 E0                MOVX    A,@DPTR
+0023 FD                MOV     R5,A
+0024 A3                INC     DPTR
+0025 E0                MOVX    A,@DPTR
+0026 FE                MOV     R6,A
+0027 A3                INC     DPTR
+0028 E0                MOVX    A,@DPTR
+0029 FF                MOV     R7,A
+002A 110000      E     ACALL   ?C?ULSHR
+002D 90000000    R     MOV     DPTR,#SPI_CmdBuffer
+0031         L?0168:
+0031 EF                MOV     A,R7
+0032 F0                MOVX    @DPTR,A
+0033 90000000    R     MOV     DPTR,#spiaddr
+0037         L?0169:
+0037 E0                MOVX    A,@DPTR
+0038 FC                MOV     R4,A
+0039 A3                INC     DPTR
+003A E0                MOVX    A,@DPTR
+003B FD                MOV     R5,A
+003C         L?0170:
+003C A3                INC     DPTR
+003D E0                MOVX    A,@DPTR
+003E FE                MOV     R6,A
+003F A3                INC     DPTR
+0040 E0                MOVX    A,@DPTR
+0041 FF                MOV     R7,A
+0042 22                RET     
+0043         L?0171:
+0043         L?0172:
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 25  
+
+0043 90000000    R     MOV     DPTR,#SPI_CmdBuffer
+0047         L?0173:
+0047 F0                MOVX    @DPTR,A
+0048         L?0174:
+0048 E4                CLR     A
+0049 90000000    R     MOV     DPTR,#?_SpiFlash_DmaCmd?BYTE+04H
+004D F0                MOVX    @DPTR,A
+004E A3                INC     DPTR
+004F F0                MOVX    @DPTR,A
+0050 A3                INC     DPTR
+0051 7404              MOV     A,#04H
+0053 F0                MOVX    @DPTR,A
+0054 E4                CLR     A
+0055 FB                MOV     R3,A
+0056 FA                MOV     R2,A
+0057 22                RET     
+0058         L?0175:
+0058 44C0              ORL     A,#0C0H
+005A FD                MOV     R5,A
+005B         L?0176:
+005B E0                MOVX    A,@DPTR
+005C FA                MOV     R2,A
+005D A3                INC     DPTR
+005E E0                MOVX    A,@DPTR
+005F FB                MOV     R3,A
+0060         L?0177:
+0060 A3                INC     DPTR
+0061 E0                MOVX    A,@DPTR
+0062 FF                MOV     R7,A
+0063 A3                INC     DPTR
+0064 E0                MOVX    A,@DPTR
+0065 CF                XCH     A,R7
+0066         L?0178:
+0066 90000000    R     MOV     DPTR,#?_SpiFlash_DmaCmd?BYTE+04H
+006A F0                MOVX    @DPTR,A
+006B A3                INC     DPTR
+006C 22                RET     
+006D         L?0180:
+006D E9                MOV     A,R1
+006E         L?0181:
+006E 2402              ADD     A,#02H
+0070         L?0182:
+0070 F9                MOV     R1,A
+0071 E4                CLR     A
+0072 3A                ADDC    A,R2
+0073 FA                MOV     R2,A
+0074 010000      E     AJMP    ?C?CLDPTR
+0077         L?0184:
+0077 7401              MOV     A,#01H
+0079         L?0185:
+0079 90000000    R     MOV     DPTR,#?_check_spiflash_status_register?BYTE+03H
+007D         L?0186:
+007D F0                MOVX    @DPTR,A
+007E E4                CLR     A
+007F A3                INC     DPTR
+0080 F0                MOVX    @DPTR,A
+0081 A3                INC     DPTR
+0082 F0                MOVX    @DPTR,A
+0083 22                RET     
+0084         L?0187:
+0084         L?0188:
+0084 7B00        R     MOV     R3,#MBYTE ?SC_83
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 26  
+
+0086 7A00        R     MOV     R2,#HIGH ?SC_83
+0088 7900        R     MOV     R1,#LOW ?SC_83
+008A 7404              MOV     A,#04H
+008C         L?0189:
+008C 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0090 F0                MOVX    @DPTR,A
+0091 A3                INC     DPTR
+0092 22                RET     
+0093         L?0191:
+0093 90000000    R     MOV     DPTR,#option
+0097 E0                MOVX    A,@DPTR
+0098 4401              ORL     A,#01H
+009A         L?0192:
+009A FF                MOV     R7,A
+009B 759300      E     MOV     DPX,#?C?XDATASEG
+009E E500        E     MOV     A,regTW88+01H
+00A0 22                RET     
+00A1         L?0193:
+00A1 FD                MOV     R5,A
+00A2 E4                CLR     A
+00A3 3404              ADDC    A,#04H
+00A5 FC                MOV     R4,A
+00A6 759300      E     MOV     DPX,#?C?XDATASEG
+00A9 E500        E     MOV     A,regTW88+01H
+00AB 2D                ADD     A,R5
+00AC F582              MOV     DPL,A
+00AE E500        E     MOV     A,regTW88
+00B0 3C                ADDC    A,R4
+00B1 F583              MOV     DPH,A
+00B3 759300      E     MOV     DPX,#?C?XDATASEG
+00B6 EE                MOV     A,R6
+00B7 F0                MOVX    @DPTR,A
+00B8 0F                INC     R7
+00B9 22                RET     
+00BA         L?0194:
+00BA EF                MOV     A,R7
+00BB         L?0195:
+00BB F0                MOVX    @DPTR,A
+00BC E4                CLR     A
+00BD         L?0196:
+00BD A3                INC     DPTR
+00BE F0                MOVX    @DPTR,A
+00BF 7BD0              MOV     R3,#0D0H
+00C1 7A04              MOV     R2,#04H
+00C3 22                RET     
+00C4         L?0197:
+00C4 90000000    R     MOV     DPTR,#SPICMD_x_READ
+00C8 F0                MOVX    @DPTR,A
+00C9 90000000    R     MOV     DPTR,#SPICMD_x_BYTES
+00CD 22                RET     
+00CE         L?0198:
+00CE         L?0199:
+00CE AE07              MOV     R6,AR7
+00D0 90000000    R     MOV     DPTR,#SPICMD_x_BYTES
+00D4 E0                MOVX    A,@DPTR
+00D5 2E                ADD     A,R6
+00D6 24FC              ADD     A,#0FCH
+00D8 FE                MOV     R6,A
+00D9 22                RET     
+00DA         L?0200:
+00DA         L?0201:
+00DA EF                MOV     A,R7
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 27  
+
+00DB F0                MOVX    @DPTR,A
+00DC E4                CLR     A
+00DD A3                INC     DPTR
+00DE F0                MOVX    @DPTR,A
+00DF 90000000    R     MOV     DPTR,#SPICMD_x_READ
+00E3 E0                MOVX    A,@DPTR
+00E4 FF                MOV     R7,A
+00E5 22                RET     
+00E6         L?0202:
+00E6 90000000    R     MOV     DPTR,#wait
+00EA E0                MOVX    A,@DPTR
+00EB FF                MOV     R7,A
+00EC 90000000    R     MOV     DPTR,#i
+00F0 E0                MOVX    A,@DPTR
+00F1 22                RET     
+00F2         L?0203:
+00F2         L?0204:
+00F2 759300      E     MOV     DPX,#?C?XDATASEG
+00F5 E500        E     MOV     A,regTW88+01H
+00F7 24DA              ADD     A,#0DAH
+00F9 22                RET     
+00FA         L?0205:
+00FA 90000000    R     MOV     DPTR,#wait
+00FE E0                MOVX    A,@DPTR
+00FF FF                MOV     R7,A
+0100 90000000    R     MOV     DPTR,#i
+0104 E0                MOVX    A,@DPTR
+0105 22                RET     
+0106         L?0206:
+0106         L?0207:
+0106 90000000    R     MOV     DPTR,#?_SpiFlash_DmaCmd?BYTE+04H
+010A E4                CLR     A
+010B F0                MOVX    @DPTR,A
+010C A3                INC     DPTR
+010D 22                RET     
+010E         L?0208:
+010E E4                CLR     A
+010F 90000000    R     MOV     DPTR,#?_check_spiflash_status_register?BYTE+03H
+0113 F0                MOVX    @DPTR,A
+0114 A3                INC     DPTR
+0115 74F0              MOV     A,#0F0H
+0117 F0                MOVX    @DPTR,A
+0118 A3                INC     DPTR
+0119 22                RET     
+011A         L?0209:
+011A EF                MOV     A,R7
+011B F0                MOVX    @DPTR,A
+011C 90000000    R     MOV     DPTR,#spiaddr
+0120 A3                INC     DPTR
+0121 A3                INC     DPTR
+0122 A3                INC     DPTR
+0123 E0                MOVX    A,@DPTR
+0124 22                RET     
+0125         L?0210:
+0125 EF                MOV     A,R7
+0126 F0                MOVX    @DPTR,A
+0127 AF05              MOV     R7,AR5
+0129 759300      E     MOV     DPX,#?C?XDATASEG
+012C E500        E     MOV     A,regTW88+01H
+012E 22                RET     
+012F         L?0211:
+012F         L?0212:
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 28  
+
+012F F0                MOVX    @DPTR,A
+0130 759300      E     MOV     DPX,#?C?XDATASEG
+0133 E500        E     MOV     A,regTW88+01H
+0135 22                RET     
+0136         L?0213:
+0136 90000000    R     MOV     DPTR,#spiflash1_chip
+013A A3                INC     DPTR
+013B E0                MOVX    A,@DPTR
+013C FA                MOV     R2,A
+013D A3                INC     DPTR
+013E E0                MOVX    A,@DPTR
+013F 22                RET     
+0140         L?0214:
+0140 90000000    R     MOV     DPTR,#SPICMD_x_READ
+0144 F0                MOVX    @DPTR,A
+0145 90000000    R     MOV     DPTR,#SPICMD_x_BYTES
+0149 22                RET     
+             ; FUNCTION Com00A0 (END)
+
+             ; FUNCTION _SpiFlash_wait_done (BEGIN)
+                                           ; SOURCE LINE # 234
+0000 90000000    R     MOV     DPTR,#wait
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 ED                MOV     A,R5
+0008 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 235
+                                           ; SOURCE LINE # 239
+0009 E4                CLR     A
+000A A3                INC     DPTR
+000B F0                MOVX    @DPTR,A
+000C         ?C0001:
+000C 110000      R     ACALL   L?0202
+000F C3                CLR     C
+0010 9F                SUBB    A,R7
+0011 5028              JNC     ?C0002
+                                           ; SOURCE LINE # 240
+0013 759300      E     MOV     DPX,#?C?XDATASEG
+0016 E500        E     MOV     A,regTW88+01H
+0018 24C4              ADD     A,#0C4H
+001A 110000      R     ACALL   L?0163
+001D E0                MOVX    A,@DPTR
+001E 90000000    R     MOV     DPTR,#vdata
+0022 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 241
+0023 E0                MOVX    A,@DPTR
+0024 30E014            JNB     ACC.0,?C0002
+                                           ; SOURCE LINE # 242
+0027         ?C0004:
+                                           ; SOURCE LINE # 243
+0027 90000000    R     MOV     DPTR,#unit
+002B E0                MOVX    A,@DPTR
+002C FF                MOV     R7,A
+002D 7E00              MOV     R6,#00H
+002F 110000      E     ACALL   _delay1ms
+                                           ; SOURCE LINE # 244
+0032 90000000    R     MOV     DPTR,#i
+0036 E0                MOVX    A,@DPTR
+0037 04                INC     A
+0038 F0                MOVX    @DPTR,A
+0039 80D1              SJMP    ?C0001
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 29  
+
+003B         ?C0002:
+                                           ; SOURCE LINE # 245
+003B 110000      R     ACALL   L?0202
+003E 6F                XRL     A,R7
+003F 7025              JNZ     ?C0005
+                                           ; SOURCE LINE # 246
+0041 7B00        R     MOV     R3,#MBYTE ?SC_0
+0043 7A00        R     MOV     R2,#HIGH ?SC_0
+0045 7900        R     MOV     R1,#LOW ?SC_0
+0047 110000      R     ACALL   L?0203
+004A 110000      R     ACALL   L?0163
+004D E0                MOVX    A,@DPTR
+004E 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0052 F0                MOVX    @DPTR,A
+0053 A3                INC     DPTR
+0054 EF                MOV     A,R7
+0055 F0                MOVX    @DPTR,A
+0056 90000000    R     MOV     DPTR,#unit
+005A E0                MOVX    A,@DPTR
+005B 90000000    E     MOV     DPTR,#?_Printf?BYTE+05H
+005F F0                MOVX    @DPTR,A
+0060 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 248
+0063 7F01              MOV     R7,#01H
+0065 22                RET     
+                                           ; SOURCE LINE # 249
+0066         ?C0005:
+                                           ; SOURCE LINE # 250
+0066 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 251
+0068         ?C0006:
+0068 22                RET     
+             ; FUNCTION _SpiFlash_wait_done (END)
+
+             ; FUNCTION _SpiFlash_DmaCmd (BEGIN)
+                                           ; SOURCE LINE # 283
+0000 90000000    R     MOV     DPTR,#cmd
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+;---- Variable 'pBuff' assigned to Register 'R2/R3' ----
+;---- Variable 'target_cmd_len' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 284
+                                           ; SOURCE LINE # 289
+0006 ED                MOV     A,R5
+0007 540F              ANL     A,#0FH
+;---- Variable 'cmd_buff_len' assigned to Register 'R1' ----
+0009 F9                MOV     R1,A
+                                           ; SOURCE LINE # 290
+000A D3                SETB    C
+000B 9404              SUBB    A,#04H
+000D 4002              JC      ?C0007
+                                           ; SOURCE LINE # 291
+000F 7904              MOV     R1,#04H
+0011         ?C0007:
+                                           ; SOURCE LINE # 293
+0011 ED                MOV     A,R5
+0012 04                INC     A
+0013 110000      R     ACALL   L?0192
+0016 24C3              ADD     A,#0C3H
+0018 110000      R     ACALL   L?0163
+001B EF                MOV     A,R7
+001C F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 30  
+
+                                           ; SOURCE LINE # 294
+001D EA                MOV     A,R2
+001E 110000      R     ACALL   L?0192
+0021 24C6              ADD     A,#0C6H
+0023 110000      R     ACALL   L?0163
+0026 EF                MOV     A,R7
+0027 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 295
+0028 AF03              MOV     R7,AR3
+002A 759300      E     MOV     DPX,#?C?XDATASEG
+002D E500        E     MOV     A,regTW88+01H
+002F 24C7              ADD     A,#0C7H
+0031 110000      R     ACALL   L?0163
+0034 EF                MOV     A,R7
+0035 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 296
+0036 90000000    R     MOV     DPTR,#buff_len
+003A E0                MOVX    A,@DPTR
+003B FC                MOV     R4,A
+003C A3                INC     DPTR
+003D E0                MOVX    A,@DPTR
+003E FD                MOV     R5,A
+003F EC                MOV     A,R4
+0040 110000      R     ACALL   L?0192
+0043 24C8              ADD     A,#0C8H
+0045 110000      R     ACALL   L?0163
+                                           ; SOURCE LINE # 297
+0048 110000      R     ACALL   L?0210
+004B 24C9              ADD     A,#0C9H
+004D 110000      R     ACALL   L?0163
+0050 EF                MOV     A,R7
+0051 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 299
+0052 90000000    R     MOV     DPTR,#cmd
+0056 E0                MOVX    A,@DPTR
+0057 110000      R     ACALL   L?0192
+005A 24CA              ADD     A,#0CAH
+005C 110000      R     ACALL   L?0163
+005F EF                MOV     A,R7
+0060 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 300
+;---- Variable 'i' assigned to Register 'R7' ----
+0061 E4                CLR     A
+0062 FF                MOV     R7,A
+0063         ?C0008:
+0063 EF                MOV     A,R7
+0064 C3                CLR     C
+0065 99                SUBB    A,R1
+0066 5017              JNC     ?C0009
+                                           ; SOURCE LINE # 301
+0068 7400        R     MOV     A,#LOW SPI_CmdBuffer
+006A 2F                ADD     A,R7
+006B F582              MOV     DPL,A
+006D E4                CLR     A
+006E 3400        R     ADDC    A,#HIGH SPI_CmdBuffer
+0070 F583              MOV     DPH,A
+0072 759300      E     MOV     DPX,#?C?XDATASEG
+0075 E0                MOVX    A,@DPTR
+0076 FE                MOV     R6,A
+0077 EF                MOV     A,R7
+0078 24CB              ADD     A,#0CBH
+007A 110000      R     ACALL   L?0193
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 31  
+
+007D 80E4              SJMP    ?C0008
+007F         ?C0009:
+                                           ; SOURCE LINE # 303
+007F 110000      R     ACALL   L?0164
+0082 240D              ADD     A,#0DH
+0084 110000      R     ACALL   L?0182
+0087 FF                MOV     R7,A
+0088 603A              JZ      ?C0011
+                                           ; SOURCE LINE # 305
+008A 759300      E     MOV     DPX,#?C?XDATASEG
+008D E500        E     MOV     A,regTW88+01H
+008F 24E1              ADD     A,#0E1H
+0091 110000      R     ACALL   L?0163
+0094 E0                MOVX    A,@DPTR
+0095 90000000    R     MOV     DPTR,#r4e1
+0099 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 306
+009A E0                MOVX    A,@DPTR
+009B 5430              ANL     A,#030H
+009D 6420              XRL     A,#020H
+009F 7023              JNZ     ?C0140
+                                           ; SOURCE LINE # 307
+00A1 E0                MOVX    A,@DPTR
+00A2 FE                MOV     R6,A
+00A3 54F0              ANL     A,#0F0H
+00A5 4F                ORL     A,R7
+00A6 110000      R     ACALL   L?0192
+00A9 24E1              ADD     A,#0E1H
+00AB 110000      R     ACALL   L?0163
+00AE EF                MOV     A,R7
+00AF F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 308
+00B0 110000      R     ACALL   L?0191
+00B3 24C4              ADD     A,#0C4H
+00B5 110000      R     ACALL   L?0163
+00B8 EF                MOV     A,R7
+                                           ; SOURCE LINE # 309
+00B9 110000      R     ACALL   L?0211
+00BC 24E1              ADD     A,#0E1H
+00BE 110000      R     ACALL   L?0163
+00C1 EE                MOV     A,R6
+00C2 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 310
+00C3 22                RET     
+00C4         ?C0011:
+                                           ; SOURCE LINE # 315
+00C4         ?C0140:
+00C4 110000      R     ACALL   L?0191
+00C7 24C4              ADD     A,#0C4H
+00C9 110000      R     ACALL   L?0163
+00CC EF                MOV     A,R7
+00CD F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 317
+00CE         ?C0015:
+00CE 22                RET     
+             ; FUNCTION _SpiFlash_DmaCmd (END)
+
+             ; FUNCTION _SpiFlash_check_busy (BEGIN)
+                                           ; SOURCE LINE # 341
+0000 90000000    R     MOV     DPTR,#wait
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 32  
+
+0006 A3                INC     DPTR
+0007 ED                MOV     A,R5
+0008 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 342
+                                           ; SOURCE LINE # 346
+0009 E4                CLR     A
+000A A3                INC     DPTR
+000B F0                MOVX    @DPTR,A
+000C         ?C0016:
+000C 110000      R     ACALL   L?0205
+000F C3                CLR     C
+0010 9F                SUBB    A,R7
+0011 502D              JNC     ?C0017
+                                           ; SOURCE LINE # 347
+0013 E4                CLR     A
+0014 110000      R     ACALL   L?0178
+0017 F0                MOVX    @DPTR,A
+0018 110000      R     ACALL   L?0196
+001B 7D40              MOV     R5,#040H
+001D 7F05              MOV     R7,#05H
+001F 110000      R     ACALL   _SpiFlash_DmaCmd
+                                           ; SOURCE LINE # 348
+0022 7D0A              MOV     R5,#0AH
+0024 7F0A              MOV     R7,#0AH
+0026 110000      R     ACALL   _SpiFlash_wait_done
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 349
+0029 EF                MOV     A,R7
+002A 6014              JZ      ?C0017
+                                           ; SOURCE LINE # 350
+002C         ?C0019:
+                                           ; SOURCE LINE # 351
+002C 90000000    R     MOV     DPTR,#unit
+0030 E0                MOVX    A,@DPTR
+0031 FF                MOV     R7,A
+0032 7E00              MOV     R6,#00H
+0034 110000      E     ACALL   _delay1ms
+                                           ; SOURCE LINE # 352
+0037 90000000    R     MOV     DPTR,#i
+003B E0                MOVX    A,@DPTR
+003C 04                INC     A
+003D F0                MOVX    @DPTR,A
+003E 80CC              SJMP    ?C0016
+0040         ?C0017:
+                                           ; SOURCE LINE # 353
+0040 110000      R     ACALL   L?0205
+0043 B5071C            CJNE    A,AR7,?C0020
+                                           ; SOURCE LINE # 354
+0046 7B00        R     MOV     R3,#MBYTE ?SC_37
+0048 7A00        R     MOV     R2,#HIGH ?SC_37
+004A 7900        R     MOV     R1,#LOW ?SC_37
+004C 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0050 EF                MOV     A,R7
+0051 F0                MOVX    @DPTR,A
+0052 90000000    R     MOV     DPTR,#unit
+0056 E0                MOVX    A,@DPTR
+0057 90000000    E     MOV     DPTR,#?_Printf?BYTE+04H
+005B F0                MOVX    @DPTR,A
+005C 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 355
+005F 7F01              MOV     R7,#01H
+0061 22                RET     
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 33  
+
+                                           ; SOURCE LINE # 356
+0062         ?C0020:
+                                           ; SOURCE LINE # 357
+0062 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 358
+0064         ?C0021:
+0064 22                RET     
+             ; FUNCTION _SpiFlash_check_busy (END)
+
+             ; FUNCTION SpiFlash_WriteEnable (BEGIN)
+                                           ; SOURCE LINE # 363
+                                           ; SOURCE LINE # 364
+                                           ; SOURCE LINE # 366
+0000 E4                CLR     A
+0001 110000      R     ACALL   L?0178
+0004 F0                MOVX    @DPTR,A
+0005 A3                INC     DPTR
+0006 F0                MOVX    @DPTR,A
+0007 FB                MOV     R3,A
+0008 FA                MOV     R2,A
+0009 7D40              MOV     R5,#040H
+000B 7F06              MOV     R7,#06H
+000D 110000      R     ACALL   _SpiFlash_DmaCmd
+                                           ; SOURCE LINE # 367
+0010 7D05              MOV     R5,#05H
+0012 7F02              MOV     R7,#02H
+0014 110000      R     ACALL   _SpiFlash_wait_done
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 368
+                                           ; SOURCE LINE # 369
+0017         ?C0022:
+0017 22                RET     
+             ; FUNCTION SpiFlash_WriteEnable (END)
+
+             ; FUNCTION _SpiFlash_4B_DmaCmd (BEGIN)
+                                           ; SOURCE LINE # 375
+0000 90000000    R     MOV     DPTR,#cmd
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 376
+                                           ; SOURCE LINE # 379
+0006 BFB709            CJNE    R7,#0B7H,?C0023
+0009 90000000    R     MOV     DPTR,#SpiFlash4ByteAddr
+000D 7401              MOV     A,#01H
+000F F0                MOVX    @DPTR,A
+0010 8013              SJMP    ?C0024
+0012         ?C0023:
+                                           ; SOURCE LINE # 380
+0012 90000000    R     MOV     DPTR,#cmd
+0016 E0                MOVX    A,@DPTR
+0017 B4E908            CJNE    A,#0E9H,?C0025
+001A E4                CLR     A
+001B 90000000    R     MOV     DPTR,#SpiFlash4ByteAddr
+001F F0                MOVX    @DPTR,A
+0020 8003              SJMP    ?C0024
+0022         ?C0025:
+                                           ; SOURCE LINE # 382
+0022 7F01              MOV     R7,#01H
+0024 22                RET     
+0025         ?C0024:
+                                           ; SOURCE LINE # 384
+0025 110000      R     ACALL   is_micron_256or512
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 34  
+
+0028 EF                MOV     A,R7
+0029 6003              JZ      ?C0028
+                                           ; SOURCE LINE # 385
+002B 110000      R     ACALL   SpiFlash_WriteEnable
+002E         ?C0028:
+                                           ; SOURCE LINE # 387
+002E 90000000    R     MOV     DPTR,#cmd
+0032 E0                MOVX    A,@DPTR
+0033 FF                MOV     R7,A
+0034 E4                CLR     A
+0035 110000      R     ACALL   L?0178
+0038 F0                MOVX    @DPTR,A
+0039 A3                INC     DPTR
+003A F0                MOVX    @DPTR,A
+003B FB                MOV     R3,A
+003C FA                MOV     R2,A
+003D 7D40              MOV     R5,#040H
+003F 110000      R     ACALL   _SpiFlash_DmaCmd
+                                           ; SOURCE LINE # 388
+0042 7D0A              MOV     R5,#0AH
+0044 7F0A              MOV     R7,#0AH
+0046 110000      R     ACALL   _SpiFlash_wait_done
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 389
+                                           ; SOURCE LINE # 390
+0049         ?C0027:
+0049 22                RET     
+             ; FUNCTION _SpiFlash_4B_DmaCmd (END)
+
+             ; FUNCTION _SpiFlash_Set4BytesAddress (BEGIN)
+                                           ; SOURCE LINE # 401
+;---- Variable 'fOn' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 402
+                                           ; SOURCE LINE # 403
+0000 EF                MOV     A,R7
+0001 600B              JZ      ?C0029
+                                           ; SOURCE LINE # 404
+0003 90000000    R     MOV     DPTR,#SpiFlash4ByteAddr
+0007 E0                MOVX    A,@DPTR
+0008 7010              JNZ     ?C0033
+                                           ; SOURCE LINE # 405
+000A 7FB7              MOV     R7,#0B7H
+                                           ; SOURCE LINE # 406
+000C 8009              SJMP    ?C0141
+000E         ?C0029:
+                                           ; SOURCE LINE # 407
+                                           ; SOURCE LINE # 408
+000E 90000000    R     MOV     DPTR,#SpiFlash4ByteAddr
+0012 E0                MOVX    A,@DPTR
+0013 6005              JZ      ?C0033
+                                           ; SOURCE LINE # 409
+0015 7FE9              MOV     R7,#0E9H
+0017         ?C0141:
+0017 110000      R     ACALL   _SpiFlash_4B_DmaCmd
+                                           ; SOURCE LINE # 410
+                                           ; SOURCE LINE # 411
+001A         ?C0033:
+001A 22                RET     
+             ; FUNCTION _SpiFlash_Set4BytesAddress (END)
+
+             ; FUNCTION _SpiFlashSetAddress2CmdBuffer (BEGIN)
+                                           ; SOURCE LINE # 438
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 35  
+
+0000 90000000    R     MOV     DPTR,#spiaddr
+0004 110000      E     ACALL   ?C?LSTXDATA
+                                           ; SOURCE LINE # 439
+                                           ; SOURCE LINE # 440
+0007 90000000    R     MOV     DPTR,#SpiFlash4ByteAddr
+000B E0                MOVX    A,@DPTR
+000C 90000000    R     MOV     DPTR,#spiaddr
+0010 6025              JZ      ?C0034
+                                           ; SOURCE LINE # 441
+0012 7818              MOV     R0,#018H
+                                           ; SOURCE LINE # 442
+0014 110000      R     ACALL   L?0167
+0017 7810              MOV     R0,#010H
+0019 110000      E     ACALL   ?C?ULSHR
+001C 90000000    R     MOV     DPTR,#SPI_CmdBuffer+01H
+                                           ; SOURCE LINE # 443
+0020 110000      R     ACALL   L?0168
+0023 7808              MOV     R0,#08H
+0025 110000      E     ACALL   ?C?ULSHR
+0028 90000000    R     MOV     DPTR,#SPI_CmdBuffer+02H
+                                           ; SOURCE LINE # 444
+002C 110000      R     ACALL   L?0209
+002F 90000000    R     MOV     DPTR,#SPI_CmdBuffer+03H
+0033 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 445
+0034 7F04              MOV     R7,#04H
+0036 22                RET     
+                                           ; SOURCE LINE # 446
+0037         ?C0034:
+                                           ; SOURCE LINE # 447
+                                           ; SOURCE LINE # 448
+0037 7810              MOV     R0,#010H
+                                           ; SOURCE LINE # 449
+0039 110000      R     ACALL   L?0167
+003C 7808              MOV     R0,#08H
+003E 110000      E     ACALL   ?C?ULSHR
+0041 90000000    R     MOV     DPTR,#SPI_CmdBuffer+01H
+                                           ; SOURCE LINE # 450
+0045 110000      R     ACALL   L?0209
+0048 90000000    R     MOV     DPTR,#SPI_CmdBuffer+02H
+004C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 451
+004D 7F03              MOV     R7,#03H
+                                           ; SOURCE LINE # 452
+                                           ; SOURCE LINE # 453
+004F         ?C0035:
+004F 22                RET     
+             ; FUNCTION _SpiFlashSetAddress2CmdBuffer (END)
+
+             ; FUNCTION _SpiFlash_SectorErase (BEGIN)
+                                           ; SOURCE LINE # 459
+0000 90000000    R     MOV     DPTR,#spiaddr
+0004 110000      E     ACALL   ?C?LSTXDATA
+                                           ; SOURCE LINE # 460
+                                           ; SOURCE LINE # 464
+0007 110000      R     ACALL   SpiFlash_WriteEnable
+                                           ; SOURCE LINE # 466
+000A 90000000    R     MOV     DPTR,#spiaddr
+000E 110000      R     ACALL   L?0169
+0011 110000      R     ACALL   _SpiFlashSetAddress2CmdBuffer
+;---- Variable 'cmd_buff_len' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 468
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 36  
+
+0014 EF                MOV     A,R7
+0015 4440              ORL     A,#040H
+0017 FD                MOV     R5,A
+0018 E4                CLR     A
+0019 110000      R     ACALL   L?0178
+001C F0                MOVX    @DPTR,A
+001D A3                INC     DPTR
+001E 7404              MOV     A,#04H
+0020 F0                MOVX    @DPTR,A
+0021 7BD0              MOV     R3,#0D0H
+0023 FA                MOV     R2,A
+0024 7F20              MOV     R7,#020H
+0026 110000      R     ACALL   _SpiFlash_DmaCmd
+                                           ; SOURCE LINE # 469
+0029 7D05              MOV     R5,#05H
+002B 7F02              MOV     R7,#02H
+002D 110000      R     ACALL   _SpiFlash_wait_done
+                                           ; SOURCE LINE # 470
+0030 7D64              MOV     R5,#064H
+0032 7F0A              MOV     R7,#0AH
+0034 110000      R     ACALL   _SpiFlash_check_busy
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 471
+                                           ; SOURCE LINE # 472
+0037         ?C0037:
+0037 22                RET     
+             ; FUNCTION _SpiFlash_SectorErase (END)
+
+             ; FUNCTION _SpiFlash_BlockErase (BEGIN)
+                                           ; SOURCE LINE # 478
+0000 90000000    R     MOV     DPTR,#spiaddr
+0004 110000      E     ACALL   ?C?LSTXDATA
+                                           ; SOURCE LINE # 479
+                                           ; SOURCE LINE # 483
+0007 110000      R     ACALL   SpiFlash_WriteEnable
+                                           ; SOURCE LINE # 485
+000A 90000000    R     MOV     DPTR,#spiaddr
+000E 110000      R     ACALL   L?0169
+0011 110000      R     ACALL   _SpiFlashSetAddress2CmdBuffer
+;---- Variable 'cmd_buff_len' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 487
+0014 EF                MOV     A,R7
+0015 4440              ORL     A,#040H
+0017 FD                MOV     R5,A
+0018 E4                CLR     A
+0019 110000      R     ACALL   L?0178
+001C F0                MOVX    @DPTR,A
+001D A3                INC     DPTR
+001E 7404              MOV     A,#04H
+0020 F0                MOVX    @DPTR,A
+0021 7BD0              MOV     R3,#0D0H
+0023 FA                MOV     R2,A
+0024 7FD8              MOV     R7,#0D8H
+0026 110000      R     ACALL   _SpiFlash_DmaCmd
+                                           ; SOURCE LINE # 488
+0029 7D05              MOV     R5,#05H
+002B 7F02              MOV     R7,#02H
+002D 110000      R     ACALL   _SpiFlash_wait_done
+                                           ; SOURCE LINE # 489
+0030 7D64              MOV     R5,#064H
+0032 7F1E              MOV     R7,#01EH
+0034 110000      R     ACALL   _SpiFlash_check_busy
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 37  
+
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 490
+                                           ; SOURCE LINE # 491
+0037         ?C0038:
+0037 22                RET     
+             ; FUNCTION _SpiFlash_BlockErase (END)
+
+             ; FUNCTION _SpiFlash_PageProgram_ChipReg (BEGIN)
+                                           ; SOURCE LINE # 499
+0000 90000000    R     MOV     DPTR,#spiaddr
+0004 110000      E     ACALL   ?C?LSTXDATA
+0007 90000000    R     MOV     DPTR,#pBuff
+000B EB                MOV     A,R3
+000C F0                MOVX    @DPTR,A
+000D A3                INC     DPTR
+000E EA                MOV     A,R2
+000F F0                MOVX    @DPTR,A
+0010 A3                INC     DPTR
+0011 E9                MOV     A,R1
+0012 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 500
+                                           ; SOURCE LINE # 505
+0013 A3                INC     DPTR
+0014 E0                MOVX    A,@DPTR
+0015 D3                SETB    C
+0016 9408              SUBB    A,#08H
+0018 4003              JC      ?C0039
+                                           ; SOURCE LINE # 506
+001A 7F01              MOV     R7,#01H
+001C 22                RET     
+001D         ?C0039:
+                                           ; SOURCE LINE # 508
+001D 110000      R     ACALL   SpiFlash_WriteEnable
+                                           ; SOURCE LINE # 510
+0020 90000000    R     MOV     DPTR,#spiaddr
+0024 110000      R     ACALL   L?0169
+0027 110000      R     ACALL   _SpiFlashSetAddress2CmdBuffer
+002A 90000000    R     MOV     DPTR,#cmd_buff_len
+002E EF                MOV     A,R7
+002F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 511
+;---- Variable 'i' assigned to Register 'R7' ----
+0030 E4                CLR     A
+0031 FF                MOV     R7,A
+0032         ?C0041:
+0032 90000000    R     MOV     DPTR,#len
+0036 E0                MOVX    A,@DPTR
+0037 FE                MOV     R6,A
+0038 EF                MOV     A,R7
+0039 C3                CLR     C
+003A 9E                SUBB    A,R6
+003B 501D              JNC     ?C0042
+                                           ; SOURCE LINE # 512
+003D 90000000    R     MOV     DPTR,#pBuff
+0041 E0                MOVX    A,@DPTR
+0042 FB                MOV     R3,A
+0043 A3                INC     DPTR
+0044 E4                CLR     A
+0045 75F001            MOV     B,#01H
+0048 110000      E     ACALL   ?C?ILDIX
+004B A9F0              MOV     R1,B
+004D FA                MOV     R2,A
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 38  
+
+004E 110000      E     ACALL   ?C?CLDPTR
+0051 FE                MOV     R6,A
+0052 EF                MOV     A,R7
+0053 24D0              ADD     A,#0D0H
+0055 110000      R     ACALL   L?0193
+0058 80D8              SJMP    ?C0041
+005A         ?C0042:
+                                           ; SOURCE LINE # 514
+005A 90000000    R     MOV     DPTR,#cmd_buff_len
+005E E0                MOVX    A,@DPTR
+005F 4440              ORL     A,#040H
+0061 FD                MOV     R5,A
+0062 90000000    R     MOV     DPTR,#len
+0066 E0                MOVX    A,@DPTR
+0067 FF                MOV     R7,A
+0068 E4                CLR     A
+0069 110000      R     ACALL   L?0178
+006C EF                MOV     A,R7
+006D F0                MOVX    @DPTR,A
+006E A3                INC     DPTR
+006F 7406              MOV     A,#06H
+0071 F0                MOVX    @DPTR,A
+0072 7BD0              MOV     R3,#0D0H
+0074 7A04              MOV     R2,#04H
+0076 7F02              MOV     R7,#02H
+0078 110000      R     ACALL   _SpiFlash_DmaCmd
+                                           ; SOURCE LINE # 515
+007B 7D05              MOV     R5,#05H
+007D 7F02              MOV     R7,#02H
+007F 110000      R     ACALL   _SpiFlash_wait_done
+                                           ; SOURCE LINE # 516
+0082 7D32              MOV     R5,#032H
+0084 7F05              MOV     R7,#05H
+0086 110000      R     ACALL   _SpiFlash_check_busy
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 517
+                                           ; SOURCE LINE # 518
+0089         ?C0040:
+0089 22                RET     
+             ; FUNCTION _SpiFlash_PageProgram_ChipReg (END)
+
+             ; FUNCTION _SpiFlash_PageProgram_XMem (BEGIN)
+                                           ; SOURCE LINE # 525
+0000 90000000    R     MOV     DPTR,#spiaddr
+0004 110000      E     ACALL   ?C?LSTXDATA
+                                           ; SOURCE LINE # 526
+                                           ; SOURCE LINE # 530
+0007 110000      R     ACALL   SpiFlash_WriteEnable
+                                           ; SOURCE LINE # 531
+000A 90000000    R     MOV     DPTR,#spiaddr
+000E 110000      R     ACALL   L?0169
+0011 110000      R     ACALL   _SpiFlashSetAddress2CmdBuffer
+;---- Variable 'cmd_buff_len' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 532
+0014 EF                MOV     A,R7
+0015 90000000    R     MOV     DPTR,#xaddr
+0019 110000      R     ACALL   L?0175
+001C EF                MOV     A,R7
+001D F0                MOVX    @DPTR,A
+001E A3                INC     DPTR
+001F 7406              MOV     A,#06H
+0021 F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 39  
+
+0022 7F02              MOV     R7,#02H
+0024 110000      R     ACALL   _SpiFlash_DmaCmd
+                                           ; SOURCE LINE # 533
+0027 7D05              MOV     R5,#05H
+0029 7F02              MOV     R7,#02H
+002B 110000      R     ACALL   _SpiFlash_wait_done
+                                           ; SOURCE LINE # 535
+002E 7D32              MOV     R5,#032H
+0030 7F05              MOV     R7,#05H
+0032 110000      R     ACALL   _SpiFlash_check_busy
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 536
+                                           ; SOURCE LINE # 537
+0035         ?C0044:
+0035 22                RET     
+             ; FUNCTION _SpiFlash_PageProgram_XMem (END)
+
+             ; FUNCTION _SpiFlash_FastRead_ChipReg (BEGIN)
+                                           ; SOURCE LINE # 548
+0000 90000000    R     MOV     DPTR,#spiaddr
+0004 110000      E     ACALL   ?C?LSTXDATA
+                                           ; SOURCE LINE # 549
+                                           ; SOURCE LINE # 553
+0007 90000000    R     MOV     DPTR,#len
+000B E0                MOVX    A,@DPTR
+000C D3                SETB    C
+000D 9408              SUBB    A,#08H
+000F 4003              JC      ?C0045
+                                           ; SOURCE LINE # 554
+0011 7408              MOV     A,#08H
+0013 F0                MOVX    @DPTR,A
+0014         ?C0045:
+                                           ; SOURCE LINE # 556
+0014 90000000    R     MOV     DPTR,#spiaddr
+0018 110000      R     ACALL   L?0169
+001B 110000      R     ACALL   _SpiFlashSetAddress2CmdBuffer
+;---- Variable 'cmd_buff_len' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 557
+001E 0F                INC     R7
+                                           ; SOURCE LINE # 558
+001F EF                MOV     A,R7
+0020 4440              ORL     A,#040H
+0022 FD                MOV     R5,A
+0023 90000000    R     MOV     DPTR,#len
+0027 E0                MOVX    A,@DPTR
+0028 FF                MOV     R7,A
+0029 110000      R     ACALL   L?0206
+002C 110000      R     ACALL   L?0194
+002F 7F0B              MOV     R7,#0BH
+0031 110000      R     ACALL   _SpiFlash_DmaCmd
+                                           ; SOURCE LINE # 559
+0034 7D05              MOV     R5,#05H
+0036 7F02              MOV     R7,#02H
+0038 110000      R     ACALL   _SpiFlash_wait_done
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 560
+                                           ; SOURCE LINE # 561
+003B         ?C0046:
+003B 22                RET     
+             ; FUNCTION _SpiFlash_FastRead_ChipReg (END)
+
+             ; FUNCTION _SpiFlash_FastRead_Fixed_ChipReg (BEGIN)
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 40  
+
+                                           ; SOURCE LINE # 568
+0000 90000000    R     MOV     DPTR,#spiaddr
+0004 110000      E     ACALL   ?C?LSTXDATA
+                                           ; SOURCE LINE # 569
+                                           ; SOURCE LINE # 574
+0007 90000000    R     MOV     DPTR,#dLen
+000B E0                MOVX    A,@DPTR
+000C FC                MOV     R4,A
+000D A3                INC     DPTR
+000E A3                INC     DPTR
+000F A3                INC     DPTR
+0010 E4                CLR     A
+0011 FF                MOV     R7,A
+0012 FE                MOV     R6,A
+0013 FD                MOV     R5,A
+0014 EC                MOV     A,R4
+0015 600C              JZ      ?C0047
+                                           ; SOURCE LINE # 576
+0017 7B00        R     MOV     R3,#MBYTE ?SC_66
+0019 7A00        R     MOV     R2,#HIGH ?SC_66
+001B 7900        R     MOV     R1,#LOW ?SC_66
+001D 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 577
+0020 7F01              MOV     R7,#01H
+0022 22                RET     
+                                           ; SOURCE LINE # 578
+0023         ?C0047:
+                                           ; SOURCE LINE # 579
+0023 90000000    R     MOV     DPTR,#dLen
+0027 A3                INC     DPTR
+0028 E0                MOVX    A,@DPTR
+0029 FD                MOV     R5,A
+002A ED                MOV     A,R5
+002B 90000000    R     MOV     DPTR,#dLen
+002F 6014              JZ      ?C0050
+                                           ; SOURCE LINE # 580
+0031 E0                MOVX    A,@DPTR
+0032 FC                MOV     R4,A
+0033 A3                INC     DPTR
+0034 110000      R     ACALL   L?0170
+0037 7810              MOV     R0,#010H
+0039 110000      E     ACALL   ?C?ULSHR
+003C A3                INC     DPTR
+003D EF                MOV     A,R7
+003E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 581
+003F A3                INC     DPTR
+0040 7414              MOV     A,#014H
+0042 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 582
+0043 800F              SJMP    ?C0049
+0045         ?C0050:
+                                           ; SOURCE LINE # 583
+                                           ; SOURCE LINE # 584
+0045 110000      R     ACALL   L?0169
+0048 7808              MOV     R0,#08H
+004A 110000      E     ACALL   ?C?ULSHR
+004D A3                INC     DPTR
+004E EF                MOV     A,R7
+004F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 585
+0050 A3                INC     DPTR
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 41  
+
+0051 7405              MOV     A,#05H
+0053 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 586
+0054         ?C0049:
+                                           ; SOURCE LINE # 587
+0054 90000000    R     MOV     DPTR,#wait
+0058 E0                MOVX    A,@DPTR
+0059 7002              JNZ     ?C0052
+                                           ; SOURCE LINE # 588
+005B 04                INC     A
+005C F0                MOVX    @DPTR,A
+005D         ?C0052:
+                                           ; SOURCE LINE # 590
+005D 90000000    R     MOV     DPTR,#spiaddr
+0061 110000      R     ACALL   L?0169
+0064 110000      R     ACALL   _SpiFlashSetAddress2CmdBuffer
+;---- Variable 'cmd_buff_len' assigned to Register 'R3' ----
+0067 AB07              MOV     R3,AR7
+                                           ; SOURCE LINE # 591
+0069 0B                INC     R3
+                                           ; SOURCE LINE # 592
+006A 90000000    R     MOV     DPTR,#dLen
+006E 110000      R     ACALL   L?0169
+0071 7810              MOV     R0,#010H
+0073 110000      E     ACALL   ?C?ULSHR
+0076 110000      R     ACALL   L?0203
+0079 110000      R     ACALL   L?0163
+007C EF                MOV     A,R7
+007D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 595
+007E AF03              MOV     R7,AR3
+0080 EF                MOV     A,R7
+0081 4460              ORL     A,#060H
+0083 FD                MOV     R5,A
+0084 90000000    R     MOV     DPTR,#dLen
+0088 A3                INC     DPTR
+0089 110000      R     ACALL   L?0177
+008C 110000      R     ACALL   L?0194
+008F 7F0B              MOV     R7,#0BH
+0091 110000      R     ACALL   _SpiFlash_DmaCmd
+                                           ; SOURCE LINE # 596
+0094 90000000    R     MOV     DPTR,#wait
+0098 E0                MOVX    A,@DPTR
+0099 FF                MOV     R7,A
+009A A3                INC     DPTR
+009B E0                MOVX    A,@DPTR
+009C FD                MOV     R5,A
+009D 110000      R     ACALL   _SpiFlash_wait_done
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 597
+00A0 110000      R     ACALL   L?0204
+00A3 110000      R     ACALL   L?0163
+00A6 E4                CLR     A
+00A7 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 598
+                                           ; SOURCE LINE # 599
+00A8         ?C0048:
+00A8 22                RET     
+             ; FUNCTION _SpiFlash_FastRead_Fixed_ChipReg (END)
+
+             ; FUNCTION _SpiFlash_Read_XMem (BEGIN)
+                                           ; SOURCE LINE # 606
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 42  
+
+;---- Variable 'spiaddr' assigned to Register 'R4/R5/R6/R7' ----
+                                           ; SOURCE LINE # 607
+                                           ; SOURCE LINE # 611
+0000 110000      R     ACALL   _SpiFlashSetAddress2CmdBuffer
+;---- Variable 'cmd_buff_len' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 612
+                                           ; SOURCE LINE # 613
+0003 110000      R     ACALL   L?0198
+                                           ; SOURCE LINE # 614
+0006 90000000    R     MOV     DPTR,#xaddr
+000A 110000      R     ACALL   L?0175
+000D 110000      R     ACALL   L?0200
+0010 110000      R     ACALL   _SpiFlash_DmaCmd
+                                           ; SOURCE LINE # 615
+0013 7D0A              MOV     R5,#0AH
+0015 7F0A              MOV     R7,#0AH
+0017 110000      R     ACALL   _SpiFlash_wait_done
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 616
+                                           ; SOURCE LINE # 617
+001A         ?C0053:
+001A 22                RET     
+             ; FUNCTION _SpiFlash_Read_XMem (END)
+
+             ; FUNCTION _SpiFlash_Read_SOsd (BEGIN)
+                                           ; SOURCE LINE # 638
+;---- Variable 'spiaddr' assigned to Register 'R4/R5/R6/R7' ----
+                                           ; SOURCE LINE # 639
+                                           ; SOURCE LINE # 643
+0000 110000      R     ACALL   _SpiFlashSetAddress2CmdBuffer
+;---- Variable 'cmd_buff_len' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 644
+                                           ; SOURCE LINE # 645
+0003 110000      R     ACALL   L?0198
+                                           ; SOURCE LINE # 646
+0006 2480              ADD     A,#080H
+0008 FD                MOV     R5,A
+0009 90000000    R     MOV     DPTR,#addr
+000D 110000      R     ACALL   L?0176
+0010 110000      R     ACALL   L?0200
+0013 110000      R     ACALL   _SpiFlash_DmaCmd
+                                           ; SOURCE LINE # 647
+0016 7D0A              MOV     R5,#0AH
+0018 7F0A              MOV     R7,#0AH
+001A 110000      R     ACALL   _SpiFlash_wait_done
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 648
+                                           ; SOURCE LINE # 649
+001D         ?C0054:
+001D 22                RET     
+             ; FUNCTION _SpiFlash_Read_SOsd (END)
+
+             ; FUNCTION _SpiFlash_Read_FOsd (BEGIN)
+                                           ; SOURCE LINE # 656
+;---- Variable 'spiaddr' assigned to Register 'R4/R5/R6/R7' ----
+                                           ; SOURCE LINE # 657
+                                           ; SOURCE LINE # 661
+0000 110000      R     ACALL   _SpiFlashSetAddress2CmdBuffer
+;---- Variable 'cmd_buff_len' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 662
+                                           ; SOURCE LINE # 663
+0003 110000      R     ACALL   L?0199
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 43  
+
+                                           ; SOURCE LINE # 664
+0006 FD                MOV     R5,A
+0007 90000000    R     MOV     DPTR,#addr
+000B 110000      R     ACALL   L?0176
+000E 110000      R     ACALL   L?0201
+0011 110000      R     ACALL   _SpiFlash_DmaCmd
+                                           ; SOURCE LINE # 665
+0014 7D0A              MOV     R5,#0AH
+0016 7F0A              MOV     R7,#0AH
+0018 110000      R     ACALL   _SpiFlash_wait_done
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 666
+                                           ; SOURCE LINE # 667
+001B         ?C0055:
+001B 22                RET     
+             ; FUNCTION _SpiFlash_Read_FOsd (END)
+
+             ; FUNCTION is_micron_256or512 (BEGIN)
+                                           ; SOURCE LINE # 885
+                                           ; SOURCE LINE # 886
+                                           ; SOURCE LINE # 887
+0000 110000      R     ACALL   L?0164
+0003 F9                MOV     R1,A
+0004 110000      E     ACALL   ?C?CLDPTR
+0007 B4200F            CJNE    A,#020H,?C0056
+                                           ; SOURCE LINE # 888
+000A 110000      R     ACALL   L?0180
+000D FF                MOV     R7,A
+000E 6419              XRL     A,#019H
+0010 6004              JZ      ?C0058
+0012 EF                MOV     A,R7
+0013 B42003            CJNE    A,#020H,?C0056
+0016         ?C0058:
+                                           ; SOURCE LINE # 890
+0016 7F01              MOV     R7,#01H
+0018 22                RET     
+                                           ; SOURCE LINE # 891
+0019         ?C0056:
+                                           ; SOURCE LINE # 892
+0019 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 893
+001B         ?C0059:
+001B 22                RET     
+             ; FUNCTION is_micron_256or512 (END)
+
+             ; FUNCTION _check_spiflash_status_register (BEGIN)
+                                           ; SOURCE LINE # 917
+0000 90000000    R     MOV     DPTR,#mask0
+0004 EB                MOV     A,R3
+0005 F0                MOVX    @DPTR,A
+;---- Variable 'cmd' assigned to Register 'R7' ----
+0006 90000000    R     MOV     DPTR,#rsize
+000A ED                MOV     A,R5
+000B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 918
+                                           ; SOURCE LINE # 921
+000C 110000      R     ACALL   L?0206
+000F ED                MOV     A,R5
+0010 110000      R     ACALL   L?0195
+0013 7D40              MOV     R5,#040H
+0015 110000      R     ACALL   _SpiFlash_DmaCmd
+                                           ; SOURCE LINE # 922
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 44  
+
+0018 7D05              MOV     R5,#05H
+001A 7F02              MOV     R7,#02H
+001C 110000      R     ACALL   _SpiFlash_wait_done
+                                           ; SOURCE LINE # 925
+001F 110000      R     ACALL   L?0161
+0022 E0                MOVX    A,@DPTR
+0023 FF                MOV     R7,A
+;---- Variable 'bTemp' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 927
+0024 90000000    R     MOV     DPTR,#mask0
+0028 E0                MOVX    A,@DPTR
+0029 5F                ANL     A,R7
+002A FF                MOV     R7,A
+002B A3                INC     DPTR
+002C E0                MOVX    A,@DPTR
+002D 6F                XRL     A,R7
+002E 6003              JZ      ?C0060
+                                           ; SOURCE LINE # 928
+0030 7F00              MOV     R7,#00H
+0032 22                RET     
+0033         ?C0060:
+                                           ; SOURCE LINE # 929
+0033 90000000    R     MOV     DPTR,#rsize
+0037 E0                MOVX    A,@DPTR
+0038 6402              XRL     A,#02H
+003A 701B              JNZ     ?C0062
+                                           ; SOURCE LINE # 930
+003C 759300      E     MOV     DPX,#?C?XDATASEG
+003F E500        E     MOV     A,regTW88+01H
+0041 24D1              ADD     A,#0D1H
+0043 110000      R     ACALL   L?0163
+0046 E0                MOVX    A,@DPTR
+0047 FF                MOV     R7,A
+;---- Variable 'bTemp1' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 931
+0048 90000000    R     MOV     DPTR,#mask1
+004C E0                MOVX    A,@DPTR
+004D 5F                ANL     A,R7
+004E FF                MOV     R7,A
+004F A3                INC     DPTR
+0050 E0                MOVX    A,@DPTR
+0051 6F                XRL     A,R7
+0052 6003              JZ      ?C0062
+                                           ; SOURCE LINE # 932
+0054 7F00              MOV     R7,#00H
+0056 22                RET     
+                                           ; SOURCE LINE # 933
+0057         ?C0062:
+                                           ; SOURCE LINE # 934
+0057 7F01              MOV     R7,#01H
+                                           ; SOURCE LINE # 935
+0059         ?C0061:
+0059 22                RET     
+             ; FUNCTION _check_spiflash_status_register (END)
+
+             ; FUNCTION quadio_check_all (BEGIN)
+                                           ; SOURCE LINE # 943
+                                           ; SOURCE LINE # 944
+                                           ; SOURCE LINE # 946
+0000 110000      R     ACALL   L?0165
+0003 F9                MOV     R1,A
+0004 110000      E     ACALL   ?C?CLDPTR
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 45  
+
+;---- Variable 'mid' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 948
+0007 14                DEC     A
+0008 6025              JZ      ?C0071
+000A 24E1              ADD     A,#0E1H
+000C 6033              JZ      ?C0072
+000E 2483              ADD     A,#083H
+0010 6010              JZ      ?C0067
+0012 24DB              ADD     A,#0DBH
+0014 600C              JZ      ?C0067
+0016 24FA              ADD     A,#0FAH
+0018 6015              JZ      ?C0071
+001A 24D9              ADD     A,#0D9H
+001C 6011              JZ      ?C0071
+001E 24D3              ADD     A,#0D3H
+0020 705D              JNZ     ?C0076
+                                           ; SOURCE LINE # 949
+                                           ; SOURCE LINE # 950
+                                           ; SOURCE LINE # 951
+0022         ?C0067:
+                                           ; SOURCE LINE # 952
+0022 7440              MOV     A,#040H
+0024 110000      R     ACALL   L?0185
+0027 7B40              MOV     R3,#040H
+0029 7D01              MOV     R5,#01H
+002B 7F05              MOV     R7,#05H
+002D 800F              SJMP    ?C0143
+                                           ; SOURCE LINE # 954
+                                           ; SOURCE LINE # 955
+                                           ; SOURCE LINE # 956
+002F         ?C0071:
+                                           ; SOURCE LINE # 957
+002F 90000000    R     MOV     DPTR,#?_check_spiflash_status_register?BYTE+03H
+0033 7402              MOV     A,#02H
+0035 110000      R     ACALL   L?0186
+0038 7B02              MOV     R3,#02H
+003A 7D01              MOV     R5,#01H
+003C 7F35              MOV     R7,#035H
+003E         ?C0143:
+003E 010000      R     AJMP    _check_spiflash_status_register
+                                           ; SOURCE LINE # 959
+0041         ?C0072:
+                                           ; SOURCE LINE # 961
+0041 110000      R     ACALL   L?0165
+0044 2405              ADD     A,#05H
+0046 110000      R     ACALL   L?0182
+0049 B40507            CJNE    A,#05H,?C0073
+                                           ; SOURCE LINE # 962
+004C 110000      R     ACALL   L?0208
+004F 7460              MOV     A,#060H
+0051 8005              SJMP    ?C0142
+0053         ?C0073:
+                                           ; SOURCE LINE # 964
+0053 110000      R     ACALL   L?0208
+0056 7480              MOV     A,#080H
+0058         ?C0142:
+0058 F0                MOVX    @DPTR,A
+0059 7B10              MOV     R3,#010H
+005B 7D02              MOV     R5,#02H
+005D 7FB5              MOV     R7,#0B5H
+005F 110000      R     ACALL   _check_spiflash_status_register
+0062 90000000    R     MOV     DPTR,#ret
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 46  
+
+0066 EF                MOV     A,R7
+0067 F0                MOVX    @DPTR,A
+0068         ?C0074:
+                                           ; SOURCE LINE # 967
+0068 110000      R     ACALL   L?0165
+006B 110000      R     ACALL   L?0181
+006E B42007            CJNE    A,#020H,?C0075
+                                           ; SOURCE LINE # 969
+0071 7D06              MOV     R5,#06H
+0073 7F70              MOV     R7,#070H
+0075 110000      R     ACALL   _SpiFlashSetupBusyCheck
+0078         ?C0075:
+                                           ; SOURCE LINE # 970
+0078 90000000    R     MOV     DPTR,#ret
+007C E0                MOVX    A,@DPTR
+007D FF                MOV     R7,A
+007E 22                RET     
+                                           ; SOURCE LINE # 971
+007F         ?C0076:
+                                           ; SOURCE LINE # 972
+007F 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 973
+                                           ; SOURCE LINE # 974
+0081         ?C0068:
+0081 22                RET     
+             ; FUNCTION quadio_check_all (END)
+
+             ; FUNCTION quadio_enable_all (BEGIN)
+                                           ; SOURCE LINE # 976
+                                           ; SOURCE LINE # 977
+                                           ; SOURCE LINE # 978
+0000 110000      R     ACALL   L?0165
+0003 F9                MOV     R1,A
+0004 110000      E     ACALL   ?C?CLDPTR
+0007 FF                MOV     R7,A
+;---- Variable 'mid' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 981
+0008 14                DEC     A
+0009 7003              JNZ     $ + 5H
+000B 010000      R     AJMP    ?C0087
+000E 24E1              ADD     A,#0E1H
+0010 6056              JZ      ?C0084
+0012 2483              ADD     A,#083H
+0014 6016              JZ      ?C0080
+0016 24DB              ADD     A,#0DBH
+0018 6012              JZ      ?C0080
+001A 24FA              ADD     A,#0FAH
+001C 7003              JNZ     $ + 5H
+001E 010000      R     AJMP    ?C0088
+0021 24D9              ADD     A,#0D9H
+0023 6014              JZ      ?C0081
+0025 24D3              ADD     A,#0D3H
+0027 6003              JZ      $ + 5H
+0029 010000      R     AJMP    ?C0077
+                                           ; SOURCE LINE # 982
+                                           ; SOURCE LINE # 983
+                                           ; SOURCE LINE # 984
+002C         ?C0080:
+                                           ; SOURCE LINE # 985
+002C 110000      R     ACALL   SpiFlash_WriteEnable
+                                           ; SOURCE LINE # 986
+002F 7440              MOV     A,#040H
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 47  
+
+                                           ; SOURCE LINE # 987
+0031 110000      R     ACALL   L?0171
+0034 7D41              MOV     R5,#041H
+                                           ; SOURCE LINE # 988
+                                           ; SOURCE LINE # 989
+                                           ; SOURCE LINE # 990
+0036 010000      R     AJMP    ?C0145
+                                           ; SOURCE LINE # 991
+0039         ?C0081:
+                                           ; SOURCE LINE # 992
+0039 110000      R     ACALL   L?0165
+003C 110000      R     ACALL   L?0181
+003F 6418              XRL     A,#018H
+0041 7016              JNZ     ?C0082
+                                           ; SOURCE LINE # 993
+0043 110000      R     ACALL   SpiFlash_WriteEnable
+                                           ; SOURCE LINE # 994
+0046 E4                CLR     A
+0047 90000000    R     MOV     DPTR,#SPI_CmdBuffer
+004B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 995
+004C A3                INC     DPTR
+004D 7402              MOV     A,#02H
+                                           ; SOURCE LINE # 996
+004F 110000      R     ACALL   L?0173
+0052 7D42              MOV     R5,#042H
+0054 7F01              MOV     R7,#01H
+                                           ; SOURCE LINE # 997
+                                           ; SOURCE LINE # 998
+                                           ; SOURCE LINE # 999
+0056 010000      R     AJMP    ?C0148
+0059         ?C0082:
+                                           ; SOURCE LINE # 1000
+                                           ; SOURCE LINE # 1001
+0059 110000      R     ACALL   SpiFlash_WriteEnable
+                                           ; SOURCE LINE # 1002
+005C 7402              MOV     A,#02H
+                                           ; SOURCE LINE # 1003
+005E 110000      R     ACALL   L?0171
+0061 7D41              MOV     R5,#041H
+0063 7F31              MOV     R7,#031H
+0065         ?C0144:
+                                           ; SOURCE LINE # 1004
+                                           ; SOURCE LINE # 1005
+                                           ; SOURCE LINE # 1006
+                                           ; SOURCE LINE # 1007
+0065 010000      R     AJMP    ?C0148
+                                           ; SOURCE LINE # 1008
+0068         ?C0084:
+                                           ; SOURCE LINE # 1022
+0068 110000      R     ACALL   SpiFlash_WriteEnable
+                                           ; SOURCE LINE # 1024
+006B 110000      R     ACALL   L?0165
+006E 2405              ADD     A,#05H
+0070 110000      R     ACALL   L?0182
+0073 90000000    R     MOV     DPTR,#SPI_CmdBuffer
+0077 B40505            CJNE    A,#05H,?C0085
+                                           ; SOURCE LINE # 1026
+007A 746B              MOV     A,#06BH
+007C F0                MOVX    @DPTR,A
+007D 8003              SJMP    ?C0086
+007F         ?C0085:
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 48  
+
+                                           ; SOURCE LINE # 1029
+007F 748B              MOV     A,#08BH
+0081 F0                MOVX    @DPTR,A
+0082         ?C0086:
+                                           ; SOURCE LINE # 1030
+0082 110000      R     ACALL   L?0174
+0085 7D41              MOV     R5,#041H
+0087 7F81              MOV     R7,#081H
+                                           ; SOURCE LINE # 1031
+                                           ; SOURCE LINE # 1032
+0089 110000      R     ACALL   L?0190
+                                           ; SOURCE LINE # 1034
+008C 110000      R     ACALL   SpiFlash_WriteEnable
+                                           ; SOURCE LINE # 1038
+008F 90000000    R     MOV     DPTR,#SPI_CmdBuffer
+0093 74E7              MOV     A,#0E7H
+                                           ; SOURCE LINE # 1039
+0095 110000      R     ACALL   L?0173
+0098 7D41              MOV     R5,#041H
+009A 7F61              MOV     R7,#061H
+009C         ?C0146:
+                                           ; SOURCE LINE # 1040
+                                           ; SOURCE LINE # 1041
+                                           ; SOURCE LINE # 1042
+009C 010000      R     AJMP    ?C0148
+                                           ; SOURCE LINE # 1044
+009F         ?C0087:
+                                           ; SOURCE LINE # 1045
+009F 110000      R     ACALL   SpiFlash_WriteEnable
+                                           ; SOURCE LINE # 1046
+00A2 110000      R     ACALL   L?0187
+00A5 7416              MOV     A,#016H
+00A7 F0                MOVX    @DPTR,A
+00A8 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 1047
+                                           ; SOURCE LINE # 1048
+00AB 110000      R     ACALL   L?0179
+                                           ; SOURCE LINE # 1049
+00AE 110000      R     ACALL   L?0161
+00B1 E0                MOVX    A,@DPTR
+00B2 90000000    R     MOV     DPTR,#SPI_CmdBuffer
+00B6 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1051
+00B7 110000      R     ACALL   SpiFlash_WriteEnable
+                                           ; SOURCE LINE # 1053
+00BA 90000000    R     MOV     DPTR,#SPI_CmdBuffer+01H
+00BE 7402              MOV     A,#02H
+                                           ; SOURCE LINE # 1054
+00C0 110000      R     ACALL   L?0173
+00C3 7D42              MOV     R5,#042H
+00C5 7F01              MOV     R7,#01H
+00C7 110000      R     ACALL   _SpiFlash_DmaCmd
+                                           ; SOURCE LINE # 1055
+00CA 110000      R     ACALL   L?0187
+00CD 741F              MOV     A,#01FH
+00CF F0                MOVX    @DPTR,A
+00D0 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 1056
+00D3 7D0A              MOV     R5,#0AH
+00D5 7F0A              MOV     R7,#0AH
+00D7 110000      R     ACALL   _SpiFlash_wait_done
+                                           ; SOURCE LINE # 1057
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 49  
+
+00DA 110000      R     ACALL   L?0188
+00DD 7421              MOV     A,#021H
+00DF F0                MOVX    @DPTR,A
+00E0 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 1058
+00E3 7D0A              MOV     R5,#0AH
+00E5 7F0A              MOV     R7,#0AH
+00E7 110000      R     ACALL   _SpiFlash_check_busy
+00EA 90000000    R     MOV     DPTR,#ret
+00EE EF                MOV     A,R7
+00EF F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1059
+00F0 110000      R     ACALL   L?0188
+00F3 7423              MOV     A,#023H
+00F5 F0                MOVX    @DPTR,A
+00F6 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 1060
+00F9 805D              SJMP    ?C0077
+                                           ; SOURCE LINE # 1061
+00FB         ?C0088:
+                                           ; SOURCE LINE # 1062
+00FB 110000      R     ACALL   L?0165
+00FE 110000      R     ACALL   L?0181
+0101 FF                MOV     R7,A
+0102 6415              XRL     A,#015H
+0104 6005              JZ      ?C0090
+0106 EF                MOV     A,R7
+0107 6416              XRL     A,#016H
+0109 7033              JNZ     ?C0089
+010B         ?C0090:
+                                           ; SOURCE LINE # 1063
+                                           ; SOURCE LINE # 1066
+                                           ; SOURCE LINE # 1067
+010B 110000      R     ACALL   L?0179
+                                           ; SOURCE LINE # 1068
+010E 110000      R     ACALL   L?0162
+0111 E0                MOVX    A,@DPTR
+0112 90000000    R     MOV     DPTR,#status0
+0116 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1070
+                                           ; SOURCE LINE # 1071
+0117 110000      R     ACALL   L?0183
+                                           ; SOURCE LINE # 1072
+011A 110000      R     ACALL   L?0162
+011D E0                MOVX    A,@DPTR
+011E 90000000    R     MOV     DPTR,#status1
+                                           ; SOURCE LINE # 1074
+                                           ; SOURCE LINE # 1076
+0122 110000      R     ACALL   L?0215
+0125 90000000    R     MOV     DPTR,#SPI_CmdBuffer
+0129 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1077
+012A 90000000    R     MOV     DPTR,#status1
+012E E0                MOVX    A,@DPTR
+012F 4402              ORL     A,#02H
+0131 90000000    R     MOV     DPTR,#SPI_CmdBuffer+01H
+                                           ; SOURCE LINE # 1078
+0135 110000      R     ACALL   L?0173
+0138 7D42              MOV     R5,#042H
+013A         ?C0145:
+013A 7F01              MOV     R7,#01H
+013C         ?C0147:
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 50  
+
+                                           ; SOURCE LINE # 1079
+                                           ; SOURCE LINE # 1080
+                                           ; SOURCE LINE # 1081
+013C 8017              SJMP    ?C0148
+                                           ; SOURCE LINE # 1082
+013E         ?C0089:
+                                           ; SOURCE LINE # 1083
+                                           ; SOURCE LINE # 1086
+                                           ; SOURCE LINE # 1087
+013E 110000      R     ACALL   L?0183
+                                           ; SOURCE LINE # 1088
+0141 110000      R     ACALL   L?0162
+0144 E0                MOVX    A,@DPTR
+0145 90000000    R     MOV     DPTR,#status
+                                           ; SOURCE LINE # 1090
+                                           ; SOURCE LINE # 1092
+0149 110000      R     ACALL   L?0215
+014C 4402              ORL     A,#02H
+                                           ; SOURCE LINE # 1093
+014E 110000      R     ACALL   L?0172
+0151 7D41              MOV     R5,#041H
+0153 7F31              MOV     R7,#031H
+0155         ?C0148:
+                                           ; SOURCE LINE # 1094
+                                           ; SOURCE LINE # 1095
+0155 110000      R     ACALL   L?0190
+                                           ; SOURCE LINE # 1096
+                                           ; SOURCE LINE # 1097
+                                           ; SOURCE LINE # 1098
+0158         ?C0077:
+                                           ; SOURCE LINE # 1099
+0158 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 1100
+015A         ?C0092:
+015A 22                RET     
+015B         L?0179:
+015B 90000000    R     MOV     DPTR,#?_SpiFlash_DmaCmd?BYTE+04H
+015F E4                CLR     A
+0160 F0                MOVX    @DPTR,A
+0161 A3                INC     DPTR
+0162 04                INC     A
+0163 F0                MOVX    @DPTR,A
+0164 E4                CLR     A
+0165 A3                INC     DPTR
+0166 F0                MOVX    @DPTR,A
+0167 7BD0              MOV     R3,#0D0H
+0169 7A04              MOV     R2,#04H
+016B 7D40              MOV     R5,#040H
+016D 7F05              MOV     R7,#05H
+016F 110000      R     ACALL   _SpiFlash_DmaCmd
+0172 7D0A              MOV     R5,#0AH
+0174 7F0A              MOV     R7,#0AH
+0176 110000      R     ACALL   _SpiFlash_wait_done
+0179 22                RET     
+017A         L?0183:
+017A 90000000    R     MOV     DPTR,#?_SpiFlash_DmaCmd?BYTE+04H
+017E E4                CLR     A
+017F F0                MOVX    @DPTR,A
+0180 A3                INC     DPTR
+0181 04                INC     A
+0182 F0                MOVX    @DPTR,A
+0183 E4                CLR     A
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 51  
+
+0184 A3                INC     DPTR
+0185 F0                MOVX    @DPTR,A
+0186 7BD0              MOV     R3,#0D0H
+0188 7A04              MOV     R2,#04H
+018A 7D40              MOV     R5,#040H
+018C 7F35              MOV     R7,#035H
+018E 110000      R     ACALL   _SpiFlash_DmaCmd
+0191 7D0A              MOV     R5,#0AH
+0193 7F0A              MOV     R7,#0AH
+0195 110000      R     ACALL   _SpiFlash_wait_done
+0198 22                RET     
+0199         L?0190:
+0199 110000      R     ACALL   _SpiFlash_DmaCmd
+019C 7D0A              MOV     R5,#0AH
+019E 7F0A              MOV     R7,#0AH
+01A0 110000      R     ACALL   _SpiFlash_wait_done
+01A3 7D0A              MOV     R5,#0AH
+01A5 7F0A              MOV     R7,#0AH
+01A7 110000      R     ACALL   _SpiFlash_check_busy
+01AA 90000000    R     MOV     DPTR,#ret
+01AE EF                MOV     A,R7
+01AF F0                MOVX    @DPTR,A
+01B0 22                RET     
+01B1         L?0215:
+01B1 F0                MOVX    @DPTR,A
+01B2 110000      R     ACALL   SpiFlash_WriteEnable
+01B5 90000000    R     MOV     DPTR,#status0
+01B9 E0                MOVX    A,@DPTR
+01BA 22                RET     
+             ; FUNCTION quadio_enable_all (END)
+
+             ; FUNCTION check_4b_all (BEGIN)
+                                           ; SOURCE LINE # 1102
+                                           ; SOURCE LINE # 1103
+                                           ; SOURCE LINE # 1104
+0000 110000      R     ACALL   L?0165
+0003 F9                MOV     R1,A
+0004 110000      E     ACALL   ?C?CLDPTR
+;---- Variable 'mid' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 1106
+0007 24E0              ADD     A,#0E0H
+0009 601D              JZ      ?C0096
+000B 2483              ADD     A,#083H
+000D 602F              JZ      ?C0099
+000F 24D5              ADD     A,#0D5H
+0011 602B              JZ      ?C0099
+0013 24D9              ADD     A,#0D9H
+0015 601C              JZ      ?C0097
+0017 242D              ADD     A,#02DH
+0019 7026              JNZ     ?C0102
+                                           ; SOURCE LINE # 1107
+001B         ?C0094:
+                                           ; SOURCE LINE # 1108
+001B 90000000    R     MOV     DPTR,#?_check_spiflash_status_register?BYTE+03H
+001F 7420              MOV     A,#020H
+0021 110000      R     ACALL   L?0186
+0024 7B20              MOV     R3,#020H
+0026 8010              SJMP    ?C0149
+                                           ; SOURCE LINE # 1109
+0028         ?C0096:
+                                           ; SOURCE LINE # 1110
+0028 110000      R     ACALL   L?0184
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 52  
+
+002B 7B01              MOV     R3,#01H
+002D 7D01              MOV     R5,#01H
+002F 7F70              MOV     R7,#070H
+0031 801D              SJMP    ?C0151
+                                           ; SOURCE LINE # 1111
+0033         ?C0097:
+                                           ; SOURCE LINE # 1112
+0033 110000      R     ACALL   L?0184
+0036 7B01              MOV     R3,#01H
+0038         ?C0149:
+0038 7D01              MOV     R5,#01H
+003A 7F15              MOV     R7,#015H
+003C         ?C0150:
+003C 8012              SJMP    ?C0151
+                                           ; SOURCE LINE # 1113
+                                           ; SOURCE LINE # 1114
+003E         ?C0099:
+                                           ; SOURCE LINE # 1115
+003E 7F00              MOV     R7,#00H
+0040 22                RET     
+                                           ; SOURCE LINE # 1116
+                                           ; SOURCE LINE # 1117
+                                           ; SOURCE LINE # 1118
+0041         ?C0102:
+                                           ; SOURCE LINE # 1119
+0041 90000000    R     MOV     DPTR,#?_check_spiflash_status_register?BYTE+03H
+0045 7404              MOV     A,#04H
+0047 110000      R     ACALL   L?0186
+004A 7B04              MOV     R3,#04H
+004C 7D01              MOV     R5,#01H
+004E 7F2B              MOV     R7,#02BH
+0050         ?C0151:
+0050 110000      R     ACALL   _check_spiflash_status_register
+                                           ; SOURCE LINE # 1120
+                                           ; SOURCE LINE # 1121
+0053         ?C0095:
+0053 22                RET     
+             ; FUNCTION check_4b_all (END)
+
+             ; FUNCTION find_spiflash_chip (BEGIN)
+                                           ; SOURCE LINE # 1128
+                                           ; SOURCE LINE # 1129
+                                           ; SOURCE LINE # 1134
+0000 110000      R     ACALL   L?0207
+0003 7403              MOV     A,#03H
+0005 110000      R     ACALL   L?0195
+0008 7D40              MOV     R5,#040H
+000A 7F9F              MOV     R7,#09FH
+000C 110000      R     ACALL   _SpiFlash_DmaCmd
+                                           ; SOURCE LINE # 1135
+000F 7D0A              MOV     R5,#0AH
+0011 7F0A              MOV     R7,#0AH
+0013 110000      R     ACALL   _SpiFlash_wait_done
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 1136
+0016 EF                MOV     A,R7
+0017 6017              JZ      ?C0103
+                                           ; SOURCE LINE # 1137
+0019 7B00        R     MOV     R3,#MBYTE ?SC_92
+001B 7A00        R     MOV     R2,#HIGH ?SC_92
+001D 7900        R     MOV     R1,#LOW ?SC_92
+001F 110000      E     ACALL   _Puts
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 53  
+
+                                           ; SOURCE LINE # 1138
+0022 E4                CLR     A
+0023 90000000    R     MOV     DPTR,#mid
+0027 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1139
+0028 A3                INC     DPTR
+0029 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1140
+002A A3                INC     DPTR
+002B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1142
+002C FB                MOV     R3,A
+002D FA                MOV     R2,A
+002E F9                MOV     R1,A
+002F 22                RET     
+                                           ; SOURCE LINE # 1143
+0030         ?C0103:
+                                           ; SOURCE LINE # 1145
+0030 110000      R     ACALL   L?0162
+0033 E0                MOVX    A,@DPTR
+0034 90000000    R     MOV     DPTR,#mid
+                                           ; SOURCE LINE # 1146
+0038 110000      R     ACALL   L?0211
+003B 24D1              ADD     A,#0D1H
+003D 110000      R     ACALL   L?0163
+0040 E0                MOVX    A,@DPTR
+0041 90000000    R     MOV     DPTR,#did0
+                                           ; SOURCE LINE # 1147
+0045 110000      R     ACALL   L?0212
+0048 24D2              ADD     A,#0D2H
+004A 110000      R     ACALL   L?0163
+004D E0                MOVX    A,@DPTR
+004E 90000000    R     MOV     DPTR,#did1
+0052 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1148
+0053 7B00        R     MOV     R3,#MBYTE ?SC_110
+0055 7A00        R     MOV     R2,#HIGH ?SC_110
+0057 7900        R     MOV     R1,#LOW ?SC_110
+0059 90000000    R     MOV     DPTR,#mid
+005D E0                MOVX    A,@DPTR
+005E 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0062 F0                MOVX    @DPTR,A
+0063 90000000    R     MOV     DPTR,#did0
+0067 E0                MOVX    A,@DPTR
+0068 90000000    E     MOV     DPTR,#?_Printf?BYTE+04H
+006C F0                MOVX    @DPTR,A
+006D 90000000    R     MOV     DPTR,#did1
+0071 E0                MOVX    A,@DPTR
+0072 90000000    E     MOV     DPTR,#?_Printf?BYTE+05H
+0076 F0                MOVX    @DPTR,A
+0077 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 1150
+007A 90000000    R     MOV     DPTR,#spiflash1_chip
+007E 7400        R     MOV     A,#MBYTE spiflash_chip_table
+0080 F0                MOVX    @DPTR,A
+0081 A3                INC     DPTR
+0082 7400        R     MOV     A,#HIGH spiflash_chip_table
+0084 F0                MOVX    @DPTR,A
+0085 A3                INC     DPTR
+0086 7400        R     MOV     A,#LOW spiflash_chip_table
+0088 F0                MOVX    @DPTR,A
+0089         ?C0105:
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 54  
+
+                                           ; SOURCE LINE # 1151
+0089 90000000    R     MOV     DPTR,#spiflash1_chip
+008D 110000      R     ACALL   L?0166
+0090 F9                MOV     R1,A
+0091 110000      E     ACALL   ?C?CLDPTR
+0094 FF                MOV     R7,A
+0095 6050              JZ      ?C0106
+                                           ; SOURCE LINE # 1152
+0097 90000000    R     MOV     DPTR,#mid
+009B E0                MOVX    A,@DPTR
+009C 6F                XRL     A,R7
+009D 703B              JNZ     ?C0107
+                                           ; SOURCE LINE # 1153
+009F E9                MOV     A,R1
+00A0 2401              ADD     A,#01H
+00A2 110000      R     ACALL   L?0182
+00A5 FF                MOV     R7,A
+00A6 90000000    R     MOV     DPTR,#did0
+00AA E0                MOVX    A,@DPTR
+00AB 6F                XRL     A,R7
+00AC 702C              JNZ     ?C0107
+00AE 110000      R     ACALL   L?0213
+00B1 110000      R     ACALL   L?0181
+00B4 FF                MOV     R7,A
+00B5 90000000    R     MOV     DPTR,#did1
+00B9 E0                MOVX    A,@DPTR
+00BA B5071D            CJNE    A,AR7,?C0107
+                                           ; SOURCE LINE # 1154
+                                           ; SOURCE LINE # 1156
+00BD 110000      R     ACALL   L?0213
+00C0 240F              ADD     A,#0FH
+00C2 F9                MOV     R1,A
+00C3 E4                CLR     A
+00C4 3A                ADDC    A,R2
+00C5 FA                MOV     R2,A
+00C6 EB                MOV     A,R3
+00C7 110000      R     ACALL   L?0189
+00CA EA                MOV     A,R2
+00CB F0                MOVX    @DPTR,A
+00CC A3                INC     DPTR
+00CD E9                MOV     A,R1
+00CE F0                MOVX    @DPTR,A
+00CF 7B00        R     MOV     R3,#MBYTE ?SC_129
+00D1 7A00        R     MOV     R2,#HIGH ?SC_129
+00D3 7900        R     MOV     R1,#LOW ?SC_129
+00D5 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 1157
+00D8 801F              SJMP    ?C0152
+                                           ; SOURCE LINE # 1158
+                                           ; SOURCE LINE # 1159
+00DA         ?C0107:
+                                           ; SOURCE LINE # 1160
+00DA 90000000    R     MOV     DPTR,#spiflash1_chip+01H
+00DE E4                CLR     A
+00DF 75F01F            MOV     B,#01FH
+00E2 110000      E     ACALL   ?C?IILDX
+                                           ; SOURCE LINE # 1161
+00E5 80A2              SJMP    ?C0105
+00E7         ?C0106:
+                                           ; SOURCE LINE # 1162
+00E7 7B00        R     MOV     R3,#MBYTE ?SC_133
+00E9 7A00        R     MOV     R2,#HIGH ?SC_133
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 55  
+
+00EB 7900        R     MOV     R1,#LOW ?SC_133
+00ED 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 1163
+00F0 7B00        R     MOV     R3,#MBYTE ?SC_146
+00F2 7A00        R     MOV     R2,#HIGH ?SC_146
+00F4 7900        R     MOV     R1,#LOW ?SC_146
+00F6 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 1164
+00F9         ?C0152:
+00F9 90000000    R     MOV     DPTR,#spiflash1_chip
+00FD 110000      R     ACALL   L?0166
+0100 F9                MOV     R1,A
+                                           ; SOURCE LINE # 1165
+0101         ?C0104:
+0101 22                RET     
+             ; FUNCTION find_spiflash_chip (END)
+
+             ; FUNCTION init_spiflash_chip (BEGIN)
+                                           ; SOURCE LINE # 1171
+                                           ; SOURCE LINE # 1172
+                                           ; SOURCE LINE # 1175
+0000 7B00        R     MOV     R3,#MBYTE ?SC_198
+0002 7A00        R     MOV     R2,#HIGH ?SC_198
+0004 7900        R     MOV     R1,#LOW ?SC_198
+0006 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 1176
+0009 110000      R     ACALL   find_spiflash_chip
+000C 90000000    R     MOV     DPTR,#spiflash_chip
+0010 EB                MOV     A,R3
+0011 F0                MOVX    @DPTR,A
+0012 A3                INC     DPTR
+0013 EA                MOV     A,R2
+0014 F0                MOVX    @DPTR,A
+0015 A3                INC     DPTR
+0016 E9                MOV     A,R1
+0017 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1177
+0018 110000      R     ACALL   L?0165
+001B 4A                ORL     A,R2
+001C 4B                ORL     A,R3
+001D 7003              JNZ     ?C0109
+                                           ; SOURCE LINE # 1179
+001F 7F01              MOV     R7,#01H
+0021 22                RET     
+                                           ; SOURCE LINE # 1180
+0022         ?C0109:
+                                           ; SOURCE LINE # 1181
+0022 110000      R     ACALL   L?0165
+0025 F9                MOV     R1,A
+0026 110000      E     ACALL   ?C?CLDPTR
+0029 7011              JNZ     ?C0111
+                                           ; SOURCE LINE # 1185
+002B 7F01              MOV     R7,#01H
+002D 110000      R     ACALL   _SpiFlash_SetReadModeByRegister
+                                           ; SOURCE LINE # 1186
+0030 7B00        R     MOV     R3,#MBYTE ?SC_208
+0032 7A00        R     MOV     R2,#HIGH ?SC_208
+0034 7900        R     MOV     R1,#LOW ?SC_208
+0036 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 1189
+0039 7F00              MOV     R7,#00H
+003B 22                RET     
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 56  
+
+                                           ; SOURCE LINE # 1190
+003C         ?C0111:
+                                           ; SOURCE LINE # 1192
+003C 110000      R     ACALL   quadio_check_all
+003F 90000000    R     MOV     DPTR,#ret
+0043 EF                MOV     A,R7
+0044 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1193
+0045 701B              JNZ     ?C0112
+                                           ; SOURCE LINE # 1195
+0047 7B00        R     MOV     R3,#MBYTE ?SC_238
+0049 7A00        R     MOV     R2,#HIGH ?SC_238
+004B 7900        R     MOV     R1,#LOW ?SC_238
+004D 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 1196
+0050 110000      R     ACALL   quadio_enable_all
+0053 90000000    R     MOV     DPTR,#ret
+0057 EF                MOV     A,R7
+0058 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1197
+0059 7B00        R     MOV     R3,#MBYTE ?SC_246
+005B 7A00        R     MOV     R2,#HIGH ?SC_246
+005D 7900        R     MOV     R1,#LOW ?SC_246
+005F 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 1198
+0062         ?C0112:
+                                           ; SOURCE LINE # 1201
+0062 110000      R     ACALL   L?0165
+0065 2405              ADD     A,#05H
+0067 110000      R     ACALL   L?0182
+006A FF                MOV     R7,A
+006B 110000      R     ACALL   _SpiFlash_SetReadModeByRegister
+                                           ; SOURCE LINE # 1202
+006E 110000      R     ACALL   L?0165
+0071 2405              ADD     A,#05H
+0073 110000      R     ACALL   L?0182
+0076 B40308            CJNE    A,#03H,?C0113
+0079 7B00        R     MOV     R3,#MBYTE ?SC_248
+007B 7A00        R     MOV     R2,#HIGH ?SC_248
+007D 7900        R     MOV     R1,#LOW ?SC_248
+007F 8006              SJMP    ?C0153
+0081         ?C0113:
+                                           ; SOURCE LINE # 1203
+0081 7B00        R     MOV     R3,#MBYTE ?SC_255
+0083 7A00        R     MOV     R2,#HIGH ?SC_255
+0085 7900        R     MOV     R1,#LOW ?SC_255
+0087         ?C0153:
+0087 110000      E     ACALL   _Puts
+008A         ?C0114:
+                                           ; SOURCE LINE # 1205
+008A 110000      R     ACALL   L?0165
+008D 2403              ADD     A,#03H
+008F F9                MOV     R1,A
+0090 E4                CLR     A
+0091 3A                ADDC    A,R2
+0092 FA                MOV     R2,A
+0093 110000      E     ACALL   ?C?ILDPTR
+0096 D3                SETB    C
+0097 9480              SUBB    A,#080H
+0099 E5F0              MOV     A,B
+009B 9400              SUBB    A,#00H
+009D 4015              JC      ?C0115
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 57  
+
+                                           ; SOURCE LINE # 1207
+009F 7F01              MOV     R7,#01H
+00A1 110000      R     ACALL   _SpiFlash_Set4BytesAddress
+                                           ; SOURCE LINE # 1208
+00A4 90000000    R     MOV     DPTR,#SpiFlash4ByteAddr
+00A8 E0                MOVX    A,@DPTR
+00A9 6009              JZ      ?C0115
+                                           ; SOURCE LINE # 1209
+00AB 7B00        R     MOV     R3,#MBYTE ?SC_263
+00AD 7A00        R     MOV     R2,#HIGH ?SC_263
+00AF 7900        R     MOV     R1,#LOW ?SC_263
+00B1 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 1210
+00B4         ?C0115:
+                                           ; SOURCE LINE # 1211
+00B4 7B00        R     MOV     R3,#MBYTE ?SC_269
+00B6 7A00        R     MOV     R2,#HIGH ?SC_269
+00B8 7900        R     MOV     R1,#LOW ?SC_269
+00BA 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 1213
+00BD 110000      R     ACALL   L?0165
+00C0 F9                MOV     R1,A
+00C1 110000      E     ACALL   ?C?CLDPTR
+00C4 6401              XRL     A,#01H
+00C6 704A              JNZ     ?C0117
+                                           ; SOURCE LINE # 1229
+00C8 110000      R     ACALL   L?0180
+00CB FB                MOV     R3,A
+00CC B41707            CJNE    A,#017H,?C0118
+00CF E4                CLR     A
+00D0 FF                MOV     R7,A
+00D1 FE                MOV     R6,A
+00D2 7D7E              MOV     R5,#07EH
+00D4 8009              SJMP    ?C0154
+00D6         ?C0118:
+                                           ; SOURCE LINE # 1230
+00D6 EB                MOV     A,R3
+00D7 B41808            CJNE    A,#018H,?C0120
+00DA E4                CLR     A
+00DB FF                MOV     R7,A
+00DC FE                MOV     R6,A
+00DD 7DFE              MOV     R5,#0FEH
+00DF         ?C0154:
+00DF FC                MOV     R4,A
+00E0 801E              SJMP    ?C0156
+00E2         ?C0120:
+                                           ; SOURCE LINE # 1231
+00E2 110000      R     ACALL   L?0165
+00E5 110000      R     ACALL   L?0181
+00E8 FB                MOV     R3,A
+00E9 B41909            CJNE    A,#019H,?C0122
+00EC E4                CLR     A
+00ED FF                MOV     R7,A
+00EE FE                MOV     R6,A
+00EF 7DFE              MOV     R5,#0FEH
+00F1 7C01              MOV     R4,#01H
+00F3         ?C0155:
+00F3 800B              SJMP    ?C0156
+00F5         ?C0122:
+                                           ; SOURCE LINE # 1232
+00F5 EB                MOV     A,R3
+00F6 B42010            CJNE    A,#020H,?C0124
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 58  
+
+00F9 E4                CLR     A
+00FA FF                MOV     R7,A
+00FB FE                MOV     R6,A
+00FC 7DFE              MOV     R5,#0FEH
+00FE 7C03              MOV     R4,#03H
+0100         ?C0156:
+0100 90000000    E     MOV     DPTR,#e3p_spi_start_addr
+0104 110000      E     ACALL   ?C?LSTXDATA
+0107 8009              SJMP    ?C0117
+0109         ?C0124:
+                                           ; SOURCE LINE # 1233
+                                           ; SOURCE LINE # 1234
+0109 7B00        R     MOV     R3,#MBYTE ?SC_271
+010B 7A00        R     MOV     R2,#HIGH ?SC_271
+010D 7900        R     MOV     R1,#LOW ?SC_271
+010F 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 1235
+                                           ; SOURCE LINE # 1236
+0112         ?C0117:
+                                           ; SOURCE LINE # 1238
+0112 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 1239
+0114         ?C0110:
+0114 22                RET     
+             ; FUNCTION init_spiflash_chip (END)
+
+             ; FUNCTION _SpiFlashSetupBusyCheck (BEGIN)
+                                           ; SOURCE LINE # 1276
+;---- Variable 'busy_control' assigned to Register 'R5' ----
+;---- Variable 'cmd' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 1277
+                                           ; SOURCE LINE # 1278
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 24D8              ADD     A,#0D8H
+0007 110000      R     ACALL   L?0163
+                                           ; SOURCE LINE # 1279
+000A 110000      R     ACALL   L?0210
+000D 24D9              ADD     A,#0D9H
+000F 110000      R     ACALL   L?0163
+0012 EF                MOV     A,R7
+0013 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1280
+0014 22                RET     
+             ; FUNCTION _SpiFlashSetupBusyCheck (END)
+
+             ; FUNCTION _SpiFlash_SetReadModeByRegister (BEGIN)
+                                           ; SOURCE LINE # 1301
+0000 90000000    R     MOV     DPTR,#mode
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1302
+                                           ; SOURCE LINE # 1303
+0006 759300      E     MOV     DPX,#?C?XDATASEG
+0009 E500        E     MOV     A,regTW88+01H
+000B 24C0              ADD     A,#0C0H
+000D 110000      R     ACALL   L?0163
+0010 E0                MOVX    A,@DPTR
+0011 54F8              ANL     A,#0F8H
+0013 FF                MOV     R7,A
+0014 90000000    R     MOV     DPTR,#mode
+0018 E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 59  
+
+0019 FE                MOV     R6,A
+001A 4F                ORL     A,R7
+001B FF                MOV     R7,A
+001C 759300      E     MOV     DPX,#?C?XDATASEG
+001F E500        E     MOV     A,regTW88+01H
+0021 24C0              ADD     A,#0C0H
+0023 110000      R     ACALL   L?0163
+0026 EF                MOV     A,R7
+0027 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1305
+0028 EE                MOV     A,R6
+0029 B40700            CJNE    A,#07H,?C0138
+002C         ?C0138:
+002C 505E              JNC     ?C0135
+002E 90000000    R     MOV     DPTR,#?C0139
+0032 F8                MOV     R0,A
+0033 28                ADD     A,R0
+0034 28                ADD     A,R0
+0035 73                JMP     @A+DPTR
+0036         ?C0139:
+0036 010000      R     AJMP    ?C0128
+0039 010000      R     AJMP    ?C0129
+003C 010000      R     AJMP    ?C0130
+003F 010000      R     AJMP    ?C0131
+0042 010000      R     AJMP    ?C0132
+0045 010000      R     AJMP    ?C0133
+0048 010000      R     AJMP    ?C0134
+                                           ; SOURCE LINE # 1306
+004B         ?C0128:
+                                           ; SOURCE LINE # 1309
+004B 7403              MOV     A,#03H
+                                           ; SOURCE LINE # 1310
+004D 110000      R     ACALL   L?0197
+0050 04                INC     A
+0051 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1311
+0052 22                RET     
+                                           ; SOURCE LINE # 1312
+0053         ?C0129:
+                                           ; SOURCE LINE # 1313
+0053 90000000    R     MOV     DPTR,#SPICMD_x_READ
+0057 740B              MOV     A,#0BH
+                                           ; SOURCE LINE # 1314
+                                           ; SOURCE LINE # 1315
+0059 8016              SJMP    ?C0159
+                                           ; SOURCE LINE # 1316
+005B         ?C0130:
+                                           ; SOURCE LINE # 1317
+005B 90000000    R     MOV     DPTR,#SPICMD_x_READ
+005F 743B              MOV     A,#03BH
+0061         ?C0157:
+                                           ; SOURCE LINE # 1318
+                                           ; SOURCE LINE # 1319
+0061 800E              SJMP    ?C0159
+                                           ; SOURCE LINE # 1320
+0063         ?C0131:
+                                           ; SOURCE LINE # 1321
+0063 90000000    R     MOV     DPTR,#SPICMD_x_READ
+0067 746B              MOV     A,#06BH
+0069         ?C0158:
+                                           ; SOURCE LINE # 1322
+                                           ; SOURCE LINE # 1323
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 60  
+
+0069 8006              SJMP    ?C0159
+                                           ; SOURCE LINE # 1324
+006B         ?C0132:
+                                           ; SOURCE LINE # 1325
+006B 90000000    R     MOV     DPTR,#SPICMD_x_READ
+006F 74BB              MOV     A,#0BBH
+0071         ?C0159:
+0071 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1326
+0072 90000000    R     MOV     DPTR,#SPICMD_x_BYTES
+0076 7405              MOV     A,#05H
+0078 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1328
+0079 22                RET     
+                                           ; SOURCE LINE # 1329
+007A         ?C0133:
+                                           ; SOURCE LINE # 1330
+007A 74EB              MOV     A,#0EBH
+                                           ; SOURCE LINE # 1331
+007C 110000      R     ACALL   L?0197
+007F 7407              MOV     A,#07H
+0081 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1332
+0082 22                RET     
+                                           ; SOURCE LINE # 1334
+0083         ?C0134:
+                                           ; SOURCE LINE # 1335
+0083 74ED              MOV     A,#0EDH
+                                           ; SOURCE LINE # 1336
+0085 110000      R     ACALL   L?0214
+0088 740C              MOV     A,#0CH
+008A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1337
+008B 22                RET     
+                                           ; SOURCE LINE # 1339
+008C         ?C0135:
+                                           ; SOURCE LINE # 1341
+008C 740B              MOV     A,#0BH
+                                           ; SOURCE LINE # 1342
+008E 110000      R     ACALL   L?0214
+0091 7405              MOV     A,#05H
+0093 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1343
+0094 7B00        R     MOV     R3,#MBYTE ?SC_336
+0096 7A00        R     MOV     R2,#HIGH ?SC_336
+0098 7900        R     MOV     R1,#LOW ?SC_336
+009A 90000000    E     MOV     DPTR,#?_ePrintf?BYTE+03H
+009E EE                MOV     A,R6
+009F F0                MOVX    @DPTR,A
+00A0 110000      E     ACALL   _ePrintf
+                                           ; SOURCE LINE # 1344
+00A3 7B00        R     MOV     R3,#MBYTE ?SC_357
+00A5 7A00        R     MOV     R2,#HIGH ?SC_357
+00A7 7900        R     MOV     R1,#LOW ?SC_357
+00A9 110000      E     ACALL   _ePrintf
+                                           ; SOURCE LINE # 1345
+                                           ; SOURCE LINE # 1346
+                                           ; SOURCE LINE # 1347
+00AC         ?C0136:
+00AC 22                RET     
+             ; FUNCTION _SpiFlash_SetReadModeByRegister (END)
+
+C51 COMPILER V9.56.0.0   SPI                                                               07/18/2018 10:44:34 PAGE 61  
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   3070    ----
+   CONSTANT SIZE    =    723    ----
+   XDATA SIZE       =      6     102
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

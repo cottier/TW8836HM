@@ -1,0 +1,214 @@
+C51 COMPILER V9.56.0.0   MAIN                                                              08/31/2018 14:41:51 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN .\Output\main.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source\app\main.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\Outp
+                    -ut\TW8836B_EVB11.ORC) BROWSE INCDIR(.\source\app;.\source\common;.\source\drv;.\source\HW;.\source\utils;.\source\test) 
+                    -DEFINE(EVB_11,nullFn=//) DEBUG CODE PRINT(.\List\main.lst) TABS(2) OBJECT(.\Output\main.obj)
+
+line level    source
+
+   1          /****************************************************************
+   2          * 
+   3          *
+   4          *
+   5          *
+   6          *
+   7          *****************************************************************/
+   8          
+   9          #include "HWdef.h"
+  10          #include "HWconf.h"
+  11          #include "main.h"
+  12          
+  13          WORD Count10MS = 0,Count1MS = 0;
+  14          unsigned char flag_Tog = 1;
+  15          
+  16          //-----------------------------------------------------------------------------
+  17          // Freerun value                                                       
+  18          //-----------------------------------------------------------------------------
+  19          XDATA WORD global_Freerun_hTotal;
+  20          XDATA WORD global_Freerun_vTotal;
+  21          
+  22          
+  23          static HAL_StatusTypeDef McuInit(void);
+  24          void main()
+  25          {
+  26   1        unsigned int temp = 1;
+  27   1        SFRB_EA   = 0;      // Global Interrupt CLOSE
+  28   1        if(OK != InitCpu())while(1);
+  29   1      //  InitCore( );
+  30   1        //---------- Enable global Interrupt ----------
+  31   1        SFRB_EA   = 1;      // Global Interrupt EN
+  32   1          
+  33   1        McuInit();
+  34   1        Puts("init is ok!\n");
+  35   1        while(1)
+  36   1        {
+  37   2          if( Count1MS > 1000 )
+  38   2          {
+  39   3            Count1MS = 1;
+  40   3            WriteTW88(REG094, ((~ReadTW88(REG094))&0x02));   //LED翻转
+  41   3            Printf("test:  %d\n",temp++); 
+  42   3          }
+  43   2        }
+  44   1      }
+  45          //  McuInit()            内核外设初始化
+  46          //    +--SysclkInit()
+  47          //    +--SpiDmaInit()
+  48          //    +--TimeInit()
+  49          //    +--GpioInit()
+  50          HAL_StatusTypeDef McuInit(void)
+  51          {
+  52   1        
+  53   1        SysclkInit();
+C51 COMPILER V9.56.0.0   MAIN                                                              08/31/2018 14:41:51 PAGE 2   
+
+  54   1        
+  55   1        return HAL_OK;
+  56   1      }
+  57          
+  58          
+  59          #ifdef  USE_FULL_ASSERT
+              /**
+                * @brief  Reports the name of the source file and the source line number
+                *         where the assert_param error has occurred.
+                * @param  file: pointer to the source file name
+                * @param  line: assert_param error line source number
+                * @retval None
+                */
+              void assert_failed(uint8_t* file, uint32_t line)
+              { 
+                /* USER CODE BEGIN 6 */
+                /* User can add his own implementation to report the file name and line number,
+                   tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+                /* USER CODE END 6 */
+              }
+              #endif /* USE_FULL_ASSERT */
+C51 COMPILER V9.56.0.0   MAIN                                                              08/31/2018 14:41:51 PAGE 3   
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com0009 (BEGIN)
+0000         L?0010:
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 2494              ADD     A,#094H
+0007 F582              MOV     DPL,A
+0009 E4                CLR     A
+000A 3500        E     ADDC    A,regTW88
+000C F583              MOV     DPH,A
+000E 759300      E     MOV     DPX,#?C?XDATASEG
+0011 22                RET     
+             ; FUNCTION Com0009 (END)
+
+             ; FUNCTION main (BEGIN)
+                                           ; SOURCE LINE # 24
+                                           ; SOURCE LINE # 25
+                                           ; SOURCE LINE # 26
+0000 90000000    R     MOV     DPTR,#temp
+0004 E4                CLR     A
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 04                INC     A
+0008 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 27
+0009 C2AF              CLR     SFRB_EA
+                                           ; SOURCE LINE # 28
+000B 110000      E     ACALL   InitCpu
+000E EF                MOV     A,R7
+000F F4                CPL     A
+0010 6002              JZ      ?C0001
+0012         ?C0002:
+0012 80FE              SJMP    ?C0002
+0014         ?C0001:
+                                           ; SOURCE LINE # 31
+0014 D2AF              SETB    SFRB_EA
+                                           ; SOURCE LINE # 33
+0016 110000      R     ACALL   McuInit
+                                           ; SOURCE LINE # 34
+0019 7B00        R     MOV     R3,#MBYTE ?SC_0
+001B 7A00        R     MOV     R2,#HIGH ?SC_0
+001D 7900        R     MOV     R1,#LOW ?SC_0
+001F 110000      E     ACALL   _Puts
+0022         ?C0004:
+                                           ; SOURCE LINE # 35
+                                           ; SOURCE LINE # 36
+                                           ; SOURCE LINE # 37
+0022 D3                SETB    C
+0023 90000000    R     MOV     DPTR,#Count1MS+01H
+0027 E0                MOVX    A,@DPTR
+0028 94E8              SUBB    A,#0E8H
+002A 90000000    R     MOV     DPTR,#Count1MS
+002E E0                MOVX    A,@DPTR
+002F 9403              SUBB    A,#03H
+0031 40EF              JC      ?C0004
+                                           ; SOURCE LINE # 38
+                                           ; SOURCE LINE # 39
+0033 E4                CLR     A
+0034 F0                MOVX    @DPTR,A
+0035 A3                INC     DPTR
+C51 COMPILER V9.56.0.0   MAIN                                                              08/31/2018 14:41:51 PAGE 4   
+
+0036 04                INC     A
+0037 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 40
+0038 110000      R     ACALL   L?0010
+003B E0                MOVX    A,@DPTR
+003C F4                CPL     A
+003D 5402              ANL     A,#02H
+003F FF                MOV     R7,A
+0040 110000      R     ACALL   L?0010
+0043 EF                MOV     A,R7
+0044 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 41
+0045 7B00        R     MOV     R3,#MBYTE ?SC_13
+0047 7A00        R     MOV     R2,#HIGH ?SC_13
+0049 7900        R     MOV     R1,#LOW ?SC_13
+004B 90000000    R     MOV     DPTR,#temp
+004F E4                CLR     A
+0050 75F001            MOV     B,#01H
+0053 110000      E     ACALL   ?C?ILDIX
+0056 AFF0              MOV     R7,B
+0058 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+005C F0                MOVX    @DPTR,A
+005D A3                INC     DPTR
+005E EF                MOV     A,R7
+005F F0                MOVX    @DPTR,A
+0060 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 42
+                                           ; SOURCE LINE # 43
+0063 80BD              SJMP    ?C0004
+             ; FUNCTION main (END)
+
+             ; FUNCTION McuInit (BEGIN)
+                                           ; SOURCE LINE # 50
+                                           ; SOURCE LINE # 51
+                                           ; SOURCE LINE # 53
+0000 110000      E     ACALL   SysclkInit
+                                           ; SOURCE LINE # 55
+0003 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 56
+0005         ?C0008:
+0005 22                RET     
+             ; FUNCTION McuInit (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    125    ----
+   CONSTANT SIZE    =     24    ----
+   XDATA SIZE       =      9       2
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

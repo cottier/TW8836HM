@@ -1,0 +1,887 @@
+C51 COMPILER V9.56.0.0   SPIFLASHMAP                                                       07/18/2018 10:44:59 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE SPIFLASHMAP
+OBJECT MODULE PLACED IN .\Output\SpiFlashMap.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE Source36\SpiFlashMap.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.
+                    -\Output\TW8836B_EVB11.ORC) BROWSE INCDIR(SiI-SW;SiI-SW\HAL;SiI-SW\DEBUG;SiI-SW\CEC;.\Source36\LIB) DEFINE(EVB_11,nullFn=
+                    -//) DEBUG CODE PRINT(.\List\SpiFlashMap.lst) TABS(2) OBJECT(.\Output\SpiFlashMap.obj)
+
+line level    source
+
+   1          /**
+   2           * @file
+   3           * SpiFlashMap.c 
+   4           * @author Brian Kang
+   5           * @version 1.0
+   6           * @section LICENSE
+   7           *  Copyright (C) 2011~2012 Intersil Corporation
+   8           * @section DESCRIPTION
+   9           *  SpiFlash Map for images
+  10          */
+  11          /*
+  12          Disclaimer: THIS INFORMATION IS PROVIDED 'AS-IS' FOR EVALUATION PURPOSES ONLY.  
+  13          INTERSIL CORPORATION AND ITS SUBSIDIARIES ('INTERSIL') DISCLAIM ALL WARRANTIES, 
+  14          INCLUDING WITHOUT LIMITATION FITNESS FOR A PARTICULAR PURPOSE AND MERCHANTABILITY.  
+  15          Intersil provides evaluation platforms to help our customers to develop products. 
+  16          However, factors beyond Intersil's control could significantly affect Intersil 
+  17          product performance. 
+  18          It remains the customers' responsibility to verify the actual system performance.
+  19          */
+  20          //*****************************************************************************
+  21          //
+  22          //                SpiFlashMap.c
+  23          //
+  24          //*****************************************************************************
+  25          #include "Config.h"
+  26          
+  27          #if (PANEL_H==1280 && PANEL_V==800)
+                #include "SpiFlashMap_1024X600.c"
+              #elif (PANEL_H==1024 && PANEL_V==600)
+                #include "SpiFlashMap_1024X600.c"
+              #else
+  32            #include "SpiFlashMap_800X480.c"
+  33          #endif
+C51 COMPILER V9.56.0.0   SPIFLASHMAP                                                       07/18/2018 10:44:59 PAGE 2   
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com0018 (BEGIN)
+0000         L?0025:
+0000 90000000    R     MOV     DPTR,#header
+0004 A3                INC     DPTR
+0005 E0                MOVX    A,@DPTR
+0006 FA                MOV     R2,A
+0007 A3                INC     DPTR
+0008 E0                MOVX    A,@DPTR
+0009 240F              ADD     A,#0FH
+000B F9                MOV     R1,A
+000C E4                CLR     A
+000D 3A                ADDC    A,R2
+000E FA                MOV     R2,A
+000F 110000      E     ACALL   ?C?ILDPTR
+0012 FF                MOV     R7,A
+0013 90000000    E     MOV     DPTR,#?_SOsd_SetLut?BYTE+04H
+0017 E5F0              MOV     A,B
+0019 F0                MOVX    @DPTR,A
+001A A3                INC     DPTR
+001B EF                MOV     A,R7
+001C F0                MOVX    @DPTR,A
+001D 90000000    R     MOV     DPTR,#header
+0021 A3                INC     DPTR
+0022 E0                MOVX    A,@DPTR
+0023 FA                MOV     R2,A
+0024 A3                INC     DPTR
+0025 E0                MOVX    A,@DPTR
+0026 F9                MOV     R1,A
+0027 110000      E     ACALL   ?C?LLDPTR
+002A 90000000    E     MOV     DPTR,#?_SOsd_SetLut?BYTE+06H
+002E 110000      E     ACALL   ?C?LSTXDATA
+0031         L?0026:
+0031 90000000    R     MOV     DPTR,#image
+0035         L?0027:
+0035 E0                MOVX    A,@DPTR
+0036 FB                MOV     R3,A
+0037 A3                INC     DPTR
+0038 E0                MOVX    A,@DPTR
+0039 FA                MOV     R2,A
+003A A3                INC     DPTR
+003B E0                MOVX    A,@DPTR
+003C 2408              ADD     A,#08H
+003E         L?0028:
+003E F9                MOV     R1,A
+003F E4                CLR     A
+0040 3A                ADDC    A,R2
+0041 FA                MOV     R2,A
+0042 010000      E     AJMP    ?C?CLDPTR
+0045         L?0029:
+0045 90000000    R     MOV     DPTR,#sosd_win
+0049 E0                MOVX    A,@DPTR
+004A FF                MOV     R7,A
+004B         L?0030:
+004B 90000000    R     MOV     DPTR,#header
+004F         L?0031:
+004F E0                MOVX    A,@DPTR
+0050 FB                MOV     R3,A
+0051 A3                INC     DPTR
+0052 E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   SPIFLASHMAP                                                       07/18/2018 10:44:59 PAGE 3   
+
+0053 FA                MOV     R2,A
+0054 A3                INC     DPTR
+0055 E0                MOVX    A,@DPTR
+0056 22                RET     
+0057         L?0032:
+0057         L?0033:
+0057 E0                MOVX    A,@DPTR
+0058 75F00D            MOV     B,#0DH
+005B         L?0034:
+005B A4                MUL     AB
+005C 2400        R     ADD     A,#LOW MonSOsdImgTable
+005E F582              MOV     DPL,A
+0060 E5F0              MOV     A,B
+0062 3400        R     ADDC    A,#HIGH MonSOsdImgTable
+0064 F583              MOV     DPH,A
+0066 759300      E     MOV     DPX,#?C?CODESEG
+0069 E4                CLR     A
+006A 93                MOVC    A,@A+DPTR
+006B FB                MOV     R3,A
+006C         L?0035:
+006C 7401              MOV     A,#01H
+006E 93                MOVC    A,@A+DPTR
+006F FA                MOV     R2,A
+0070 7402              MOV     A,#02H
+0072 93                MOVC    A,@A+DPTR
+0073 22                RET     
+0074         L?0036:
+0074 90000000    R     MOV     DPTR,#header
+0078 A3                INC     DPTR
+0079 E0                MOVX    A,@DPTR
+007A FA                MOV     R2,A
+007B A3                INC     DPTR
+007C E0                MOVX    A,@DPTR
+007D         L?0037:
+007D 240F              ADD     A,#0FH
+007F         L?0038:
+007F F9                MOV     R1,A
+0080 E4                CLR     A
+0081 3A                ADDC    A,R2
+0082 FA                MOV     R2,A
+0083 010000      E     AJMP    ?C?ILDPTR
+0086         L?0039:
+0086 90000000    E     MOV     DPTR,#?_SOsd_SetLut?BYTE+0AH
+008A F0                MOVX    @DPTR,A
+008B 90000000    R     MOV     DPTR,#item_lut
+008F E0                MOVX    A,@DPTR
+0090 FA                MOV     R2,A
+0091 A3                INC     DPTR
+0092 E0                MOVX    A,@DPTR
+0093 FB                MOV     R3,A
+0094         L?0040:
+0094 90000000    R     MOV     DPTR,#sosd_win
+0098 E0                MOVX    A,@DPTR
+0099 FF                MOV     R7,A
+009A 22                RET     
+009B         L?0041:
+009B E0                MOVX    A,@DPTR
+009C 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+00A0 F0                MOVX    @DPTR,A
+00A1 75F00D            MOV     B,#0DH
+00A4 A4                MUL     AB
+00A5 2400        R     ADD     A,#LOW MonSOsdImgTable+03H
+C51 COMPILER V9.56.0.0   SPIFLASHMAP                                                       07/18/2018 10:44:59 PAGE 4   
+
+00A7 F9                MOV     R1,A
+00A8 7400        R     MOV     A,#HIGH MonSOsdImgTable+03H
+00AA 35F0              ADDC    A,B
+00AC FA                MOV     R2,A
+00AD A3                INC     DPTR
+00AE 7400        R     MOV     A,#MBYTE MonSOsdImgTable
+00B0         L?0042:
+00B0 F0                MOVX    @DPTR,A
+00B1 A3                INC     DPTR
+00B2 EA                MOV     A,R2
+00B3 F0                MOVX    @DPTR,A
+00B4 A3                INC     DPTR
+00B5 E9                MOV     A,R1
+00B6 F0                MOVX    @DPTR,A
+00B7 22                RET     
+00B8         L?0043:
+00B8 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+00BC F0                MOVX    @DPTR,A
+00BD A3                INC     DPTR
+00BE EF                MOV     A,R7
+00BF F0                MOVX    @DPTR,A
+00C0 22                RET     
+00C1         L?0044:
+00C1 FF                MOV     R7,A
+00C2 E5F0              MOV     A,B
+00C4 F0                MOVX    @DPTR,A
+00C5 A3                INC     DPTR
+00C6 EF                MOV     A,R7
+00C7 F0                MOVX    @DPTR,A
+00C8 90000000    R     MOV     DPTR,#header
+00CC A3                INC     DPTR
+00CD E0                MOVX    A,@DPTR
+00CE FA                MOV     R2,A
+00CF A3                INC     DPTR
+00D0 E0                MOVX    A,@DPTR
+00D1 F9                MOV     R1,A
+00D2 010000      E     AJMP    ?C?LLDPTR
+00D5         L?0045:
+00D5         L?0046:
+00D5 7400        E     MOV     A,#MBYTE header_table
+00D7 F0                MOVX    @DPTR,A
+00D8 A3                INC     DPTR
+00D9 7400        E     MOV     A,#HIGH header_table
+00DB F0                MOVX    @DPTR,A
+00DC A3                INC     DPTR
+00DD 7400        E     MOV     A,#LOW header_table
+00DF F0                MOVX    @DPTR,A
+00E0 22                RET     
+00E1         L?0047:
+00E1 90000000    R     MOV     DPTR,#lut
+00E5 E0                MOVX    A,@DPTR
+00E6 FA                MOV     R2,A
+00E7 A3                INC     DPTR
+00E8 E0                MOVX    A,@DPTR
+00E9 FB                MOV     R3,A
+00EA         L?0048:
+00EA 90000000    R     MOV     DPTR,#sosd_win
+00EE E0                MOVX    A,@DPTR
+00EF FF                MOV     R7,A
+00F0 22                RET     
+00F1         L?0049:
+00F1         L?0050:
+C51 COMPILER V9.56.0.0   SPIFLASHMAP                                                       07/18/2018 10:44:59 PAGE 5   
+
+00F1 90000000    R     MOV     DPTR,#header
+00F5 A3                INC     DPTR
+00F6 E0                MOVX    A,@DPTR
+00F7 FA                MOV     R2,A
+00F8 A3                INC     DPTR
+00F9 E0                MOVX    A,@DPTR
+00FA 22                RET     
+00FB         L?0051:
+00FB EF                MOV     A,R7
+00FC F0                MOVX    @DPTR,A
+00FD A3                INC     DPTR
+00FE ED                MOV     A,R5
+00FF F0                MOVX    @DPTR,A
+0100 A3                INC     DPTR
+0101 EA                MOV     A,R2
+0102 F0                MOVX    @DPTR,A
+0103 A3                INC     DPTR
+0104 EB                MOV     A,R3
+0105 F0                MOVX    @DPTR,A
+0106 22                RET     
+             ; FUNCTION Com0018 (END)
+
+             ; FUNCTION MonSOsdImg_GetMax (BEGIN)
+                                           ; SOURCE LINE # 595
+                                           ; SOURCE LINE # 596
+                                           ; SOURCE LINE # 599
+;---- Variable 'max' assigned to Register 'R7' ----
+0000 E4                CLR     A
+0001 FF                MOV     R7,A
+0002         ?C0001:
+                                           ; SOURCE LINE # 600
+                                           ; SOURCE LINE # 601
+0002 75F00D            MOV     B,#0DH
+0005 EF                MOV     A,R7
+0006 110000      R     ACALL   L?0034
+0009 4A                ORL     A,R2
+000A 4B                ORL     A,R3
+000B 6003              JZ      ?C0002
+                                           ; SOURCE LINE # 602
+000D         ?C0003:
+                                           ; SOURCE LINE # 603
+000D 0F                INC     R7
+                                           ; SOURCE LINE # 604
+000E 80F2              SJMP    ?C0001
+0010         ?C0002:
+                                           ; SOURCE LINE # 605
+                                           ; SOURCE LINE # 606
+0010         ?C0004:
+0010 22                RET     
+             ; FUNCTION MonSOsdImg_GetMax (END)
+
+             ; FUNCTION _MonSOsdImg_Get_ImgeItem (BEGIN)
+                                           ; SOURCE LINE # 614
+0000 90000000    R     MOV     DPTR,#num
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 615
+                                           ; SOURCE LINE # 618
+0006 110000      R     ACALL   MonSOsdImg_GetMax
+;---- Variable 'max' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 619
+0009 90000000    R     MOV     DPTR,#num
+C51 COMPILER V9.56.0.0   SPIFLASHMAP                                                       07/18/2018 10:44:59 PAGE 6   
+
+000D E0                MOVX    A,@DPTR
+000E FE                MOV     R6,A
+000F C3                CLR     C
+0010 9F                SUBB    A,R7
+0011 4014              JC      ?C0005
+                                           ; SOURCE LINE # 620
+0013 7B00        R     MOV     R3,#MBYTE ?SC_0
+0015 7A00        R     MOV     R2,#HIGH ?SC_0
+0017 7900        R     MOV     R1,#LOW ?SC_0
+0019 EE                MOV     A,R6
+001A 110000      R     ACALL   L?0043
+001D 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 621
+0020 7B00              MOV     R3,#00H
+0022 7A00              MOV     R2,#00H
+0024 7900              MOV     R1,#00H
+0026 22                RET     
+                                           ; SOURCE LINE # 622
+0027         ?C0005:
+                                           ; SOURCE LINE # 624
+0027 90000000    R     MOV     DPTR,#num
+002B 110000      R     ACALL   L?0041
+002E 7B00        R     MOV     R3,#MBYTE ?SC_22
+0030 7A00        R     MOV     R2,#HIGH ?SC_22
+0032 7900        R     MOV     R1,#LOW ?SC_22
+0034 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 625
+0037 90000000    R     MOV     DPTR,#num
+003B 110000      R     ACALL   L?0032
+003E F9                MOV     R1,A
+                                           ; SOURCE LINE # 626
+003F         ?C0006:
+003F 22                RET     
+             ; FUNCTION _MonSOsdImg_Get_ImgeItem (END)
+
+             ; FUNCTION MonSOsdImgInfo (BEGIN)
+                                           ; SOURCE LINE # 636
+                                           ; SOURCE LINE # 637
+                                           ; SOURCE LINE # 640
+0000 90000000    R     MOV     DPTR,#header
+0004 110000      R     ACALL   L?0045
+                                           ; SOURCE LINE # 643
+0007 E4                CLR     A
+0008 A3                INC     DPTR
+0009 F0                MOVX    @DPTR,A
+000A         ?C0007:
+                                           ; SOURCE LINE # 644
+                                           ; SOURCE LINE # 645
+000A 90000000    R     MOV     DPTR,#i
+000E 110000      R     ACALL   L?0041
+0011 7B00        R     MOV     R3,#MBYTE ?SC_38
+0013 7A00        R     MOV     R2,#HIGH ?SC_38
+0015 7900        R     MOV     R1,#LOW ?SC_38
+0017 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 646
+001A 90000000    R     MOV     DPTR,#i
+001E E0                MOVX    A,@DPTR
+001F 75F00D            MOV     B,#0DH
+0022 A4                MUL     AB
+0023 2400        R     ADD     A,#LOW MonSOsdImgTable
+0025 F582              MOV     DPL,A
+0027 E5F0              MOV     A,B
+C51 COMPILER V9.56.0.0   SPIFLASHMAP                                                       07/18/2018 10:44:59 PAGE 7   
+
+0029 3400        R     ADDC    A,#HIGH MonSOsdImgTable
+002B F583              MOV     DPH,A
+002D 759300      E     MOV     DPX,#?C?CODESEG
+0030 E4                CLR     A
+0031 93                MOVC    A,@A+DPTR
+0032 F9                MOV     R1,A
+0033 110000      R     ACALL   L?0035
+0036 90000000    R     MOV     DPTR,#image
+003A C9                XCH     A,R1
+003B 110000      R     ACALL   L?0042
+                                           ; SOURCE LINE # 647
+003E 90000000    R     MOV     DPTR,#image
+0042 110000      R     ACALL   L?0031
+0045 2401              ADD     A,#01H
+0047 F9                MOV     R1,A
+0048 E4                CLR     A
+0049 3A                ADDC    A,R2
+004A FA                MOV     R2,A
+004B 110000      E     ACALL   ?C?LLDPTR
+004E 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0052 110000      E     ACALL   ?C?LSTXDATA
+0055 90000000    R     MOV     DPTR,#image
+0059 110000      R     ACALL   L?0027
+005C 90000000    E     MOV     DPTR,#?_Printf?BYTE+07H
+0060 F0                MOVX    @DPTR,A
+0061 7B00        R     MOV     R3,#MBYTE ?SC_48
+0063 7A00        R     MOV     R2,#HIGH ?SC_48
+0065 7900        R     MOV     R1,#LOW ?SC_48
+0067 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 650
+006A 90000000    R     MOV     DPTR,#image
+006E 110000      R     ACALL   L?0031
+0071 F9                MOV     R1,A
+0072 110000      E     ACALL   _MenuPrepareImageHeader
+                                           ; SOURCE LINE # 653
+0075 90000000    R     MOV     DPTR,#header
+0079 110000      R     ACALL   L?0031
+007C 2409              ADD     A,#09H
+007E 110000      R     ACALL   L?0028
+0081 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0085 F0                MOVX    @DPTR,A
+0086 7B00        R     MOV     R3,#MBYTE ?SC_67
+0088 7A00        R     MOV     R2,#HIGH ?SC_67
+008A 7900        R     MOV     R1,#LOW ?SC_67
+                                           ; SOURCE LINE # 654
+008C 110000      R     ACALL   L?0052
+008F 110000      R     ACALL   L?0031
+0092 240A              ADD     A,#0AH
+0094 110000      R     ACALL   L?0028
+0097 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+009B F0                MOVX    @DPTR,A
+009C 7B00        R     MOV     R3,#MBYTE ?SC_75
+009E 7A00        R     MOV     R2,#HIGH ?SC_75
+00A0 7900        R     MOV     R1,#LOW ?SC_75
+                                           ; SOURCE LINE # 655
+00A2 110000      R     ACALL   L?0052
+00A5 110000      R     ACALL   L?0031
+00A8 240B              ADD     A,#0BH
+00AA 110000      R     ACALL   L?0038
+00AD FF                MOV     R7,A
+00AE E5F0              MOV     A,B
+00B0 110000      R     ACALL   L?0043
+C51 COMPILER V9.56.0.0   SPIFLASHMAP                                                       07/18/2018 10:44:59 PAGE 8   
+
+00B3 90000000    R     MOV     DPTR,#header
+00B7 A3                INC     DPTR
+00B8 E0                MOVX    A,@DPTR
+00B9 FA                MOV     R2,A
+00BA A3                INC     DPTR
+00BB E0                MOVX    A,@DPTR
+00BC 240D              ADD     A,#0DH
+00BE 110000      R     ACALL   L?0038
+00C1 FF                MOV     R7,A
+00C2 90000000    E     MOV     DPTR,#?_Printf?BYTE+05H
+00C6 E5F0              MOV     A,B
+00C8 F0                MOVX    @DPTR,A
+00C9 A3                INC     DPTR
+00CA EF                MOV     A,R7
+00CB F0                MOVX    @DPTR,A
+00CC 7B00        R     MOV     R3,#MBYTE ?SC_83
+00CE 7A00        R     MOV     R2,#HIGH ?SC_83
+00D0 7900        R     MOV     R1,#LOW ?SC_83
+00D2 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 656
+00D5 90000000    R     MOV     DPTR,#image
+00D9 110000      R     ACALL   L?0027
+00DC 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+00E0 F0                MOVX    @DPTR,A
+00E1 7B00        R     MOV     R3,#MBYTE ?SC_90
+00E3 7A00        R     MOV     R2,#HIGH ?SC_90
+00E5 7900        R     MOV     R1,#LOW ?SC_90
+00E7 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 657
+00EA 90000000    R     MOV     DPTR,#header
+00EE 110000      R     ACALL   L?0027
+00F1 6008              JZ      ?C0010
+00F3 7B00        R     MOV     R3,#MBYTE ?SC_119
+00F5 7A00        R     MOV     R2,#HIGH ?SC_119
+00F7 7900        R     MOV     R1,#LOW ?SC_119
+00F9 8006              SJMP    ?C0011
+00FB         ?C0010:
+00FB 7B00        R     MOV     R3,#MBYTE ?SC_121
+00FD 7A00        R     MOV     R2,#HIGH ?SC_121
+00FF 7900        R     MOV     R1,#LOW ?SC_121
+0101         ?C0011:
+0101 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0105 EB                MOV     A,R3
+0106 110000      R     ACALL   L?0042
+0109 90000000    R     MOV     DPTR,#header
+010D 110000      R     ACALL   L?0031
+0110 110000      R     ACALL   L?0037
+0113 AEF0              MOV     R6,B
+0115 7802              MOV     R0,#02H
+0117         ?C0023:
+0117 CE                XCH     A,R6
+0118 C3                CLR     C
+0119 13                RRC     A
+011A CE                XCH     A,R6
+011B 13                RRC     A
+011C D8F9              DJNZ    R0,?C0023
+011E FF                MOV     R7,A
+011F 90000000    E     MOV     DPTR,#?_Printf?BYTE+06H
+0123 EE                MOV     A,R6
+0124 F0                MOVX    @DPTR,A
+0125 A3                INC     DPTR
+0126 EF                MOV     A,R7
+C51 COMPILER V9.56.0.0   SPIFLASHMAP                                                       07/18/2018 10:44:59 PAGE 9   
+
+0127 F0                MOVX    @DPTR,A
+0128 7B00        R     MOV     R3,#MBYTE ?SC_102
+012A 7A00        R     MOV     R2,#HIGH ?SC_102
+012C 7900        R     MOV     R1,#LOW ?SC_102
+012E 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 658
+0131 90000000    R     MOV     DPTR,#i
+0135 E0                MOVX    A,@DPTR
+0136 04                INC     A
+0137 F0                MOVX    @DPTR,A
+0138 E0                MOVX    A,@DPTR
+0139 C3                CLR     C
+013A 9419              SUBB    A,#019H
+013C 5003              JNC     $ + 5H
+013E 010000      R     AJMP    ?C0007
+                                           ; SOURCE LINE # 659
+0141         ?C0012:
+0141 22                RET     
+0142         L?0052:
+0142 110000      E     ACALL   _Printf
+0145 90000000    R     MOV     DPTR,#header
+0149 22                RET     
+             ; FUNCTION MonSOsdImgInfo (END)
+
+             ; FUNCTION _MonOsdLutLoad (BEGIN)
+                                           ; SOURCE LINE # 665
+0000 90000000    R     MOV     DPTR,#img_n
+0004 110000      R     ACALL   L?0051
+                                           ; SOURCE LINE # 666
+                                           ; SOURCE LINE # 669
+0007 A3                INC     DPTR
+0008 110000      R     ACALL   L?0045
+                                           ; SOURCE LINE # 672
+000B 7B00        R     MOV     R3,#MBYTE ?SC_123
+000D 7A00        R     MOV     R2,#HIGH ?SC_123
+000F 7900        R     MOV     R1,#LOW ?SC_123
+0011 90000000    R     MOV     DPTR,#img_n
+0015 E0                MOVX    A,@DPTR
+0016 90000000    E     MOV     DPTR,#?_ePrintf?BYTE+03H
+001A F0                MOVX    @DPTR,A
+001B 90000000    R     MOV     DPTR,#sosd_win
+001F E0                MOVX    A,@DPTR
+0020 90000000    E     MOV     DPTR,#?_ePrintf?BYTE+04H
+0024 F0                MOVX    @DPTR,A
+0025 90000000    R     MOV     DPTR,#lut
+0029 E0                MOVX    A,@DPTR
+002A FF                MOV     R7,A
+002B A3                INC     DPTR
+002C E0                MOVX    A,@DPTR
+002D 90000000    E     MOV     DPTR,#?_ePrintf?BYTE+05H
+0031 CF                XCH     A,R7
+0032 F0                MOVX    @DPTR,A
+0033 A3                INC     DPTR
+0034 EF                MOV     A,R7
+0035 F0                MOVX    @DPTR,A
+0036 110000      E     ACALL   _ePrintf
+                                           ; SOURCE LINE # 675
+0039 90000000    R     MOV     DPTR,#img_n
+003D 110000      R     ACALL   L?0032
+0040 F9                MOV     R1,A
+;---- Variable 'image' assigned to Register 'R1/R2/R3' ----
+                                           ; SOURCE LINE # 677
+C51 COMPILER V9.56.0.0   SPIFLASHMAP                                                       07/18/2018 10:44:59 PAGE 10  
+
+0041 110000      E     ACALL   _MenuPrepareImageHeader
+                                           ; SOURCE LINE # 681
+0044 90000000    R     MOV     DPTR,#header
+0048 110000      R     ACALL   L?0027
+004B FD                MOV     R5,A
+004C C005              PUSH    AR5
+004E 110000      R     ACALL   L?0036
+0051 90000000    E     MOV     DPTR,#?_SOsd_SetLut?BYTE+04H
+0055 110000      R     ACALL   L?0044
+0058 90000000    E     MOV     DPTR,#?_SOsd_SetLut?BYTE+06H
+005C 110000      E     ACALL   ?C?LSTXDATA
+005F 90000000    E     MOV     DPTR,#?_SOsd_SetLut?BYTE+0AH
+0063 74FF              MOV     A,#0FFH
+0065 F0                MOVX    @DPTR,A
+0066 110000      R     ACALL   L?0047
+0069 D005              POP     AR5
+006B 110000      E     ACALL   _SOsd_SetLut
+                                           ; SOURCE LINE # 682
+006E 110000      R     ACALL   L?0048
+0071 E4                CLR     A
+0072 FD                MOV     R5,A
+0073 110000      E     ACALL   _SOsd_UpdateLut
+                                           ; SOURCE LINE # 684
+0076 90000000    R     MOV     DPTR,#header
+007A 110000      R     ACALL   L?0027
+007D FD                MOV     R5,A
+007E C005              PUSH    AR5
+0080 110000      R     ACALL   L?0036
+0083 90000000    E     MOV     DPTR,#?_SpiOsdCheckLut?BYTE+04H
+0087 110000      R     ACALL   L?0044
+008A 90000000    E     MOV     DPTR,#?_SpiOsdCheckLut?BYTE+06H
+008E 110000      E     ACALL   ?C?LSTXDATA
+0091 110000      R     ACALL   L?0047
+0094 D005              POP     AR5
+0096 110000      E     ACALL   _SpiOsdCheckLut
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 685
+                                           ; SOURCE LINE # 686
+0099         ?C0013:
+0099 22                RET     
+             ; FUNCTION _MonOsdLutLoad (END)
+
+             ; FUNCTION _MonOsdImgLoad (BEGIN)
+                                           ; SOURCE LINE # 695
+0000 90000000    R     MOV     DPTR,#img_n
+0004 110000      R     ACALL   L?0051
+                                           ; SOURCE LINE # 696
+                                           ; SOURCE LINE # 698
+0007 90000000    R     MOV     DPTR,#header
+000B 110000      R     ACALL   L?0046
+                                           ; SOURCE LINE # 702
+000E 7B00        R     MOV     R3,#MBYTE ?SC_150
+0010 7A00        R     MOV     R2,#HIGH ?SC_150
+0012 7900        R     MOV     R1,#LOW ?SC_150
+0014 90000000    R     MOV     DPTR,#img_n
+0018 E0                MOVX    A,@DPTR
+0019 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+001D F0                MOVX    @DPTR,A
+001E 90000000    R     MOV     DPTR,#sosd_win
+0022 E0                MOVX    A,@DPTR
+0023 90000000    E     MOV     DPTR,#?_Printf?BYTE+04H
+0027 F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   SPIFLASHMAP                                                       07/18/2018 10:44:59 PAGE 11  
+
+0028 90000000    R     MOV     DPTR,#item_lut
+002C E0                MOVX    A,@DPTR
+002D FF                MOV     R7,A
+002E A3                INC     DPTR
+002F E0                MOVX    A,@DPTR
+0030 90000000    E     MOV     DPTR,#?_Printf?BYTE+05H
+0034 CF                XCH     A,R7
+0035 F0                MOVX    @DPTR,A
+0036 A3                INC     DPTR
+0037 EF                MOV     A,R7
+0038 F0                MOVX    @DPTR,A
+0039 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 707
+003C E4                CLR     A
+003D 90000000    R     MOV     DPTR,#sy
+0041 F0                MOVX    @DPTR,A
+0042 A3                INC     DPTR
+0043 F0                MOVX    @DPTR,A
+0044 90000000    R     MOV     DPTR,#sx
+0048 F0                MOVX    @DPTR,A
+0049 A3                INC     DPTR
+004A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 710
+004B 90000000    R     MOV     DPTR,#img_n
+004F 110000      R     ACALL   L?0033
+0052 F9                MOV     R1,A
+0053 90000000    R     MOV     DPTR,#image
+0057 EB                MOV     A,R3
+0058 110000      R     ACALL   L?0042
+                                           ; SOURCE LINE # 713
+005B 110000      E     ACALL   _MenuPrepareImageHeader
+                                           ; SOURCE LINE # 718
+005E 110000      R     ACALL   L?0030
+0061 2404              ADD     A,#04H
+0063 F9                MOV     R1,A
+0064 E4                CLR     A
+0065 3A                ADDC    A,R2
+0066 FA                MOV     R2,A
+0067 110000      E     ACALL   ?C?LLDPTR
+006A 90000000    E     MOV     DPTR,#?_SOsd_SetSpiStartOffset?BYTE+01H
+006E 110000      E     ACALL   ?C?LSTXDATA
+0071 110000      R     ACALL   L?0040
+0074 110000      E     ACALL   _SOsd_SetSpiStartOffset
+                                           ; SOURCE LINE # 719
+0077 110000      R     ACALL   L?0029
+007A 240B              ADD     A,#0BH
+007C 110000      R     ACALL   L?0038
+007F FD                MOV     R5,A
+0080 ACF0              MOV     R4,B
+0082 110000      R     ACALL   L?0049
+0085 240D              ADD     A,#0DH
+0087 110000      R     ACALL   L?0038
+008A FB                MOV     R3,A
+008B AAF0              MOV     R2,B
+008D 110000      E     ACALL   _SOsd_SetImageWidthHeight
+                                           ; SOURCE LINE # 720
+0090 110000      R     ACALL   L?0040
+0093 90000000    R     MOV     DPTR,#sx
+0097 E0                MOVX    A,@DPTR
+0098 FC                MOV     R4,A
+0099 A3                INC     DPTR
+009A E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   SPIFLASHMAP                                                       07/18/2018 10:44:59 PAGE 12  
+
+009B FD                MOV     R5,A
+009C 110000      R     ACALL   L?0030
+009F 240B              ADD     A,#0BH
+00A1 110000      R     ACALL   L?0038
+00A4 FB                MOV     R3,A
+00A5 90000000    E     MOV     DPTR,#?_SOsd_SetScreen?BYTE+05H
+00A9 E5F0              MOV     A,B
+00AB F0                MOVX    @DPTR,A
+00AC A3                INC     DPTR
+00AD EB                MOV     A,R3
+00AE F0                MOVX    @DPTR,A
+00AF 110000      R     ACALL   L?0030
+00B2 240D              ADD     A,#0DH
+00B4 110000      R     ACALL   L?0038
+00B7 FB                MOV     R3,A
+00B8 90000000    E     MOV     DPTR,#?_SOsd_SetScreen?BYTE+07H
+00BC E5F0              MOV     A,B
+00BE F0                MOVX    @DPTR,A
+00BF A3                INC     DPTR
+00C0 EB                MOV     A,R3
+00C1 F0                MOVX    @DPTR,A
+00C2 90000000    R     MOV     DPTR,#sy
+00C6 E0                MOVX    A,@DPTR
+00C7 FA                MOV     R2,A
+00C8 A3                INC     DPTR
+00C9 E0                MOVX    A,@DPTR
+00CA FB                MOV     R3,A
+00CB 110000      E     ACALL   _SOsd_SetScreen
+                                           ; SOURCE LINE # 721
+00CE 90000000    R     MOV     DPTR,#sosd_win
+00D2 E0                MOVX    A,@DPTR
+00D3 7014              JNZ     ?C0014
+                                           ; SOURCE LINE # 722
+00D5 FD                MOV     R5,A
+00D6 FC                MOV     R4,A
+00D7 FF                MOV     R7,A
+00D8 FE                MOV     R6,A
+00D9 110000      E     ACALL   _SOsd_SetWin0ImageOffsetXY
+                                           ; SOURCE LINE # 723
+00DC E4                CLR     A
+00DD 90000000    E     MOV     DPTR,#?_SOsd_SetWin0Animation?BYTE+03H
+00E1 F0                MOVX    @DPTR,A
+00E2 FB                MOV     R3,A
+00E3 FD                MOV     R5,A
+00E4 7F01              MOV     R7,#01H
+00E6 110000      E     ACALL   _SOsd_SetWin0Animation
+                                           ; SOURCE LINE # 724
+00E9         ?C0014:
+                                           ; SOURCE LINE # 725
+00E9 110000      R     ACALL   L?0026
+00EC F4                CPL     A
+00ED 90000000    R     MOV     DPTR,#sosd_win
+00F1 6009              JZ      ?C0015
+                                           ; SOURCE LINE # 726
+00F3 E0                MOVX    A,@DPTR
+00F4 FF                MOV     R7,A
+00F5 7D01              MOV     R5,#01H
+00F7 110000      E     ACALL   _SOsd_SetPixelAlpha
+00FA 8007              SJMP    ?C0016
+00FC         ?C0015:
+                                           ; SOURCE LINE # 727
+                                           ; SOURCE LINE # 728
+C51 COMPILER V9.56.0.0   SPIFLASHMAP                                                       07/18/2018 10:44:59 PAGE 13  
+
+00FC E0                MOVX    A,@DPTR
+00FD FF                MOV     R7,A
+00FE E4                CLR     A
+00FF FD                MOV     R5,A
+0100 110000      E     ACALL   _SOsd_SetGlobalAlpha
+                                           ; SOURCE LINE # 729
+0103         ?C0016:
+                                           ; SOURCE LINE # 730
+0103 110000      R     ACALL   L?0029
+0106 2409              ADD     A,#09H
+0108 110000      R     ACALL   L?0028
+010B FD                MOV     R5,A
+010C 110000      E     ACALL   _SOsd_SetPixelWidth
+                                           ; SOURCE LINE # 731
+010F 110000      R     ACALL   L?0040
+0112 A3                INC     DPTR
+0113 E0                MOVX    A,@DPTR
+0114 FC                MOV     R4,A
+0115 A3                INC     DPTR
+0116 E0                MOVX    A,@DPTR
+0117 FD                MOV     R5,A
+0118 110000      E     ACALL   _SOsd_SetLutOffset
+                                           ; SOURCE LINE # 733
+011B 110000      R     ACALL   L?0040
+011E 7D01              MOV     R5,#01H
+0120 110000      E     ACALL   _SOsd_Enable
+                                           ; SOURCE LINE # 737
+0123 90000000    E     MOV     DPTR,#UseSOsdHwBuff
+0127 E0                MOVX    A,@DPTR
+0128 6047              JZ      ?C0017
+                                           ; SOURCE LINE # 738
+                                           ; SOURCE LINE # 739
+012A 110000      R     ACALL   L?0030
+012D 240A              ADD     A,#0AH
+012F 110000      R     ACALL   L?0028
+0132 FE                MOV     R6,A
+0133 6011              JZ      ?C0018
+                                           ; SOURCE LINE # 740
+0135 110000      R     ACALL   L?0040
+0138 110000      R     ACALL   L?0049
+013B 2409              ADD     A,#09H
+013D 110000      R     ACALL   L?0028
+0140 FD                MOV     R5,A
+0141 AB06              MOV     R3,AR6
+0143 110000      E     ACALL   _SOsd_SetRlc
+0146         ?C0018:
+                                           ; SOURCE LINE # 741
+0146 90000000    R     MOV     DPTR,#header
+014A 110000      R     ACALL   L?0027
+014D FD                MOV     R5,A
+014E C005              PUSH    AR5
+0150 110000      R     ACALL   L?0025
+0153 110000      R     ACALL   L?0039
+0156 D005              POP     AR5
+0158 110000      E     ACALL   _SOsd_SetLut
+                                           ; SOURCE LINE # 748
+015B 90000000    R     MOV     DPTR,#sosd_win
+015F E0                MOVX    A,@DPTR
+0160 FD                MOV     R5,A
+0161 FF                MOV     R7,A
+0162 110000      E     ACALL   _SOsd_UpdateReg
+                                           ; SOURCE LINE # 749
+C51 COMPILER V9.56.0.0   SPIFLASHMAP                                                       07/18/2018 10:44:59 PAGE 14  
+
+0165 E4                CLR     A
+0166 90000000    E     MOV     DPTR,#UseSOsdHwBuff
+016A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 756
+016B 110000      R     ACALL   L?0040
+016E 110000      E     ACALL   _SOsd_UpdatePixelAlpha
+                                           ; SOURCE LINE # 779
+0171         ?C0017:
+                                           ; SOURCE LINE # 781
+                                           ; SOURCE LINE # 783
+0171 110000      R     ACALL   L?0030
+0174 240A              ADD     A,#0AH
+0176 110000      R     ACALL   L?0028
+0179 FE                MOV     R6,A
+017A 6014              JZ      ?C0020
+                                           ; SOURCE LINE # 784
+017C 110000      R     ACALL   L?0040
+017F 110000      R     ACALL   L?0050
+0182 2409              ADD     A,#09H
+0184 110000      R     ACALL   L?0028
+0187 FD                MOV     R5,A
+0188 AB06              MOV     R3,AR6
+018A 110000      E     ACALL   _SOsd_SetRlc
+                                           ; SOURCE LINE # 785
+018D 110000      E     ACALL   SOsd_UpdateRlc
+                                           ; SOURCE LINE # 786
+                                           ; SOURCE LINE # 787
+                                           ; SOURCE LINE # 793
+0190         ?C0020:
+                                           ; SOURCE LINE # 794
+0190 7F01              MOV     R7,#01H
+0192 110000      E     ACALL   _WaitVBlank
+                                           ; SOURCE LINE # 799
+0195 90000000    R     MOV     DPTR,#header
+0199 110000      R     ACALL   L?0027
+019C FD                MOV     R5,A
+019D C005              PUSH    AR5
+019F 110000      R     ACALL   L?0025
+01A2 110000      R     ACALL   L?0039
+01A5 D005              POP     AR5
+01A7 110000      E     ACALL   _SOsd_SetLut
+                                           ; SOURCE LINE # 800
+01AA 110000      R     ACALL   L?0040
+01AD 7D01              MOV     R5,#01H
+01AF 110000      E     ACALL   _SOsd_UpdateLut
+                                           ; SOURCE LINE # 804
+01B2 90000000    R     MOV     DPTR,#sosd_win
+01B6 E0                MOVX    A,@DPTR
+01B7 FD                MOV     R5,A
+01B8 FF                MOV     R7,A
+01B9 010000      E     AJMP    _SOsd_UpdateReg
+             ; FUNCTION _MonOsdImgLoad (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1272    ----
+   CONSTANT SIZE    =   3178    ----
+   XDATA SIZE       =   ----      29
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+C51 COMPILER V9.56.0.0   SPIFLASHMAP                                                       07/18/2018 10:44:59 PAGE 15  
+
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

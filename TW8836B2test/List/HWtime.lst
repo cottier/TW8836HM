@@ -1,0 +1,205 @@
+C51 COMPILER V9.56.0.0   HWTIME                                                            08/31/2018 14:41:52 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE HWTIME
+OBJECT MODULE PLACED IN .\Output\HWtime.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source\HW\HWtime.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\Out
+                    -put\TW8836B_EVB11.ORC) BROWSE INCDIR(.\source\app;.\source\common;.\source\drv;.\source\HW;.\source\utils;.\source\test)
+                    - DEFINE(EVB_11,nullFn=//) DEBUG CODE PRINT(.\List\HWtime.lst) TABS(2) OBJECT(.\Output\HWtime.obj)
+
+line level    source
+
+   1          
+   2          
+   3          
+   4          #include "HWconf.h"
+   5          
+   6          HAL_StatusTypeDef TIM_Init( TIM_InitTypedef* TimBody)
+   7          {
+   8   1        switch( TimBody->TIM_Num )
+   9   1        {
+  10   2          case TIM0:
+  11   2          {
+  12   3            SFR_TMOD |= 0x06;
+  13   3            SFR_TH0 =TimBody->TIM_HValue;
+  14   3            SFR_TL0 =TimBody->TIM_LValue;
+  15   3          }
+  16   2            break;
+  17   2          case TIM1:
+  18   2          {
+  19   3            SFR_TMOD |= 0x60;
+  20   3            SFR_TH0 =TimBody->TIM_HValue;
+  21   3            SFR_TL0 =TimBody->TIM_LValue;
+  22   3          }
+  23   2            break;
+  24   2          case TIM2:
+  25   2          {
+  26   3            ;
+  27   3          }
+  28   2            break;
+  29   2          default:
+  30   2            return HAL_ERROR;
+  31   2        }
+  32   1        
+  33   1        return HAL_OK;
+  34   1      }
+  35          
+  36          HAL_StatusTypeDef DETIM_Init( TIM_InitTypedef* TimBody)
+  37          {
+  38   1        return HAL_ERROR;
+  39   1      }
+*** WARNING C280 IN LINE 36 OF source\HW\HWtime.c: 'TimBody': unreferenced local variable
+  40          
+  41          HAL_StatusTypeDef TIM_Start( TIM_InitTypedef* TimBody)
+  42          {
+  43   1        return HAL_OK;
+  44   1      }
+*** WARNING C280 IN LINE 41 OF source\HW\HWtime.c: 'TimBody': unreferenced local variable
+C51 COMPILER V9.56.0.0   HWTIME                                                            08/31/2018 14:41:52 PAGE 2   
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com000A (BEGIN)
+0000         L?0011:
+0000         L?0012:
+0000 90000000    R     MOV     DPTR,#TimBody
+0004 E0                MOVX    A,@DPTR
+0005 FB                MOV     R3,A
+0006 A3                INC     DPTR
+0007 E0                MOVX    A,@DPTR
+0008 FA                MOV     R2,A
+0009 A3                INC     DPTR
+000A E0                MOVX    A,@DPTR
+000B 22                RET     
+000C         L?0013:
+000C         L?0014:
+000C EB                MOV     A,R3
+000D F0                MOVX    @DPTR,A
+000E A3                INC     DPTR
+000F EA                MOV     A,R2
+0010 F0                MOVX    @DPTR,A
+0011 A3                INC     DPTR
+0012 E9                MOV     A,R1
+0013 F0                MOVX    @DPTR,A
+0014 22                RET     
+             ; FUNCTION Com000A (END)
+
+             ; FUNCTION _TIM_Init (BEGIN)
+                                           ; SOURCE LINE # 6
+0000 90000000    R     MOV     DPTR,#TimBody
+0004 110000      R     ACALL   L?0013
+                                           ; SOURCE LINE # 7
+                                           ; SOURCE LINE # 8
+0007 110000      R     ACALL   L?0011
+000A F9                MOV     R1,A
+000B 110000      E     ACALL   ?C?CLDPTR
+000E 14                DEC     A
+000F 600D              JZ      ?C0003
+0011 14                DEC     A
+0012 602E              JZ      ?C0001
+0014 2402              ADD     A,#02H
+0016 7027              JNZ     ?C0005
+                                           ; SOURCE LINE # 9
+                                           ; SOURCE LINE # 10
+0018         ?C0002:
+                                           ; SOURCE LINE # 11
+                                           ; SOURCE LINE # 12
+0018 438906            ORL     SFR_TMOD,#06H
+                                           ; SOURCE LINE # 13
+001B E9                MOV     A,R1
+                                           ; SOURCE LINE # 14
+                                           ; SOURCE LINE # 15
+                                           ; SOURCE LINE # 16
+001C 8006              SJMP    ?C0009
+                                           ; SOURCE LINE # 17
+001E         ?C0003:
+                                           ; SOURCE LINE # 18
+                                           ; SOURCE LINE # 19
+001E 438960            ORL     SFR_TMOD,#060H
+                                           ; SOURCE LINE # 20
+0021 110000      R     ACALL   L?0011
+C51 COMPILER V9.56.0.0   HWTIME                                                            08/31/2018 14:41:52 PAGE 3   
+
+0024         ?C0009:
+0024 2408              ADD     A,#08H
+0026 F9                MOV     R1,A
+0027 E4                CLR     A
+0028 3A                ADDC    A,R2
+0029 FA                MOV     R2,A
+002A 110000      E     ACALL   ?C?CLDPTR
+002D F58C              MOV     SFR_TH0,A
+                                           ; SOURCE LINE # 21
+002F 110000      R     ACALL   L?0012
+0032 2409              ADD     A,#09H
+0034 F9                MOV     R1,A
+0035 E4                CLR     A
+0036 3A                ADDC    A,R2
+0037 FA                MOV     R2,A
+0038 110000      E     ACALL   ?C?CLDPTR
+003B F58A              MOV     SFR_TL0,A
+                                           ; SOURCE LINE # 22
+                                           ; SOURCE LINE # 23
+003D 8003              SJMP    ?C0001
+                                           ; SOURCE LINE # 24
+                                           ; SOURCE LINE # 25
+                                           ; SOURCE LINE # 27
+                                           ; SOURCE LINE # 28
+                                           ; SOURCE LINE # 29
+003F         ?C0005:
+                                           ; SOURCE LINE # 30
+003F 7F01              MOV     R7,#01H
+0041 22                RET     
+                                           ; SOURCE LINE # 31
+0042         ?C0001:
+                                           ; SOURCE LINE # 33
+0042 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 34
+0044         ?C0006:
+0044 22                RET     
+             ; FUNCTION _TIM_Init (END)
+
+             ; FUNCTION _DETIM_Init (BEGIN)
+                                           ; SOURCE LINE # 36
+0000 90000000    R     MOV     DPTR,#TimBody
+0004 110000      R     ACALL   L?0013
+                                           ; SOURCE LINE # 37
+                                           ; SOURCE LINE # 38
+0007 7F01              MOV     R7,#01H
+                                           ; SOURCE LINE # 39
+0009         ?C0007:
+0009 22                RET     
+             ; FUNCTION _DETIM_Init (END)
+
+             ; FUNCTION _TIM_Start (BEGIN)
+                                           ; SOURCE LINE # 41
+0000 90000000    R     MOV     DPTR,#TimBody
+0004 110000      R     ACALL   L?0014
+                                           ; SOURCE LINE # 42
+                                           ; SOURCE LINE # 43
+0007 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 44
+0009         ?C0008:
+0009 22                RET     
+             ; FUNCTION _TIM_Start (END)
+
+C51 COMPILER V9.56.0.0   HWTIME                                                            08/31/2018 14:41:52 PAGE 4   
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    110    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----       9
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  2 WARNING(S),  0 ERROR(S)

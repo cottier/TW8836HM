@@ -1,0 +1,2337 @@
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE EEPROM
+OBJECT MODULE PLACED IN .\Output\EEPROM.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source36\EEPROM.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\Outp
+                    -ut\TW8836B_EVB11.ORC) BROWSE INCDIR(SiI-SW;SiI-SW\HAL;SiI-SW\DEBUG;SiI-SW\CEC;.\Source36\LIB) DEFINE(EVB_11,nullFn=//) D
+                    -EBUG CODE PRINT(.\List\EEPROM.lst) TABS(2) OBJECT(.\Output\EEPROM.obj)
+
+line level    source
+
+   1          /**
+   2           * @file
+   3           * eeprom.c 
+   4           * @author Brian Kang
+   5           * @version 1.0
+   6           * @section LICENSE
+   7           *  Copyright (C) 2011~2012 Intersil Corporation
+   8           * @section DESCRIPTION
+   9           *  eeprom
+  10          */
+  11          /*
+  12          Disclaimer: THIS INFORMATION IS PROVIDED 'AS-IS' FOR EVALUATION PURPOSES ONLY.  
+  13          INTERSIL CORPORATION AND ITS SUBSIDIARIES ('INTERSIL') DISCLAIM ALL WARRANTIES, 
+  14          INCLUDING WITHOUT LIMITATION FITNESS FOR A PARTICULAR PURPOSE AND MERCHANTABILITY.  
+  15          Intersil provides evaluation platforms to help our customers to develop products. 
+  16          However, factors beyond Intersil's control could significantly affect Intersil 
+  17          product performance. 
+  18          It remains the customers' responsibility to verify the actual system performance.
+  19          */
+  20          #include "Config.h"
+  21          #include "reg.h"
+  22          #include "typedefs.h"
+  23          #include "TW8836.h"
+  24          
+  25          #include "Global.h"
+  26          #include "CPU.h"
+  27          #include "printf.h"
+  28          
+  29          #include "I2C.h"
+  30          #include "spi.h"  
+  31          
+  32          #include "Main.h"
+  33          #include "EEPROM.h"
+  34          #include "e3prom.h"
+  35          #include "InputCtrl.h"
+  36          #include "TouchKey.h"
+  37          #include "debug.h"
+  38          #include "BT656.h"
+  39          
+  40          #include "aRGB.h"
+  41          
+  42          #include "DebugMsg.h"
+  43          
+  44          #ifdef USE_SFLASH_EEPROM
+  45          
+  46          
+  47          DWORD e3p_spi_start_addr;
+  48          
+  49          
+  50          /* wrap functions for E3P */
+  51          void E3P_Read2XMem(BYTE * dest_loc, DWORD src_loc, WORD size)
+  52          {
+  53   1        SpiFlash_Read_XMem(src_loc, (WORD)dest_loc, size);
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 2   
+
+  54   1        //SpiFlashDmaRead2XMem(dest_loc, src_loc, size, SPIFLASH_WAIT_READ);
+  55   1      }
+  56          void E3P_SectorErase(DWORD spiaddr)
+  57          {
+  58   1        SpiFlash_SectorErase(spiaddr);
+  59   1      }
+  60          void E3P_PageProgram(DWORD spiaddr, BYTE * xaddr, WORD cnt)
+  61          {
+  62   1        SpiFlash_PageProgram_XMem(spiaddr, (WORD)xaddr, cnt);
+  63   1      }
+  64          /* configure and init E3P */
+  65          void E3P_Configure(void)
+  66          {
+  67   1        E3P_GetVersion();
+  68   1        E3P_SetStartAddr(e3p_spi_start_addr); //default is 0x00040000
+  69   1        E3P_SetSize(E3P_INDEX_PER_BLOCK,E3P_BLOCKS);  //512 bytes 64 * 8.
+  70   1        E3P_SetBuffer(SPI_Buffer, SPI_BUFFER_SIZE);   //128
+  71   1        if(E3P_Init())
+  72   1          E3P_Repair();
+  73   1      }
+  74          
+  75          #elif defined(NO_EEPROM)  //.. USE_SFLASH_EEPROM    //=========================================
+              
+              CODE BYTE EE_dummy_DATA[0x1C0] = {
+              /* 000 */ 0x54, 0x38, 0x33, 0x35, 0x00, 0x09, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+              /* 010 */ 0x32, 0x32, 0x3E, 0x32, 0x14, 0x32, 0x32, 0x3E, 0x32, 0x14, 0x32, 0x32, 0x3E, 0x32, 0x14, 0x32,
+              /* 020 */ 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 0x32, 
+              /* 030 */ 0x3E, 0x32, 0x14, 0x32, 0x32, 0x3E, 0x32, 0x14, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+              /* 040 */ 0x00, 0x00, 0x00, 0x32, 0x32, 0x32, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+              /* 050 */ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+              /* 060 */ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+              /* 070 */ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+              /* 080 */ 0x01, 0xDE, 0x0D, 0xFF, 0x0D, 0xFC, 0x01, 0xF0, 0x07, 0xED, 0x0D, 0x68, 0x0D, 0x5D, 0x02, 0x51, 
+              /* 090 */ 0x02, 0x5C, 0x07, 0xD8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+              /* 0A0 */ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+              /* 0B0 */ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 
+              /* 0C0 */ 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x32, 0xFF, 0x32, 
+              /* 0D0 */ 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 
+              /* 0E0 */ 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+              /* 0F0 */ 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 
+              /* 100 */ 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+              /* 110 */ 0x00, 0x00, 0x00, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 
+              /* 120 */ 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 
+              /* 130 */ 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x32, 0xFF, 0x32, 0x32, 0x32, 
+              /* 140 */ 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+              /* 150 */ 0x00, 0x00, 0x00, 0x00, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+              /* 160 */ 0x00, 0x00, 0x00, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+              /* 170 */ 0x00, 0x00, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 
+              /* 180 */ 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 
+              /* 190 */ 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 
+              /* 1A0 */ 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 
+              /* 1B0 */ 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x32, 0xFF, 0x32, 0x32, 0x32, 0x00, 0x00, 0x00 
+              };
+              BYTE EE_Read(WORD index)
+              {
+                if(index >= 0x1C0) return 0x00;
+                return EE_dummy_DATA[index];  
+              }
+              void EE_Write(WORD index, BYTE dat)
+              {
+                Printf("\n\rEE_Write(%x,%bx) SKIP",index,dat);  
+              } 
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 3   
+
+              #endif
+ 117          
+ 118          //-----------------------------------------------------------------------------
+ 119          
+ 120          //=============================================================================
+ 121          //  EE[0] T T
+ 122          //  EE[1] 8 8
+ 123          //  EE[2] 3 3
+ 124          //  EE[3] 5 6
+ 125          //  EE[4] F/W Rev.-major(Hex) 
+ 126          //  EE[5] F/W Rev.-minor(Hex)
+ 127          //=============================================================================
+ 128          /**
+ 129          * get FW revision
+ 130          */
+ 131          WORD GetFWRevEE()
+ 132          {
+ 133   1        XDATA WORD  rev;
+ 134   1      
+ 135   1        /* check TW8836 Tag. */
+ 136   1        if( EE_Read(0) != 'T' ) return 0;   //TW
+ 137   1        if( EE_Read(1) != '8' ) return 0;   //88
+ 138   1        if( EE_Read(2) != '3' ) return 0;   //3
+ 139   1        if( EE_Read(3) != '6' ) return 0;   //6
+ 140   1      
+ 141   1          /* read & return Firmware Revision */
+ 142   1        rev = (WORD)EE_Read(EEP_FWREV_MAJOR);
+ 143   1        rev <<= 8;
+ 144   1        rev |= (WORD)EE_Read(EEP_FWREV_MINOR);
+ 145   1      #ifdef DEBUG_EEP
+                dPrintf("\n\rFW Rev %bd.%02bd", (BYTE)(rev>>8),(BYTE)(rev&0xff) );
+              #endif
+ 148   1        return rev;
+ 149   1      }
+ 150          /**
+ 151          * save FW revision
+ 152          */
+ 153          void SaveFWRevEE(WORD rev)
+ 154          {
+ 155   1        //write TW8836 Tag
+ 156   1        EE_Write(0, 'T'); //TW
+ 157   1        EE_Write(1, '8'); //88
+ 158   1        EE_Write(2, '3'); //3
+ 159   1        EE_Write(3, '6'); //6
+ 160   1      
+ 161   1        //write TW8836 Revision
+ 162   1        EE_Write(EEP_FWREV_MAJOR, (BYTE)(rev>>8) );
+ 163   1        EE_Write(EEP_FWREV_MINOR, (BYTE)rev );
+ 164   1      }
+ 165          
+ 166          //=============================================================================
+ 167          //  EE[6] DebugLevel
+ 168          //=============================================================================
+ 169          /**
+ 170          * get debug level
+ 171          */
+ 172          BYTE GetDebugLevelEE(void)
+ 173          {
+ 174   1        return EE_Read(EEP_DEBUGLEVEL);
+ 175   1      }
+ 176          /**
+ 177          * save debug level
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 4   
+
+ 178          */
+ 179          void SaveDebugLevelEE(BYTE dl)
+ 180          {
+ 181   1        EE_Write(EEP_DEBUGLEVEL, dl);
+ 182   1      }
+ 183          
+ 184          
+ 185          //=============================================================================
+ 186          //  EE[7] #define EEP_AUTODETECT      //BYTE  1 Flag for Input Auto Detect  -0:Auto, 1:NTSC,....
+ 187          //  EE[8] #define EEP_AUTODETECTTYTE    //BYTE  1 Type of Auto-detect(will be value of register 0x1d)
+ 188          //=============================================================================
+ 189          
+ 190          
+ 191          #ifdef WIDE_SCREEN
+              //=============================================================================
+              //  EE[9] Wide Mode 
+              //=============================================================================
+              BYTE GetWideModeEE(void)
+              {
+                return EE_Read(EEP_WIDEMODE);
+              }
+              void SaveWideModeEE(BYTE dl)
+              {
+                EE_Write(EEP_WIDEMODE, dl);
+              }
+              #endif
+ 204          
+ 205          
+ 206          #ifdef UNCALLED_SEGMENT_CODE
+              //=============================================================================
+              //  EE[0x0A]  Auto Recognition  EEP_AUTORECOGNITION   
+              //=============================================================================
+              BYTE GetPossibleAutoDetectStdEE(void)
+              {
+                BYTE val;
+              
+                val = EE_Read(EEP_AUTORECOGNITION);
+              
+                #ifdef DEBUG_EEP
+                dPrintf("\r\nGetPossibleAutoDetectStdEE:0x%02x", (WORD)val);
+                #endif
+              
+                return val;
+              }
+              #endif
+ 223          
+ 224          
+ 225          //=============================================================================
+ 226          // EE[0x0B]  EEP_VIDEOMODE   Video Mode
+ 227          //=============================================================================
+ 228          
+ 229          //=============================================================================
+ 230          //  EE[0C]  EEP_OSDLANG
+ 231          //=============================================================================
+ 232          #ifdef SUPPORT_FOSD_MENU
+              /**
+              * get OSD Language vale
+              */
+              BYTE GetOSDLangEE(void)
+              {
+                BYTE val;
+              
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 5   
+
+                val = EE_Read(EEP_OSDLANG);
+                
+                #ifdef DEBUG_EEP
+                dPrintf("\r\nGetOSDLang:%02x", (WORD)val);
+                #endif
+              
+                return val;
+              }
+              /**
+              * save OSD Language value
+              */
+              void SaveOSDLangEE(BYTE val)
+              {
+                EE_Write(EEP_OSDLANG, val);
+              }
+              #endif
+ 256          
+ 257          //=============================================================================
+ 258          // EE[0x0D] EEP_OSDPOSITIONMODE   OSD Position Mode
+ 259          //=============================================================================
+ 260          #ifdef SUPPORT_FOSD_MENU
+              /**
+              * get OSDPosition Move value
+              */
+              BYTE GetOSDPositionModeEE(void)
+              {
+                BYTE val;
+                val = EE_Read(EEP_OSDPOSITIONMODE);
+                return val;
+              }
+              /**
+              * save OSDPosition Mode value
+              */
+              void SaveOSDPositionModeEE(BYTE ndata)
+              {
+                EE_Write(EEP_OSDPOSITIONMODE, ndata);
+              }
+              #endif
+ 278          
+ 279          //=============================================================================
+ 280          //  EE[0x0e]  EEP_CCD   Closed Caption- 0: off, 1:on
+ 281          //=============================================================================
+ 282          
+ 283          //=============================================================================
+ 284          //  EE[0x10]  EEP_INPUT_MAIN    InputSelection
+ 285          //=============================================================================
+ 286          /**
+ 287          * get Input mode
+ 288          */
+ 289          BYTE GetInputMainEE( void )
+ 290          {
+ 291   1        return ( EE_Read( EEP_INPUT_MAIN ) );
+ 292   1      }
+ 293          /**
+ 294          * save Input mode
+ 295          */
+ 296          void SaveInputMainEE( BYTE mode )
+ 297          {
+ 298   1        EE_Write( EEP_INPUT_MAIN, mode );
+ 299   1      }
+ 300          
+ 301          //=============================================================================
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 6   
+
+ 302          //  EE[0x20]  EEP_INPUT_BT656   Input for BT656Output     
+ 303          //=============================================================================
+ 304          /**
+ 305          * get & save InputBT656 mode
+ 306          */
+ 307          BYTE GetInputBT656EE( void )
+ 308          {
+ 309   1        return ( EE_Read( EEP_INPUT_BT656 ) );
+ 310   1      }
+ 311          void SaveInputBT656EE( BYTE mode )
+ 312          {
+ 313   1        EE_Write( EEP_INPUT_BT656, mode );
+ 314   1      }
+ 315          
+ 316          
+ 317          //=============================================================================
+ 318          // Video Color Effect
+ 319          //=============================================================================
+ 320          //current EEP_IA_START is 0x40
+ 321          //   analog       digital CVBS   SVIDEO COMP  PC    DVI   HDMIPC  HDMITV  BT656
+ 322          //-----------------------------------------------------------------------------------------
+ 323          //      CONTRASE_Y      EE[+00] EE[+05] EE[+0A] EE[+0F] EE[+14] EE[+19] EE[+1E] EE[+23]  
+ 324          //      BRIGHTNESS_Y    EE[+01] EE[+06] EE[+0B] EE[+10] EE[+15] EE[+1A] EE[+1F] EE[+24]
+ 325          //SATURATION | CONTRAST_R EE[+02] EE[+07] EE[+0C] EE[+11] EE[+16] EE[+1B] EE[+20] EE[+25]
+ 326          //HUE    | CONTRAST_G EE[+03] EE[+08] EE[+0D] EE[+12] EE[+17] EE[+1C] EE[+21] EE[+26]
+ 327          //SHARPNESS  | CONTRAST_G EE[+04] EE[+09] EE[+0E] EE[+13] EE[+18] EE[+1D] EE[+22] EE[+27]
+ 328          //--------------------------  
+ 329          //
+ 330          //  start input
+ 331          //  EE[EEP_IA_START+00] EEP_CVBS
+ 332          //  EE[EEP_IA_START+05] EEP_SVIDEO
+ 333          //  EE[EEP_IA_START+0A] EEP_YPBPR
+ 334          //  EE[EEP_IA_START+0F] EEP_PC
+ 335          //  EE[EEP_IA_START+14] EEP_DVI
+ 336          //  EE[EEP_IA_START+19] EEP_HDMI_PC
+ 337          //  EE[EEP_IA_START+1E] EEP_HDMI_TV
+ 338          //  EE[EEP_IA_START+23] EEP_BT656
+ 339          //-----------------------------------------------------------------------------------------
+ 340          
+ 341          //=============================================================================
+ 342          //
+ 343          //=============================================================================
+ 344          /**
+ 345          * get VideoData
+ 346          */
+ 347          BYTE GetVideoDatafromEE(BYTE offset)
+ 348          {
+ 349   1        XDATA BYTE val;
+ 350   1        BYTE  index;
+ 351   1      
+ 352   1        index = EEP_IA_START+InputMain*IA_TOT_VIDEO;
+ 353   1        //BK121218 temp
+ 354   1        //if(InputMain==INPUT_LVDS) 
+ 355   1        //  index = EEP_IA_START+INPUT_DVI*IA_TOT_VIDEO;
+ 356   1      
+ 357   1        index += offset;
+ 358   1        val = EE_Read(index);
+ 359   1        return val;
+ 360   1      }
+ 361          
+ 362          /**
+ 363          * save VideoData
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 7   
+
+ 364          */
+ 365          void SaveVideoDatatoEE(BYTE offset, BYTE ndata)
+ 366          {
+ 367   1        BYTE  index;
+ 368   1      
+ 369   1        index = EEP_IA_START+InputMain*IA_TOT_VIDEO;
+ 370   1        //BK121218 temp
+ 371   1        //if(InputMain==INPUT_LVDS) 
+ 372   1        //  index = EEP_IA_START+INPUT_DVI*IA_TOT_VIDEO;
+ 373   1        index += offset;
+ 374   1      
+ 375   1      //  dPrintf("\n\rWrite EE Video Data %02bx: %bd",index, ndata);
+ 376   1        EE_Write(index, ndata);
+ 377   1      }
+ 378          
+ 379          //-----------------------------------------------------------------------------
+ 380          //
+ 381          //-----------------------------------------------------------------------------
+ 382          CODE BYTE Init_YCbCr_Video_Data[] = {
+ 383            50, 50, 62, 50, 20 }; // Contrast,Bright,Staturation_UV,Hue,Sharpness
+ 384          CODE BYTE Init_RGB_Video_Data[] = {
+ 385            50, 50, 50, 50, 50 }; // Contrast_Y, BrightY. Contrast_R Contrast_G Contrast_B
+ 386          
+ 387          /**
+ 388          * reset VideoData value
+ 389          */
+ 390          void ResetVideoValue(void)
+ 391          {
+ 392   1        XDATA BYTE i, CurInput;
+ 393   1        BYTE  *pTable;
+ 394   1        
+ 395   1        CurInput = InputMain;
+ 396   1        for (InputMain=INPUT_CVBS; InputMain < INPUT_TOTAL ; InputMain++ ) {
+ 397   2          if(InputMain == INPUT_PC || InputMain == INPUT_DVI || InputMain == INPUT_HDMIPC || InputMain == INPUT_LV
+             -DS)
+ 398   2            pTable = Init_RGB_Video_Data;
+ 399   2          else
+ 400   2            pTable = Init_YCbCr_Video_Data;
+ 401   2      
+ 402   2          for( i=0; i<IA_TOT_VIDEO; i++){
+ 403   3            SaveVideoDatatoEE(i, pTable[i]);  
+ 404   3          }
+ 405   2        }
+ 406   1        InputMain = CurInput;
+ 407   1        //SetVideoMode(USER_VIDEOMODE);
+ 408   1      }
+ 409          
+ 410          
+ 411          //=============================================================================
+ 412          // EE[0x38] EEP_ASPECT_MODE   0:Normal,1:Zoom,2:full,3:Panorama   
+ 413          //=============================================================================
+ 414          /**
+ 415          * get Aspect Mode value
+ 416          */
+ 417          BYTE GetAspectModeEE(void)
+ 418          {
+ 419   1        return ( EE_Read( EEP_ASPECT_MODE ) );  
+ 420   1      }
+ 421          /**
+ 422          * save Aspect Mode value
+ 423          */
+ 424          void SaveAspectModeEE(BYTE mode)
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 8   
+
+ 425          {
+ 426   1        EE_Write( EEP_ASPECT_MODE, mode );
+ 427   1      }
+ 428          
+ 429          //=============================================================================
+ 430          // EE[0x39] EEP_OSD_TRANSPARENCY
+ 431          //=============================================================================
+ 432          
+ 433          //=============================================================================
+ 434          // EE[0x3A] EEP_OSD_TIMEOUT
+ 435          //=============================================================================
+ 436          
+ 437          //=============================================================================
+ 438          // EE[0x3B] EEP_FLIP  //0:default,1:flip
+ 439          //=============================================================================
+ 440          
+ 441          //=============================================================================
+ 442          // EE[0x3C] EEP_BACKLIGHT
+ 443          //=============================================================================
+ 444          
+ 445          //=============================================================================
+ 446          // EE[0x3D] N/A
+ 447          //=============================================================================
+ 448          
+ 449          //=============================================================================
+ 450          // EE[0x3E] EEP_HDMI_MODE
+ 451          //=============================================================================
+ 452          /**
+ 453          * get Hdmi Mode value
+ 454          */
+ 455          BYTE GetHdmiModeEE(void)
+ 456          {
+ 457   1        return ( EE_Read( EEP_HDMI_MODE ) );  
+ 458   1      }
+ 459          /**
+ 460          * save Hdmi mode value
+ 461          */
+ 462          
+ 463          void SaveHdmiModeEE(BYTE mode)
+ 464          {
+ 465   1        EE_Write( EEP_HDMI_MODE, mode );
+ 466   1      }
+ 467          
+ 468          //=============================================================================
+ 469          // EE[0x3F] EEP_DVI_MODE
+ 470          //=============================================================================
+ 471          #if 0
+              /**
+              * Get DviMode value
+              */
+              BYTE GetDviModeEE(void)
+              {
+                return ( EE_Read( EEP_DVI_MODE ) ); 
+              }
+              #endif
+ 480          
+ 481          /**
+ 482          * save Dvi mode value
+ 483          */
+ 484          void SaveDviModeEE(BYTE mode)
+ 485          {
+ 486   1        EE_Write( EEP_DVI_MODE, mode );
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 9   
+
+ 487   1      }
+ 488          
+ 489          
+ 490          //=============================================================================
+ 491          // Audio Part
+ 492          //=============================================================================
+ 493          //  EE[0x43]  EEP_AUDIOVOL       AudioVol
+ 494          //  EE[0x44]  EEP_AUDIOBALANCE     AudioBalance
+ 495          //  EE[0x45]  EEP_AUDIOBASS      AudioBass
+ 496          //  EE[0x46]  EEP_AUDIOTREBLE      AudioTreble
+ 497          //  EE[0x47]  EEP_AUDIOEFFECT     
+ 498          //=============================================================================
+ 499          
+ 500          /**
+ 501          * reset Audio value
+ 502          */
+ 503          
+ 504          void ResetAudioValue(void)
+ 505          {
+ 506   1        EE_Write( EEP_AUDIOVOL, 50 );
+ 507   1        EE_Write( EEP_AUDIOBALANCE, 50 );
+ 508   1        EE_Write( EEP_AUDIOBASS, 50 );
+ 509   1        EE_Write( EEP_AUDIOTREBLE, 50 );
+ 510   1        EE_Write( EEP_AUDIOEFFECT, 0 );
+ 511   1      }
+ 512          
+ 513          
+ 514          //=============================================================================
+ 515          //  EE[0x48]    EEP_BLOCKMOVIE  BlockedMovie:Blocked rating for Movie
+ 516          //  EE[0x49]    EEP_BLOCKTV   BlockedTV:Blocked rating for TV 
+ 517          //  EE[0x4A:0x4F] EEP_FVSLD
+ 518          //=============================================================================
+ 519          
+ 520          //=============================================================================
+ 521          //  EE[0x50:0x53] EEP_VCHIPPASSWORD //Defualt:3366
+ 522          //=============================================================================
+ 523          
+ 524          //=============================================================================
+ 525          // Touch
+ 526          //  EE[0x80]  EEP_TOUCH_CALIB_X
+ 527          //  EE[0x80+10] EEP_TOUCH_CALIB_Y
+ 528          //  EE[0x80+20] EEP_TOUCH_CALIB_END
+ 529          //=============================================================================
+ 530          
+ 531          //=============================================================================
+ 532          //  EE[0x94]  EEP_ADC_GAIN_START
+ 533          //=============================================================================
+ 534          
+ 535          //=============================================================================
+ 536          //  EE[0xA0]  EEP_PC_MODE_START
+ 537          //=============================================================================
+ 538          
+ 539          //=============================================================================
+ 540          //  EE[]
+ 541          //=============================================================================
+ 542          
+ 543          
+ 544          //=============================================================================
+ 545          //
+ 546          //=============================================================================
+ 547          /**
+ 548          * set default value
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 10  
+
+ 549          */
+ 550          
+ 551          void ClearBasicEE(void)
+ 552          {
+ 553   1        BYTE i;
+ 554   1        dPuts("\n\rClearBasicEE........");
+ 555   1        EE_Write(EEP_BOOTMODE, 0);              // normal boot
+ 556   1        EE_Write(EEP_INPUT_MAIN, 0);            // start from CVBS
+ 557   1        EE_Write(EEP_INPUT_DEC, 0);
+ 558   1        EE_Write(EEP_INPUT_COMP, 0);
+ 559   1      
+ 560   1        EE_Write(EEP_INPUT_BT656, BT656_INPUT_CVBS);    // start from CVBS
+ 561   1        for(i=1; i<= 8; i++)
+ 562   1          EE_Write(EEP_INPUT_BT656+i, 0); 
+ 563   1      
+ 564   1      
+ 565   1        EE_Write(EEP_CCD, 0); // CC = OFF
+ 566   1      
+ 567   1        EE_Write(EEP_OSDLANG,0);  // Save default Language1
+ 568   1      
+ 569   1        ResetAudioValue();
+ 570   1      
+ 571   1        #ifdef SUPPORT_CCD_VCHIP
+                //Vchip Password
+                EE_Write(EEP_VCHIPPASSWORD,   3);
+                EE_Write(EEP_VCHIPPASSWORD+1, 3);
+                EE_Write(EEP_VCHIPPASSWORD+2, 6);
+                EE_Write(EEP_VCHIPPASSWORD+3, 6);
+                #endif
+ 578   1      
+ 579   1        EE_Write( EEP_DVI_MODE, 0 );
+ 580   1        //EE_Write( EEP_HDMI_MODE, 0 );
+ 581   1      
+ 582   1      
+ 583   1        EE_Write(EEP_VIDEOMODE, 0);     
+ 584   1        ResetVideoValue();
+ 585   1        SaveAspectModeEE(2);        //0:Normal,1:Zoom,2:full,3:Panorama
+ 586   1        EE_Write(EEP_OSD_TRANSPARENCY, 0);
+ 587   1        EE_Write(EEP_OSD_TIMEOUT, 0);   //default. 30->0 sec.
+ 588   1        EE_Write(EEP_FLIP, 0);      
+ 589   1        EE_Write(EEP_BACKLIGHT, 0);
+ 590   1        SaveHdmiModeEE(0);
+ 591   1        SaveDviModeEE(0);
+ 592   1      
+ 593   1      #ifdef SUPPORT_CCD_VCHIP
+                ResetCCEDS();
+              #endif //SUPPORT_CCD_VCHIP
+ 596   1      
+ 597   1      #ifdef SUPPORT_TV
+                EE_Write(EEP_TVInputSel, 0);  //AIRTV
+                TVChannel = DummyChannel = 2; 
+              
+                #ifdef NTSC_TV
+                EE_Write(CHN_CURAIR, TVChannel);
+                TVInputSel = AIRTV; SetFineTuneEE(TVChannel, 0); //E2(55.25 Mhz)
+                EE_Write(CHN_CURCABLE, TVChannel);
+                TVInputSel = CABLETV; SetFineTuneEE(TVChannel, 0); //E2(55.25 Mhz)
+                #else
+                EE_Write(PR_CUR, TVChannel);
+                SetTVFreqEE(TVChannel, 0x05e2); //E3(55.25 Mhz)
+                #endif
+              #endif // SUPPORT_TV
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 11  
+
+ 611   1      
+ 612   1      #ifdef WIDE_SCREEN
+                Set4WideScreen(WIDESCREEN_WIDE);
+              #endif
+ 615   1      
+ 616   1      
+ 617   1      #ifdef SUPPORT_TOUCH
+ 618   1        //save default CalibDataX[] and CalibDataY[]
+ 619   1        SaveCalibDataToEE(0);
+ 620   1      #endif
+ 621   1      
+ 622   1      //  EE_PrintCurrInfo();
+ 623   1      
+ 624   1      #ifdef SUPPORT_PC
+ 625   1        //init pcdata on EE
+ 626   1        InitPCDataEE();
+ 627   1      #endif
+ 628   1      
+ 629   1        //clear debug counter 
+ 630   1        EE_Write(EEP_DEBUG_BOOT, 0x00);
+ 631   1        EE_Write(EEP_DEBUG_BOOT+1, 0x00);
+ 632   1        EE_Write(EEP_DEBUG_WATCHDOG, 0x00);
+ 633   1        EE_Write(EEP_DEBUG_WATCHDOG+1, 0x00);
+ 634   1      
+ 635   1      }
+ 636          
+ 637          
+ 638          
+ 639          //=============================================================================
+ 640          //
+ 641          //=============================================================================
+ 642          /**
+ 643          * init EEPROM
+ 644          * 
+ 645          * @see ClearBasicEE
+ 646          * @see SaveFWRevEE
+ 647          */
+ 648          void  InitializeEE( void )
+ 649          {
+ 650   1        dPuts("\n\rEE initialize........");
+ 651   1        SaveFWRevEE( FWVER );
+ 652   1        ClearBasicEE();
+ 653   1      }
+ 654          
+ 655          
+ 656          
+ 657          
+ 658          /**
+ 659          * check EEPROM
+ 660          * 
+ 661          * If invalid FW revision, init EEPROM
+ 662          * @return
+ 663          * -0: success. Start with saved input...
+ 664          * -1: false.  need a repair routine
+ 665          */
+ 666          extern void SPI_dump(DWORD spiaddr); 
+ 667          
+ 668          BYTE CheckEEPROM(void)
+ 669          {
+ 670   1      #ifdef USE_SFLASH_EEPROM
+ 671   1      //  BYTE ret;
+ 672   1        //---------------------
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 12  
+
+ 673   1        // Link EEPROM(SFlash)
+ 674   1        //eee_SPI_SECTOR0   = EE_SPI_SECTOR0;
+ 675   1        //eee_SPI_BANKS   = EE_SPI_BANKS;
+ 676   1        //eee_MAX_INDEX   = EE_MAX_INDEX;
+ 677   1        //eee_INDEX_PER_BLOCK = ;
+ 678   1        //eee_BLOCKS      = EE_BLOCKS;
+ 679   1        //eee_BUF_SIZE    = SPI_BUFFER_SIZE;
+ 680   1      #endif
+ 681   1      
+ 682   1        //eeprom
+ 683   1        if ( GetFWRevEE() == FWVER )
+ 684   1          return 0;
+ 685   1      
+ 686   1        DbgMsg_EEP_Corruptted();
+ 687   1        SPI_dump(e3p_spi_start_addr);
+ 688   1      
+ 689   1        //we have a trouble.
+ 690   1        return 1;
+ 691   1      }
+ 692          
+ 693          //===================================================================
+ 694          //===================================================================
+ 695          // PC EEPROM
+ 696          //===================================================================
+ 697          //===================================================================
+ 698          #if defined( SUPPORT_PC ) /*|| defined( SUPPORT_COMPONENT ) */ // || defined (SUPPORT_DVI)
+ 699          //  0x80  ----------- PC Color Temp Data --------------------------------
+ 700          //      0 PC Color Temp Mode
+ 701          //      1 R G B for Mode 1
+ 702          //      4 R G B for Mode 2
+ 703          //      7   R G B for Mode 3
+ 704          //      A R G B for User Mode
+ 705          //
+ 706          //  0x90  ----------- PC Input ------------------------------------------
+ 707          //
+ 708          //      0 ADC Coarse
+ 709          //      1 ADC Phase
+ 710          //      2 Vertical Active Start
+ 711          //      3 Horizontal Active Start
+ 712          //
+ 713          
+ 714          
+ 715          extern CONST struct _PCMODEDATA PCMDATA[];
+ 716          
+ 717          extern  IDATA BYTE  PcMode, PcModeLast;
+ 718          extern  IDATA WORD  IVF;
+ 719          extern  IDATA DWORD IHF;
+ 720          
+ 721          #define WriteEEP(index,dat) EE_Write(index,dat)
+ 722          #define ReadEEP(index)    EE_Read(index)
+ 723          
+ 724          //-------------------------
+ 725          //desc:
+ 726          //@param:
+ 727          //  mode - PC Mode
+ 728          //  offset - EE_PCDATA_xxx offset
+ 729          //      0:PClock,1:Phase,2:VActive,3:VBackporch,4:HActive
+ 730          //return:
+ 731          /**
+ 732          * get PC Data
+ 733          */
+ 734          BYTE GetPCDataEE(BYTE mode, BYTE offset)
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 13  
+
+ 735          {
+ 736   1        WORD index;
+ 737   1      
+ 738   1        if(mode >= EEP_PC_MODE_MAX)
+ 739   1          return 0;
+ 740   1      
+ 741   1        index = EE_PCDATA + (WORD)mode*LEN_PCDATA + offset;
+ 742   1        return ReadEEP(index);
+ 743   1      }
+ 744          /**
+ 745          * save PC Data
+ 746          */
+ 747          void SavePCDataEE(BYTE mode, BYTE offset, BYTE val)
+ 748          {
+ 749   1        WORD index;
+ 750   1        if(mode >= EEP_PC_MODE_MAX)
+ 751   1          return;
+ 752   1      
+ 753   1        index = EE_PCDATA + mode*LEN_PCDATA + offset;
+ 754   1        WriteEEP(index,val);
+ 755   1      }
+ 756          //-------------------------
+ 757          //desc:get Pixel Clock
+ 758          //@param
+ 759          //  mode - PC Mode
+ 760          //return
+ 761          //  value -128..127
+ 762          /**
+ 763          *  get Pixel Clock value
+ 764          */
+ 765          char GetPixelClkEE(BYTE mode)
+ 766          {
+ 767   1        BYTE val;
+ 768   1      
+ 769   1        if(mode >= EEP_PC_MODE_MAX)
+ 770   1          return 0;
+ 771   1      
+ 772   1        val=GetPCDataEE(mode,EE_PCDATA_CLOCK);
+ 773   1        return (char)val;
+ 774   1      }
+ 775          /**
+ 776          * save Pixel clock value
+ 777          */
+ 778          void SavePixelClkEE(BYTE mode, char val)
+ 779          {
+ 780   1        if(mode >= EEP_PC_MODE_MAX)
+ 781   1          return;
+ 782   1      
+ 783   1        SavePCDataEE(mode,EE_PCDATA_CLOCK,(BYTE)val);
+ 784   1      }
+ 785          
+ 786          //-------------------------
+ 787          //desc:get Pixel Clock
+ 788          //@param
+ 789          //  mode - pc mode.
+ 790          //return
+ 791          //  0..31
+ 792          /**
+ 793          * get Phase value
+ 794          */
+ 795          BYTE GetPhaseEE(BYTE mode)
+ 796          {
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 14  
+
+ 797   1        BYTE val;
+ 798   1        if(mode >= EEP_PC_MODE_MAX)
+ 799   1          return 0;
+ 800   1      
+ 801   1        val=GetPCDataEE(mode,EE_PCDATA_PHASE);
+ 802   1        return (char)val;
+ 803   1      }
+ 804          /**
+ 805          * save Phase value
+ 806          */
+ 807          void SavePhaseEE(BYTE mode, BYTE val)
+ 808          {
+ 809   1        if(mode >= EEP_PC_MODE_MAX)
+ 810   1          return;
+ 811   1      
+ 812   1        SavePCDataEE(mode,EE_PCDATA_PHASE,(BYTE)val);
+ 813   1      }
+ 814          
+ 815          
+ 816          
+ 817          #ifdef UNCALLED_SEGMENT
+              WORD GetVActiveStartEE(BYTE mode)
+              {... }
+              void SaveVActiveEE(BYTE mode)
+              {...}
+              #endif
+ 823          
+ 824          //-------------------------
+ 825          //desc:
+ 826          //@param:
+ 827          //  mode - PC Mode
+ 828          //return:
+ 829          #if 0
+              char GetVActiveEE(BYTE mode)
+              {
+                WORD index;
+              
+                if(mode >= EEP_PC_MODE_MAX)
+                  return 0;
+              
+                index = EE_PCDATA + mode*LEN_PCDATA + EE_PCDATA_VACTIVE;
+                return (char)ReadEEP(index);
+              }
+              
+              void SaveVActiveEE(BYTE mode, char value)
+              {
+                WORD index;
+              
+                if(mode >= EEP_PC_MODE_MAX)
+                  return;
+              
+                index = EE_PCDATA + mode*LEN_PCDATA + EE_PCDATA_VACTIVE;
+                WriteEEP(index, (BYTE)value) ;
+              }
+              #endif
+ 852          /**
+ 853          * get Vertical BackPorch value
+ 854          */
+ 855          char GetVBackPorchEE(BYTE mode)
+ 856          {
+ 857   1        WORD index;
+ 858   1      
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 15  
+
+ 859   1        if(mode >= EEP_PC_MODE_MAX)
+ 860   1          return 0;
+ 861   1      
+ 862   1        index = EE_PCDATA + mode*LEN_PCDATA + EE_PCDATA_VBACKPORCH;
+ 863   1        return (char)ReadEEP(index);
+ 864   1      }
+ 865          
+ 866          /**
+ 867          * save Vertical BackPorch value
+ 868          */
+ 869          void SaveVBackPorchEE(BYTE mode, char value)
+ 870          {
+ 871   1        WORD index;
+ 872   1      
+ 873   1        if(mode >= EEP_PC_MODE_MAX)
+ 874   1          return;
+ 875   1      
+ 876   1        index = EE_PCDATA + mode*LEN_PCDATA + EE_PCDATA_VBACKPORCH;
+ 877   1        WriteEEP(index, (BYTE)value) ;
+ 878   1      }
+ 879          
+ 880          
+ 881          //-------------------------
+ 882          //desc:
+ 883          //@param:
+ 884          //  mode - PC Mode
+ 885          //return:
+ 886          /**
+ 887          * get Horizontal Active value
+ 888          */
+ 889          char GetHActiveEE(BYTE mode)
+ 890          {
+ 891   1        WORD index;
+ 892   1      
+ 893   1        if(mode >= EEP_PC_MODE_MAX)
+ 894   1          return 0;
+ 895   1      
+ 896   1        index = EE_PCDATA + mode*LEN_PCDATA + EE_PCDATA_HACTIVE;
+ 897   1        return (char)ReadEEP(index);
+ 898   1      }
+ 899          //-------------------------
+ 900          //desc:
+ 901          //@param:
+ 902          //  mode - PC Mode
+ 903          //  value - -128..127
+ 904          //return:
+ 905          /**
+ 906          * save Horizontal Active value
+ 907          */
+ 908          void SaveHActiveEE(BYTE mode, char value)
+ 909          {
+ 910   1        WORD index;
+ 911   1      
+ 912   1        if(mode >= EEP_PC_MODE_MAX)
+ 913   1          return;
+ 914   1      
+ 915   1        index = EE_PCDATA + mode*LEN_PCDATA + EE_PCDATA_HACTIVE;
+ 916   1        WriteEEP(index, (BYTE)value) ;
+ 917   1      }
+ 918          
+ 919          //-----------------------------------------------------------------------------
+ 920          //      Get PC Function Data from EEPROM
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 16  
+
+ 921          //-----------------------------------------------------------------------------
+ 922          #ifdef UNCALLED_SEGMENT
+              void GetPCDataEE(BYTE mode)
+              {...}
+              #endif
+ 926          //=============================================================================
+ 927          //      Save PC Function Data to EEPROM
+ 928          //=============================================================================
+ 929          #ifdef UNCALLED_SEGMENT
+              void SavePCDataEE(BYTE mode)
+              {...}
+              #endif
+ 933          
+ 934          //=============================================================================
+ 935          #ifdef UNCALLED_SEGMENT
+              void SaveDefaultPCDataEE(void)
+              {...}
+              #endif
+ 939          
+ 940          #ifdef UNCALLED_SEGMENT
+              void SaveDefaultPCDataAllEE(void)
+              {...}
+              #endif
+ 944          
+ 945          
+ 946          
+ 947          //=============================================================================
+ 948          
+ 949          
+ 950          
+ 951          #ifdef EXTERNAL_ADC
+              
+              #ifdef SUPPORT_SVDO
+              void SaveFVSDelay(BYTE val)
+              {
+                WriteEEP(EE_VDELAY, val);
+              }
+              
+              void SaveTRSP_Start(BYTE val)
+              {
+                WriteEEP(EE_TRSP_START, val);
+              }
+              
+              BYTE GetFVSDelayEE(void)
+              {
+                return (ReadEEP(EE_VDELAY));
+              }
+              
+              BYTE GetTRSP_StartEE(void)
+              {
+                return (ReadEEP(EE_TRSP_START));
+              }
+              
+              #endif
+              //-----------------------------------------------------------------------------
+              //    Save ADC Gain & Offset  mod=0 default value, mod=1 current value
+              //-----------------------------------------------------------------------------
+              /**
+              * save ADC Gain Offset
+              */
+              void SaveADCGainOffsetEE(BYTE mod)
+              {
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 17  
+
+                BYTE i, dat;
+                WORD index;
+              
+                index = EE_ADC_GO;
+              
+                for(i=0; i<6; i++) {
+                  if( mod==0 ) dat = 0x80;
+                  else     dat = ReadADC_EX(i+0x08);
+                  WriteEEP(index+i, dat);
+                }
+              }
+              
+              /**
+              * get ADC Gain Offset
+              */
+              void GetADCGainOffsetEE(void)
+              {
+                BYTE i, dat;
+                WORD index;
+              
+                index = EE_ADC_GO;
+              
+                for(i=0; i<6; i++) {
+                  dat = ReadEEP(index+i);
+                  WriteADC_EX(i+0x08, dat);
+                }
+              }
+              
+              #ifdef SUPPORT_DTV
+              //-----------------------------------------------------------------------------
+              //    Save ADC Gain & Offset for DTV  mod=0 default value, mod=1 current value
+              //-----------------------------------------------------------------------------
+              /**
+              * save ADC Gain Offset
+              */
+              void SaveADCGainOffsetForDTVEE(BYTE mod)
+              {
+                BYTE i, dat;
+              
+                for(i=0; i<6; i++) {
+                  if( mod==0 ) dat = 0x80;
+                  else     dat = ReadADC_EX(0x08+i);
+                  WriteEEP(EE_ADC_GO_DTV + i, dat);
+                }
+              }
+              
+              /**
+              * get ADC gain offset
+              */
+              void GetADCGainOffsetForDTVEE(void)
+              {
+                BYTE i, dat;
+              
+                for(i=0; i<6; i++) {
+                  dat = ReadEEP(EE_ADC_GO_DTV + i);
+                  WriteADC_EX(0x08+i, dat);
+                }
+              }
+              #endif // SUPPORT_DTV
+              
+              #endif //EXTERNAL_ADC
+1044          #endif // SUPPORT_PC
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 18  
+
+1045          
+1046          //-------------------------
+1047          //desc:
+1048          //@param:
+1049          //return:
+1050          #ifdef SUPPORT_PC
+1051          void InitPCDataEE(void)
+1052          {
+1053   1        BYTE mode; //,offset;
+1054   1        WORD index;
+1055   1        struct DIGIT_VIDEO_TIME_TABLE_s *pTimeTable;
+1056   1      
+1057   1        //for(mode=0; mode < (EE_EOF_PCDATA); mode++) {
+1058   1        //BKFYI. PCData area locate from 0x0C0 to 0x1FF. 
+1059   1        //       Item size is 5 bytes
+1060   1        //       Max item is (64+256) / 5 = 64.
+1061   1        for(mode=0; mode < EEP_PC_MODE_MAX ; mode++) {
+1062   2      
+1063   2          pTimeTable = &TW8836_VESA_TABLE[mode];
+1064   2          if(pTimeTable->hActive == 0 && pTimeTable->vActive ==0)
+1065   2            break;
+1066   2          if(pTimeTable->vid) { //?support
+1067   3            SavePCDataEE(mode,EE_PCDATA_CLOCK,50);    //0..100
+1068   3            SavePCDataEE(mode,EE_PCDATA_PHASE,0xFF);  //0x00..0x1F. 0xFF measn unused.
+1069   3            SavePCDataEE(mode,EE_PCDATA_VACTIVE,50);  //0..100
+1070   3            SavePCDataEE(mode,EE_PCDATA_VBACKPORCH,50); //0..100
+1071   3            SavePCDataEE(mode,EE_PCDATA_HACTIVE,50);  //0..100
+1072   3          }
+1073   2        }
+1074   1        index = EE_PCDATA + mode*LEN_PCDATA;
+1075   1      #ifdef DEBUG_EEP
+                dPrintf("\n\rInitPCDataEE start:%lx end+1:%x", EE_PCDATA, index);
+              #endif
+1078   1      }
+1079          #endif
+1080          
+1081          #if 0
+              void EE_Increase_Counter_Watchdog(void)
+              {
+                EE_Increase_WORD(EEP_DEBUG_WATCHDOG);
+              }
+              #endif
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 19  
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com004A (BEGIN)
+0000         L?0075:
+0000         L?0076:
+0000 EF                MOV     A,R7
+0001 75F005            MOV     B,#05H
+0004 A4                MUL     AB
+0005 24D0              ADD     A,#0D0H
+0007 FF                MOV     R7,A
+0008 E4                CLR     A
+0009 35F0              ADDC    A,B
+000B 22                RET     
+000C         L?0079:
+000C 90000000    R     MOV     DPTR,#e3p_spi_start_addr
+0010 E0                MOVX    A,@DPTR
+0011 FC                MOV     R4,A
+0012 A3                INC     DPTR
+0013 E0                MOVX    A,@DPTR
+0014 FD                MOV     R5,A
+0015 A3                INC     DPTR
+0016 E0                MOVX    A,@DPTR
+0017 FE                MOV     R6,A
+0018 A3                INC     DPTR
+0019 E0                MOVX    A,@DPTR
+001A FF                MOV     R7,A
+001B 22                RET     
+001C         L?0080:
+001C 90000000    E     MOV     DPTR,#InputMain
+0020 E0                MOVX    A,@DPTR
+0021 75F005            MOV     B,#05H
+0024 A4                MUL     AB
+0025 2440              ADD     A,#040H
+0027 2F                ADD     A,R7
+0028 FF                MOV     R7,A
+0029 7E00              MOV     R6,#00H
+002B 22                RET     
+002C         L?0081:
+002C 90000000    R     MOV     DPTR,#pTimeTable
+0030         L?0082:
+0030 E0                MOVX    A,@DPTR
+0031 FB                MOV     R3,A
+0032 A3                INC     DPTR
+0033 E0                MOVX    A,@DPTR
+0034 FA                MOV     R2,A
+0035 A3                INC     DPTR
+0036 E0                MOVX    A,@DPTR
+0037 22                RET     
+0038         L?0085:
+0038 F9                MOV     R1,A
+0039 E4                CLR     A
+003A 3A                ADDC    A,R2
+003B FA                MOV     R2,A
+003C 110000      E     ACALL   ?C?ILDPTR
+003F 45F0              ORL     A,B
+0041 22                RET     
+             ; FUNCTION Com004A (END)
+
+             ; FUNCTION _E3P_Read2XMem (BEGIN)
+                                           ; SOURCE LINE # 51
+;---- Variable 'src_loc' assigned to Register 'R4/R5/R6/R7' ----
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 20  
+
+;---- Variable 'dest_loc' assigned to Register 'R1/R2/R3' ----
+                                           ; SOURCE LINE # 52
+                                           ; SOURCE LINE # 53
+0000 AB01              MOV     R3,AR1
+0002 90000000    E     MOV     DPTR,#?_SpiFlash_Read_XMem?BYTE+04H
+0006 EA                MOV     A,R2
+0007 F0                MOVX    @DPTR,A
+0008 A3                INC     DPTR
+0009 EB                MOV     A,R3
+000A F0                MOVX    @DPTR,A
+000B 90000000    R     MOV     DPTR,#size
+000F E0                MOVX    A,@DPTR
+0010 FB                MOV     R3,A
+0011 A3                INC     DPTR
+0012 E0                MOVX    A,@DPTR
+0013 90000000    E     MOV     DPTR,#?_SpiFlash_Read_XMem?BYTE+06H
+0017 CB                XCH     A,R3
+0018 F0                MOVX    @DPTR,A
+0019 A3                INC     DPTR
+001A EB                MOV     A,R3
+001B F0                MOVX    @DPTR,A
+001C 010000      E     AJMP    _SpiFlash_Read_XMem
+             ; FUNCTION _E3P_Read2XMem (END)
+
+             ; FUNCTION _E3P_SectorErase (BEGIN)
+                                           ; SOURCE LINE # 56
+;---- Variable 'spiaddr' assigned to Register 'R4/R5/R6/R7' ----
+                                           ; SOURCE LINE # 57
+                                           ; SOURCE LINE # 58
+0000 010000      E     AJMP    _SpiFlash_SectorErase
+             ; FUNCTION _E3P_SectorErase (END)
+
+             ; FUNCTION _E3P_PageProgram (BEGIN)
+                                           ; SOURCE LINE # 60
+;---- Variable 'xaddr' assigned to Register 'R1/R2/R3' ----
+;---- Variable 'spiaddr' assigned to Register 'R4/R5/R6/R7' ----
+                                           ; SOURCE LINE # 61
+                                           ; SOURCE LINE # 62
+0000 AB01              MOV     R3,AR1
+0002 90000000    E     MOV     DPTR,#?_SpiFlash_PageProgram_XMem?BYTE+04H
+0006 EA                MOV     A,R2
+0007 F0                MOVX    @DPTR,A
+0008 A3                INC     DPTR
+0009 EB                MOV     A,R3
+000A F0                MOVX    @DPTR,A
+000B 90000000    R     MOV     DPTR,#cnt
+000F E0                MOVX    A,@DPTR
+0010 FB                MOV     R3,A
+0011 A3                INC     DPTR
+0012 E0                MOVX    A,@DPTR
+0013 90000000    E     MOV     DPTR,#?_SpiFlash_PageProgram_XMem?BYTE+06H
+0017 CB                XCH     A,R3
+0018 F0                MOVX    @DPTR,A
+0019 A3                INC     DPTR
+001A EB                MOV     A,R3
+001B F0                MOVX    @DPTR,A
+001C 010000      E     AJMP    _SpiFlash_PageProgram_XMem
+             ; FUNCTION _E3P_PageProgram (END)
+
+             ; FUNCTION E3P_Configure (BEGIN)
+                                           ; SOURCE LINE # 65
+                                           ; SOURCE LINE # 66
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 21  
+
+                                           ; SOURCE LINE # 67
+0000 110000      E     ACALL   E3P_GetVersion
+                                           ; SOURCE LINE # 68
+0003 110000      R     ACALL   L?0079
+0006 110000      E     ACALL   _E3P_SetStartAddr
+                                           ; SOURCE LINE # 69
+0009 7D08              MOV     R5,#08H
+000B 7F40              MOV     R7,#040H
+000D 110000      E     ACALL   _E3P_SetSize
+                                           ; SOURCE LINE # 70
+0010 7E00        E     MOV     R6,#HIGH SPI_Buffer
+0012 7F00        E     MOV     R7,#LOW SPI_Buffer
+0014 7D80              MOV     R5,#080H
+0016 7C00              MOV     R4,#00H
+0018 110000      E     ACALL   _E3P_SetBuffer
+                                           ; SOURCE LINE # 71
+001B 110000      E     ACALL   E3P_Init
+001E EF                MOV     A,R7
+001F 6003              JZ      ?C0005
+                                           ; SOURCE LINE # 72
+0021 110000      E     ACALL   E3P_Repair
+                                           ; SOURCE LINE # 73
+0024         ?C0005:
+0024 22                RET     
+             ; FUNCTION E3P_Configure (END)
+
+             ; FUNCTION GetFWRevEE (BEGIN)
+                                           ; SOURCE LINE # 131
+                                           ; SOURCE LINE # 132
+                                           ; SOURCE LINE # 136
+0000 E4                CLR     A
+0001 FF                MOV     R7,A
+0002 FE                MOV     R6,A
+0003 110000      E     ACALL   _E3P_Read
+0006 EF                MOV     A,R7
+0007 6454              XRL     A,#054H
+0009 6002              JZ      ?C0006
+000B 8022              SJMP    ?C0071
+000D         ?C0006:
+                                           ; SOURCE LINE # 137
+000D 7F01              MOV     R7,#01H
+000F 110000      R     ACALL   L?0086
+0012 6438              XRL     A,#038H
+0014 6002              JZ      ?C0008
+0016         ?C0069:
+0016 8017              SJMP    ?C0071
+0018         ?C0008:
+                                           ; SOURCE LINE # 138
+0018 7F02              MOV     R7,#02H
+001A 110000      R     ACALL   L?0086
+001D 6433              XRL     A,#033H
+001F 6002              JZ      ?C0009
+0021         ?C0070:
+0021 800C              SJMP    ?C0071
+0023         ?C0009:
+                                           ; SOURCE LINE # 139
+0023 7F03              MOV     R7,#03H
+0025 7E00              MOV     R6,#00H
+0027 110000      E     ACALL   _E3P_Read
+002A EF                MOV     A,R7
+002B 6436              XRL     A,#036H
+002D 6004              JZ      ?C0010
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 22  
+
+002F         ?C0071:
+002F E4                CLR     A
+0030 FE                MOV     R6,A
+0031 FF                MOV     R7,A
+0032 22                RET     
+0033         ?C0010:
+                                           ; SOURCE LINE # 142
+0033 7F04              MOV     R7,#04H
+0035 110000      R     ACALL   L?0087
+0038 E4                CLR     A
+0039 F0                MOVX    @DPTR,A
+003A A3                INC     DPTR
+003B EF                MOV     A,R7
+003C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 143
+003D E0                MOVX    A,@DPTR
+003E F8                MOV     R0,A
+003F E4                CLR     A
+0040 F0                MOVX    @DPTR,A
+0041 E8                MOV     A,R0
+0042 90000000    R     MOV     DPTR,#rev
+0046 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 144
+0047 7F05              MOV     R7,#05H
+0049 110000      R     ACALL   L?0087
+004C E0                MOVX    A,@DPTR
+004D FE                MOV     R6,A
+004E A3                INC     DPTR
+004F E0                MOVX    A,@DPTR
+0050 4F                ORL     A,R7
+0051 FF                MOV     R7,A
+0052 90000000    R     MOV     DPTR,#rev
+0056 EE                MOV     A,R6
+0057 F0                MOVX    @DPTR,A
+0058 FE                MOV     R6,A
+0059 A3                INC     DPTR
+005A EF                MOV     A,R7
+005B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 148
+                                           ; SOURCE LINE # 149
+005C         ?C0007:
+005C 22                RET     
+005D         L?0086:
+005D 7E00              MOV     R6,#00H
+005F 110000      E     ACALL   _E3P_Read
+0062 EF                MOV     A,R7
+0063 22                RET     
+0064         L?0087:
+0064 7E00              MOV     R6,#00H
+0066 110000      E     ACALL   _E3P_Read
+0069 90000000    R     MOV     DPTR,#rev
+006D 22                RET     
+             ; FUNCTION GetFWRevEE (END)
+
+             ; FUNCTION _SaveFWRevEE (BEGIN)
+                                           ; SOURCE LINE # 153
+0000 90000000    R     MOV     DPTR,#rev
+0004 EE                MOV     A,R6
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 EF                MOV     A,R7
+0008 F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 23  
+
+                                           ; SOURCE LINE # 154
+                                           ; SOURCE LINE # 156
+0009 7D54              MOV     R5,#054H
+000B E4                CLR     A
+000C FF                MOV     R7,A
+000D FE                MOV     R6,A
+000E 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 157
+0011 7D38              MOV     R5,#038H
+0013 7F01              MOV     R7,#01H
+0015 7E00              MOV     R6,#00H
+0017 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 158
+001A 7D33              MOV     R5,#033H
+001C 7F02              MOV     R7,#02H
+001E 7E00              MOV     R6,#00H
+0020 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 159
+0023 7D36              MOV     R5,#036H
+0025 7F03              MOV     R7,#03H
+                                           ; SOURCE LINE # 162
+0027 110000      R     ACALL   L?0088
+002A E0                MOVX    A,@DPTR
+002B FD                MOV     R5,A
+002C 7F04              MOV     R7,#04H
+                                           ; SOURCE LINE # 163
+002E 110000      R     ACALL   L?0088
+0031 A3                INC     DPTR
+0032 E0                MOVX    A,@DPTR
+0033 FD                MOV     R5,A
+0034 7F05              MOV     R7,#05H
+0036 7E00              MOV     R6,#00H
+0038 010000      E     AJMP    _E3P_Write
+                                           ; SOURCE LINE # 164
+003B         L?0088:
+003B 7E00              MOV     R6,#00H
+003D 110000      E     ACALL   _E3P_Write
+0040 90000000    R     MOV     DPTR,#rev
+0044 22                RET     
+             ; FUNCTION _SaveFWRevEE (END)
+
+             ; FUNCTION GetDebugLevelEE (BEGIN)
+                                           ; SOURCE LINE # 172
+                                           ; SOURCE LINE # 173
+                                           ; SOURCE LINE # 174
+0000 7F06              MOV     R7,#06H
+0002 7E00              MOV     R6,#00H
+0004 110000      E     ACALL   _E3P_Read
+                                           ; SOURCE LINE # 175
+0007         ?C0012:
+0007 22                RET     
+             ; FUNCTION GetDebugLevelEE (END)
+
+             ; FUNCTION _SaveDebugLevelEE (BEGIN)
+                                           ; SOURCE LINE # 179
+;---- Variable 'dl' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 180
+                                           ; SOURCE LINE # 181
+0000 AD07              MOV     R5,AR7
+0002 7F06              MOV     R7,#06H
+0004 7E00              MOV     R6,#00H
+0006 010000      E     AJMP    _E3P_Write
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 24  
+
+             ; FUNCTION _SaveDebugLevelEE (END)
+
+             ; FUNCTION GetInputMainEE (BEGIN)
+                                           ; SOURCE LINE # 289
+                                           ; SOURCE LINE # 290
+                                           ; SOURCE LINE # 291
+0000 7F10              MOV     R7,#010H
+0002 7E00              MOV     R6,#00H
+0004 110000      E     ACALL   _E3P_Read
+                                           ; SOURCE LINE # 292
+0007         ?C0014:
+0007 22                RET     
+             ; FUNCTION GetInputMainEE (END)
+
+             ; FUNCTION _SaveInputMainEE (BEGIN)
+                                           ; SOURCE LINE # 296
+;---- Variable 'mode' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 297
+                                           ; SOURCE LINE # 298
+0000 AD07              MOV     R5,AR7
+0002 7F10              MOV     R7,#010H
+0004 7E00              MOV     R6,#00H
+0006 010000      E     AJMP    _E3P_Write
+             ; FUNCTION _SaveInputMainEE (END)
+
+             ; FUNCTION GetInputBT656EE (BEGIN)
+                                           ; SOURCE LINE # 307
+                                           ; SOURCE LINE # 308
+                                           ; SOURCE LINE # 309
+0000 7F20              MOV     R7,#020H
+0002 7E00              MOV     R6,#00H
+0004 110000      E     ACALL   _E3P_Read
+                                           ; SOURCE LINE # 310
+0007         ?C0016:
+0007 22                RET     
+             ; FUNCTION GetInputBT656EE (END)
+
+             ; FUNCTION _SaveInputBT656EE (BEGIN)
+                                           ; SOURCE LINE # 311
+;---- Variable 'mode' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 312
+                                           ; SOURCE LINE # 313
+0000 AD07              MOV     R5,AR7
+0002 7F20              MOV     R7,#020H
+0004 7E00              MOV     R6,#00H
+0006 010000      E     AJMP    _E3P_Write
+             ; FUNCTION _SaveInputBT656EE (END)
+
+             ; FUNCTION _GetVideoDatafromEE (BEGIN)
+                                           ; SOURCE LINE # 347
+;---- Variable 'offset' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 348
+                                           ; SOURCE LINE # 352
+;---- Variable 'index' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 357
+                                           ; SOURCE LINE # 358
+0000 110000      R     ACALL   L?0080
+0003 110000      E     ACALL   _E3P_Read
+;---- Variable 'val' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 359
+                                           ; SOURCE LINE # 360
+0006         ?C0018:
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 25  
+
+0006 22                RET     
+             ; FUNCTION _GetVideoDatafromEE (END)
+
+             ; FUNCTION _SaveVideoDatatoEE (BEGIN)
+                                           ; SOURCE LINE # 365
+;---- Variable 'ndata' assigned to Register 'R5' ----
+;---- Variable 'offset' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 366
+                                           ; SOURCE LINE # 369
+;---- Variable 'index' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 373
+                                           ; SOURCE LINE # 376
+0000 110000      R     ACALL   L?0080
+0003 010000      E     AJMP    _E3P_Write
+             ; FUNCTION _SaveVideoDatatoEE (END)
+
+             ; FUNCTION ResetVideoValue (BEGIN)
+                                           ; SOURCE LINE # 390
+                                           ; SOURCE LINE # 391
+                                           ; SOURCE LINE # 395
+0000 90000000    E     MOV     DPTR,#InputMain
+0004 E0                MOVX    A,@DPTR
+0005 90000000    R     MOV     DPTR,#CurInput
+0009 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 396
+000A E4                CLR     A
+000B 90000000    E     MOV     DPTR,#InputMain
+000F F0                MOVX    @DPTR,A
+0010         ?C0020:
+0010 90000000    E     MOV     DPTR,#InputMain
+0014 E0                MOVX    A,@DPTR
+0015 FF                MOV     R7,A
+0016 C3                CLR     C
+0017 9409              SUBB    A,#09H
+0019 5068              JNC     ?C0021
+                                           ; SOURCE LINE # 397
+001B EF                MOV     A,R7
+001C 6403              XRL     A,#03H
+001E 600E              JZ      ?C0024
+0020 EF                MOV     A,R7
+0021 6404              XRL     A,#04H
+0023 6009              JZ      ?C0024
+0025 EF                MOV     A,R7
+0026 6405              XRL     A,#05H
+0028 6004              JZ      ?C0024
+002A EF                MOV     A,R7
+002B B40811            CJNE    A,#08H,?C0023
+002E         ?C0024:
+                                           ; SOURCE LINE # 398
+002E 90000000    R     MOV     DPTR,#pTable
+0032 7400        R     MOV     A,#MBYTE Init_RGB_Video_Data
+0034 F0                MOVX    @DPTR,A
+0035 A3                INC     DPTR
+0036 7400        R     MOV     A,#HIGH Init_RGB_Video_Data
+0038 F0                MOVX    @DPTR,A
+0039 A3                INC     DPTR
+003A 7400        R     MOV     A,#LOW Init_RGB_Video_Data
+003C F0                MOVX    @DPTR,A
+003D 800F              SJMP    ?C0025
+003F         ?C0023:
+                                           ; SOURCE LINE # 400
+003F 90000000    R     MOV     DPTR,#pTable
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 26  
+
+0043 7400        R     MOV     A,#MBYTE Init_YCbCr_Video_Data
+0045 F0                MOVX    @DPTR,A
+0046 A3                INC     DPTR
+0047 7400        R     MOV     A,#HIGH Init_YCbCr_Video_Data
+0049 F0                MOVX    @DPTR,A
+004A A3                INC     DPTR
+004B 7400        R     MOV     A,#LOW Init_YCbCr_Video_Data
+004D F0                MOVX    @DPTR,A
+004E         ?C0025:
+                                           ; SOURCE LINE # 402
+004E E4                CLR     A
+004F 90000000    R     MOV     DPTR,#i
+0053 F0                MOVX    @DPTR,A
+0054         ?C0026:
+                                           ; SOURCE LINE # 403
+0054 90000000    R     MOV     DPTR,#i
+0058 E0                MOVX    A,@DPTR
+0059 FF                MOV     R7,A
+005A 90000000    R     MOV     DPTR,#pTable
+005E 110000      R     ACALL   L?0082
+0061 2F                ADD     A,R7
+0062 F9                MOV     R1,A
+0063 E4                CLR     A
+0064 3A                ADDC    A,R2
+0065 FA                MOV     R2,A
+0066 110000      E     ACALL   ?C?CLDPTR
+0069 FD                MOV     R5,A
+006A 110000      R     ACALL   _SaveVideoDatatoEE
+                                           ; SOURCE LINE # 404
+006D 90000000    R     MOV     DPTR,#i
+0071 E0                MOVX    A,@DPTR
+0072 04                INC     A
+0073 F0                MOVX    @DPTR,A
+0074 E0                MOVX    A,@DPTR
+0075 C3                CLR     C
+0076 9405              SUBB    A,#05H
+0078 40DA              JC      ?C0026
+                                           ; SOURCE LINE # 405
+007A         ?C0022:
+007A 90000000    E     MOV     DPTR,#InputMain
+007E E0                MOVX    A,@DPTR
+007F 04                INC     A
+0080 F0                MOVX    @DPTR,A
+0081 808D              SJMP    ?C0020
+0083         ?C0021:
+                                           ; SOURCE LINE # 406
+0083 90000000    R     MOV     DPTR,#CurInput
+0087 E0                MOVX    A,@DPTR
+0088 90000000    E     MOV     DPTR,#InputMain
+008C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 408
+008D 22                RET     
+             ; FUNCTION ResetVideoValue (END)
+
+             ; FUNCTION GetAspectModeEE (BEGIN)
+                                           ; SOURCE LINE # 417
+                                           ; SOURCE LINE # 418
+                                           ; SOURCE LINE # 419
+0000 7FA0              MOV     R7,#0A0H
+0002 7E00              MOV     R6,#00H
+0004 110000      E     ACALL   _E3P_Read
+                                           ; SOURCE LINE # 420
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 27  
+
+0007         ?C0030:
+0007 22                RET     
+             ; FUNCTION GetAspectModeEE (END)
+
+             ; FUNCTION _SaveAspectModeEE (BEGIN)
+                                           ; SOURCE LINE # 424
+;---- Variable 'mode' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 425
+                                           ; SOURCE LINE # 426
+0000 AD07              MOV     R5,AR7
+0002 7FA0              MOV     R7,#0A0H
+0004 7E00              MOV     R6,#00H
+0006 010000      E     AJMP    _E3P_Write
+             ; FUNCTION _SaveAspectModeEE (END)
+
+             ; FUNCTION GetHdmiModeEE (BEGIN)
+                                           ; SOURCE LINE # 455
+                                           ; SOURCE LINE # 456
+                                           ; SOURCE LINE # 457
+0000 7FA5              MOV     R7,#0A5H
+0002 7E00              MOV     R6,#00H
+0004 110000      E     ACALL   _E3P_Read
+                                           ; SOURCE LINE # 458
+0007         ?C0032:
+0007 22                RET     
+             ; FUNCTION GetHdmiModeEE (END)
+
+             ; FUNCTION _SaveHdmiModeEE (BEGIN)
+                                           ; SOURCE LINE # 463
+;---- Variable 'mode' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 464
+                                           ; SOURCE LINE # 465
+0000 AD07              MOV     R5,AR7
+0002 7FA5              MOV     R7,#0A5H
+0004 7E00              MOV     R6,#00H
+0006 010000      E     AJMP    _E3P_Write
+             ; FUNCTION _SaveHdmiModeEE (END)
+
+             ; FUNCTION _SaveDviModeEE (BEGIN)
+                                           ; SOURCE LINE # 484
+;---- Variable 'mode' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 485
+                                           ; SOURCE LINE # 486
+0000 AD07              MOV     R5,AR7
+0002 7FA6              MOV     R7,#0A6H
+0004 7E00              MOV     R6,#00H
+0006 010000      E     AJMP    _E3P_Write
+             ; FUNCTION _SaveDviModeEE (END)
+
+             ; FUNCTION ResetAudioValue (BEGIN)
+                                           ; SOURCE LINE # 504
+                                           ; SOURCE LINE # 505
+                                           ; SOURCE LINE # 506
+0000 7FB3              MOV     R7,#0B3H
+0002 110000      R     ACALL   L?0083
+                                           ; SOURCE LINE # 507
+0005 7FB4              MOV     R7,#0B4H
+0007 110000      R     ACALL   L?0083
+                                           ; SOURCE LINE # 508
+000A 7D32              MOV     R5,#032H
+000C 7FB5              MOV     R7,#0B5H
+000E 7E00              MOV     R6,#00H
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 28  
+
+0010 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 509
+0013 7D32              MOV     R5,#032H
+0015 7FB6              MOV     R7,#0B6H
+0017 7E00              MOV     R6,#00H
+0019 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 510
+001C E4                CLR     A
+001D FD                MOV     R5,A
+001E 7FB7              MOV     R7,#0B7H
+0020 FE                MOV     R6,A
+0021 010000      E     AJMP    _E3P_Write
+                                           ; SOURCE LINE # 511
+0024         L?0083:
+0024 7D32              MOV     R5,#032H
+0026 7E00              MOV     R6,#00H
+0028 110000      E     ACALL   _E3P_Write
+002B 22                RET     
+             ; FUNCTION ResetAudioValue (END)
+
+             ; FUNCTION ClearBasicEE (BEGIN)
+                                           ; SOURCE LINE # 551
+                                           ; SOURCE LINE # 552
+                                           ; SOURCE LINE # 554
+0000 7B00        R     MOV     R3,#MBYTE ?SC_0
+0002 7A00        R     MOV     R2,#HIGH ?SC_0
+0004 7900        R     MOV     R1,#LOW ?SC_0
+0006 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 555
+0009 7F0F              MOV     R7,#0FH
+                                           ; SOURCE LINE # 556
+000B 110000      R     ACALL   L?0072
+000E 7F10              MOV     R7,#010H
+0010 FE                MOV     R6,A
+0011 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 557
+0014 7F11              MOV     R7,#011H
+                                           ; SOURCE LINE # 558
+0016 110000      R     ACALL   L?0073
+0019 7F12              MOV     R7,#012H
+001B FE                MOV     R6,A
+001C 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 560
+001F E4                CLR     A
+0020 FD                MOV     R5,A
+0021 7F20              MOV     R7,#020H
+0023 FE                MOV     R6,A
+0024 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 561
+0027 90000000    R     MOV     DPTR,#i
+002B 7401              MOV     A,#01H
+002D F0                MOVX    @DPTR,A
+002E         ?C0036:
+002E 90000000    R     MOV     DPTR,#i
+0032 E0                MOVX    A,@DPTR
+0033 FF                MOV     R7,A
+0034 D3                SETB    C
+0035 9408              SUBB    A,#08H
+0037 5015              JNC     ?C0037
+                                           ; SOURCE LINE # 562
+0039 EF                MOV     A,R7
+003A 2420              ADD     A,#020H
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 29  
+
+003C FF                MOV     R7,A
+003D E4                CLR     A
+003E 33                RLC     A
+003F FE                MOV     R6,A
+0040 E4                CLR     A
+0041 FD                MOV     R5,A
+0042 110000      E     ACALL   _E3P_Write
+0045 90000000    R     MOV     DPTR,#i
+0049 E0                MOVX    A,@DPTR
+004A 04                INC     A
+004B F0                MOVX    @DPTR,A
+004C 80E0              SJMP    ?C0036
+004E         ?C0037:
+                                           ; SOURCE LINE # 565
+004E 7F0E              MOV     R7,#0EH
+                                           ; SOURCE LINE # 567
+0050 110000      R     ACALL   L?0072
+0053 7F0C              MOV     R7,#0CH
+0055 FE                MOV     R6,A
+0056 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 569
+0059 110000      R     ACALL   ResetAudioValue
+                                           ; SOURCE LINE # 579
+005C 7FA6              MOV     R7,#0A6H
+                                           ; SOURCE LINE # 583
+005E 110000      R     ACALL   L?0073
+0061 7F0B              MOV     R7,#0BH
+0063 FE                MOV     R6,A
+0064 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 584
+0067 110000      R     ACALL   ResetVideoValue
+                                           ; SOURCE LINE # 585
+006A 7F02              MOV     R7,#02H
+006C 110000      R     ACALL   _SaveAspectModeEE
+                                           ; SOURCE LINE # 586
+006F 7FA1              MOV     R7,#0A1H
+                                           ; SOURCE LINE # 587
+0071 110000      R     ACALL   L?0078
+0074 7FA2              MOV     R7,#0A2H
+0076 FE                MOV     R6,A
+0077 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 588
+007A 7FA3              MOV     R7,#0A3H
+                                           ; SOURCE LINE # 589
+007C 110000      R     ACALL   L?0078
+007F 7FA4              MOV     R7,#0A4H
+0081 FE                MOV     R6,A
+0082 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 590
+0085 E4                CLR     A
+0086 FF                MOV     R7,A
+0087 110000      R     ACALL   _SaveHdmiModeEE
+                                           ; SOURCE LINE # 591
+008A E4                CLR     A
+008B FF                MOV     R7,A
+008C 110000      R     ACALL   _SaveDviModeEE
+                                           ; SOURCE LINE # 619
+008F E4                CLR     A
+0090 FF                MOV     R7,A
+0091 110000      E     ACALL   _SaveCalibDataToEE
+                                           ; SOURCE LINE # 626
+0094 110000      R     ACALL   InitPCDataEE
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 30  
+
+                                           ; SOURCE LINE # 630
+0097 7F30              MOV     R7,#030H
+                                           ; SOURCE LINE # 631
+0099 110000      R     ACALL   L?0084
+009C 7F31              MOV     R7,#031H
+009E FE                MOV     R6,A
+009F 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 632
+00A2 7F32              MOV     R7,#032H
+                                           ; SOURCE LINE # 633
+00A4 110000      R     ACALL   L?0084
+00A7 7F33              MOV     R7,#033H
+00A9 FE                MOV     R6,A
+00AA 010000      E     AJMP    _E3P_Write
+                                           ; SOURCE LINE # 635
+00AD         L?0072:
+00AD E4                CLR     A
+00AE FD                MOV     R5,A
+00AF FE                MOV     R6,A
+00B0 110000      E     ACALL   _E3P_Write
+00B3 E4                CLR     A
+00B4 FD                MOV     R5,A
+00B5 22                RET     
+00B6         L?0073:
+00B6 E4                CLR     A
+00B7 FD                MOV     R5,A
+00B8 FE                MOV     R6,A
+00B9 110000      E     ACALL   _E3P_Write
+00BC E4                CLR     A
+00BD FD                MOV     R5,A
+00BE 22                RET     
+00BF         L?0078:
+00BF E4                CLR     A
+00C0 FD                MOV     R5,A
+00C1 FE                MOV     R6,A
+00C2 110000      E     ACALL   _E3P_Write
+00C5 E4                CLR     A
+00C6 FD                MOV     R5,A
+00C7 22                RET     
+00C8         L?0084:
+00C8 E4                CLR     A
+00C9 FD                MOV     R5,A
+00CA FE                MOV     R6,A
+00CB 110000      E     ACALL   _E3P_Write
+00CE E4                CLR     A
+00CF FD                MOV     R5,A
+00D0 22                RET     
+             ; FUNCTION ClearBasicEE (END)
+
+             ; FUNCTION InitializeEE (BEGIN)
+                                           ; SOURCE LINE # 648
+                                           ; SOURCE LINE # 649
+                                           ; SOURCE LINE # 650
+0000 7B00        R     MOV     R3,#MBYTE ?SC_23
+0002 7A00        R     MOV     R2,#HIGH ?SC_23
+0004 7900        R     MOV     R1,#LOW ?SC_23
+0006 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 651
+0009 7F44              MOV     R7,#044H
+000B 7E00              MOV     R6,#00H
+000D 110000      R     ACALL   _SaveFWRevEE
+                                           ; SOURCE LINE # 652
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 31  
+
+0010 010000      R     AJMP    ClearBasicEE
+             ; FUNCTION InitializeEE (END)
+
+             ; FUNCTION CheckEEPROM (BEGIN)
+                                           ; SOURCE LINE # 668
+                                           ; SOURCE LINE # 669
+                                           ; SOURCE LINE # 683
+0000 110000      R     ACALL   GetFWRevEE
+0003 EF                MOV     A,R7
+0004 6444              XRL     A,#044H
+0006 4E                ORL     A,R6
+0007 7002              JNZ     ?C0041
+                                           ; SOURCE LINE # 684
+0009 FF                MOV     R7,A
+000A 22                RET     
+000B         ?C0041:
+                                           ; SOURCE LINE # 686
+000B 110000      E     ACALL   DbgMsg_EEP_Corruptted
+                                           ; SOURCE LINE # 687
+000E 110000      R     ACALL   L?0079
+0011 110000      E     ACALL   _SPI_dump
+                                           ; SOURCE LINE # 690
+0014 7F01              MOV     R7,#01H
+                                           ; SOURCE LINE # 691
+0016         ?C0042:
+0016 22                RET     
+             ; FUNCTION CheckEEPROM (END)
+
+             ; FUNCTION _GetPCDataEE (BEGIN)
+                                           ; SOURCE LINE # 734
+;---- Variable 'mode' assigned to Register 'R7' ----
+;---- Variable 'offset' assigned to Register 'R3' ----
+0000 AB05              MOV     R3,AR5
+                                           ; SOURCE LINE # 735
+                                           ; SOURCE LINE # 738
+0002 EF                MOV     A,R7
+0003 C3                CLR     C
+0004 9440              SUBB    A,#040H
+0006 4003              JC      ?C0043
+                                           ; SOURCE LINE # 739
+0008 7F00              MOV     R7,#00H
+000A 22                RET     
+000B         ?C0043:
+                                           ; SOURCE LINE # 741
+000B 7E00              MOV     R6,#00H
+000D 7C00              MOV     R4,#00H
+000F 7D05              MOV     R5,#05H
+0011 110000      E     ACALL   ?C?IMUL
+0014 EF                MOV     A,R7
+0015 24D0              ADD     A,#0D0H
+0017 FF                MOV     R7,A
+0018 E4                CLR     A
+0019 3E                ADDC    A,R6
+001A FE                MOV     R6,A
+001B EF                MOV     A,R7
+001C 2B                ADD     A,R3
+001D FF                MOV     R7,A
+001E EC                MOV     A,R4
+001F 3E                ADDC    A,R6
+0020 FE                MOV     R6,A
+;---- Variable 'index' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 742
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 32  
+
+0021 110000      E     ACALL   _E3P_Read
+                                           ; SOURCE LINE # 743
+0024         ?C0044:
+0024 22                RET     
+             ; FUNCTION _GetPCDataEE (END)
+
+             ; FUNCTION _SavePCDataEE (BEGIN)
+                                           ; SOURCE LINE # 747
+;---- Variable 'mode' assigned to Register 'R7' ----
+;---- Variable 'val' assigned to Register 'R3' ----
+;---- Variable 'offset' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 748
+                                           ; SOURCE LINE # 750
+0000 EF                MOV     A,R7
+0001 C3                CLR     C
+0002 9440              SUBB    A,#040H
+0004 5011              JNC     ?C0046
+0006         ?C0045:
+                                           ; SOURCE LINE # 753
+0006 110000      R     ACALL   L?0075
+0009 FE                MOV     R6,A
+000A 7C00              MOV     R4,#00H
+000C EF                MOV     A,R7
+000D 2D                ADD     A,R5
+000E FF                MOV     R7,A
+000F EC                MOV     A,R4
+0010 3E                ADDC    A,R6
+0011 FE                MOV     R6,A
+;---- Variable 'index' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 754
+0012 AD03              MOV     R5,AR3
+0014 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 755
+0017         ?C0046:
+0017 22                RET     
+             ; FUNCTION _SavePCDataEE (END)
+
+             ; FUNCTION _GetPixelClkEE (BEGIN)
+                                           ; SOURCE LINE # 765
+;---- Variable 'mode' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 766
+                                           ; SOURCE LINE # 769
+0000 EF                MOV     A,R7
+0001 C3                CLR     C
+0002 9440              SUBB    A,#040H
+0004 4003              JC      ?C0047
+                                           ; SOURCE LINE # 770
+0006 7F00              MOV     R7,#00H
+0008 22                RET     
+0009         ?C0047:
+                                           ; SOURCE LINE # 772
+0009 E4                CLR     A
+000A FD                MOV     R5,A
+000B 110000      R     ACALL   _GetPCDataEE
+;---- Variable 'val' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 773
+                                           ; SOURCE LINE # 774
+000E         ?C0048:
+000E 22                RET     
+             ; FUNCTION _GetPixelClkEE (END)
+
+             ; FUNCTION _SavePixelClkEE (BEGIN)
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 33  
+
+                                           ; SOURCE LINE # 778
+;---- Variable 'mode' assigned to Register 'R7' ----
+;---- Variable 'val' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 779
+                                           ; SOURCE LINE # 780
+0000 EF                MOV     A,R7
+0001 C3                CLR     C
+0002 9440              SUBB    A,#040H
+0004 5009              JNC     ?C0050
+0006         ?C0049:
+                                           ; SOURCE LINE # 783
+0006 AE05              MOV     R6,AR5
+0008 AB06              MOV     R3,AR6
+000A E4                CLR     A
+000B FD                MOV     R5,A
+000C 110000      R     ACALL   _SavePCDataEE
+                                           ; SOURCE LINE # 784
+000F         ?C0050:
+000F 22                RET     
+             ; FUNCTION _SavePixelClkEE (END)
+
+             ; FUNCTION _GetPhaseEE (BEGIN)
+                                           ; SOURCE LINE # 795
+;---- Variable 'mode' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 796
+                                           ; SOURCE LINE # 798
+0000 EF                MOV     A,R7
+0001 C3                CLR     C
+0002 9440              SUBB    A,#040H
+0004 4003              JC      ?C0051
+                                           ; SOURCE LINE # 799
+0006 7F00              MOV     R7,#00H
+0008 22                RET     
+0009         ?C0051:
+                                           ; SOURCE LINE # 801
+0009 7D01              MOV     R5,#01H
+000B 110000      R     ACALL   _GetPCDataEE
+;---- Variable 'val' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 802
+                                           ; SOURCE LINE # 803
+000E         ?C0052:
+000E 22                RET     
+             ; FUNCTION _GetPhaseEE (END)
+
+             ; FUNCTION _SavePhaseEE (BEGIN)
+                                           ; SOURCE LINE # 807
+;---- Variable 'mode' assigned to Register 'R7' ----
+;---- Variable 'val' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 808
+                                           ; SOURCE LINE # 809
+0000 EF                MOV     A,R7
+0001 C3                CLR     C
+0002 9440              SUBB    A,#040H
+0004 5009              JNC     ?C0054
+0006         ?C0053:
+                                           ; SOURCE LINE # 812
+0006 AE05              MOV     R6,AR5
+0008 AB06              MOV     R3,AR6
+000A 7D01              MOV     R5,#01H
+000C 110000      R     ACALL   _SavePCDataEE
+                                           ; SOURCE LINE # 813
+000F         ?C0054:
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 34  
+
+000F 22                RET     
+             ; FUNCTION _SavePhaseEE (END)
+
+             ; FUNCTION _GetVBackPorchEE (BEGIN)
+                                           ; SOURCE LINE # 855
+;---- Variable 'mode' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 856
+                                           ; SOURCE LINE # 859
+0000 EF                MOV     A,R7
+0001 C3                CLR     C
+0002 9440              SUBB    A,#040H
+0004 4003              JC      ?C0055
+                                           ; SOURCE LINE # 860
+0006 7F00              MOV     R7,#00H
+0008 22                RET     
+0009         ?C0055:
+                                           ; SOURCE LINE # 862
+0009 110000      R     ACALL   L?0075
+000C CF                XCH     A,R7
+000D 2403              ADD     A,#03H
+000F CF                XCH     A,R7
+0010 3400              ADDC    A,#00H
+0012 FE                MOV     R6,A
+;---- Variable 'index' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 863
+0013 110000      E     ACALL   _E3P_Read
+                                           ; SOURCE LINE # 864
+0016         ?C0056:
+0016 22                RET     
+             ; FUNCTION _GetVBackPorchEE (END)
+
+             ; FUNCTION _SaveVBackPorchEE (BEGIN)
+                                           ; SOURCE LINE # 869
+;---- Variable 'mode' assigned to Register 'R7' ----
+;---- Variable 'value' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 870
+                                           ; SOURCE LINE # 873
+0000 EF                MOV     A,R7
+0001 C3                CLR     C
+0002 9440              SUBB    A,#040H
+0004 500D              JNC     ?C0058
+0006         ?C0057:
+                                           ; SOURCE LINE # 876
+0006 110000      R     ACALL   L?0076
+0009 CF                XCH     A,R7
+000A 2403              ADD     A,#03H
+000C CF                XCH     A,R7
+000D 3400              ADDC    A,#00H
+000F FE                MOV     R6,A
+;---- Variable 'index' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 877
+0010 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 878
+0013         ?C0058:
+0013 22                RET     
+             ; FUNCTION _SaveVBackPorchEE (END)
+
+             ; FUNCTION _GetHActiveEE (BEGIN)
+                                           ; SOURCE LINE # 889
+;---- Variable 'mode' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 890
+                                           ; SOURCE LINE # 893
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 35  
+
+0000 EF                MOV     A,R7
+0001 C3                CLR     C
+0002 9440              SUBB    A,#040H
+0004 4003              JC      ?C0059
+                                           ; SOURCE LINE # 894
+0006 7F00              MOV     R7,#00H
+0008 22                RET     
+0009         ?C0059:
+                                           ; SOURCE LINE # 896
+0009 110000      R     ACALL   L?0076
+000C CF                XCH     A,R7
+000D 2404              ADD     A,#04H
+000F CF                XCH     A,R7
+0010 3400              ADDC    A,#00H
+0012 FE                MOV     R6,A
+;---- Variable 'index' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 897
+0013 110000      E     ACALL   _E3P_Read
+                                           ; SOURCE LINE # 898
+0016         ?C0060:
+0016 22                RET     
+             ; FUNCTION _GetHActiveEE (END)
+
+             ; FUNCTION _SaveHActiveEE (BEGIN)
+                                           ; SOURCE LINE # 908
+;---- Variable 'mode' assigned to Register 'R7' ----
+;---- Variable 'value' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 909
+                                           ; SOURCE LINE # 912
+0000 EF                MOV     A,R7
+0001 C3                CLR     C
+0002 9440              SUBB    A,#040H
+0004 500D              JNC     ?C0062
+0006         ?C0061:
+                                           ; SOURCE LINE # 915
+0006 110000      R     ACALL   L?0076
+0009 CF                XCH     A,R7
+000A 2404              ADD     A,#04H
+000C CF                XCH     A,R7
+000D 3400              ADDC    A,#00H
+000F FE                MOV     R6,A
+;---- Variable 'index' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 916
+0010 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 917
+0013         ?C0062:
+0013 22                RET     
+             ; FUNCTION _SaveHActiveEE (END)
+
+             ; FUNCTION InitPCDataEE (BEGIN)
+                                           ; SOURCE LINE # 1051
+                                           ; SOURCE LINE # 1052
+                                           ; SOURCE LINE # 1061
+0000 E4                CLR     A
+0001 90000000    R     MOV     DPTR,#mode
+0005 F0                MOVX    @DPTR,A
+0006         ?C0063:
+0006 90000000    R     MOV     DPTR,#mode
+000A E0                MOVX    A,@DPTR
+000B FF                MOV     R7,A
+000C C3                CLR     C
+000D 9440              SUBB    A,#040H
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 36  
+
+000F 5067              JNC     ?C0064
+                                           ; SOURCE LINE # 1063
+0011 EF                MOV     A,R7
+0012 75F019            MOV     B,#019H
+0015 A4                MUL     AB
+0016 2400        E     ADD     A,#LOW TW8836_VESA_TABLE
+0018 F9                MOV     R1,A
+0019 7400        E     MOV     A,#HIGH TW8836_VESA_TABLE
+001B 35F0              ADDC    A,B
+001D FA                MOV     R2,A
+001E 7B00        E     MOV     R3,#MBYTE TW8836_VESA_TABLE
+0020 90000000    R     MOV     DPTR,#pTimeTable
+0024 EB                MOV     A,R3
+0025 F0                MOVX    @DPTR,A
+0026 A3                INC     DPTR
+0027 EA                MOV     A,R2
+0028 F0                MOVX    @DPTR,A
+0029 A3                INC     DPTR
+002A E9                MOV     A,R1
+002B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1064
+002C 2401              ADD     A,#01H
+002E 110000      R     ACALL   L?0085
+0031 700A              JNZ     ?C0066
+0033 110000      R     ACALL   L?0081
+0036 2403              ADD     A,#03H
+0038 110000      R     ACALL   L?0085
+003B 603B              JZ      ?C0064
+                                           ; SOURCE LINE # 1065
+003D         ?C0066:
+                                           ; SOURCE LINE # 1066
+003D 110000      R     ACALL   L?0081
+0040 F9                MOV     R1,A
+0041 110000      E     ACALL   ?C?CLDPTR
+0044 6029              JZ      ?C0065
+                                           ; SOURCE LINE # 1067
+0046 90000000    R     MOV     DPTR,#mode
+004A E0                MOVX    A,@DPTR
+004B FF                MOV     R7,A
+004C 7B32              MOV     R3,#032H
+004E E4                CLR     A
+004F FD                MOV     R5,A
+0050 110000      R     ACALL   _SavePCDataEE
+                                           ; SOURCE LINE # 1068
+0053 7BFF              MOV     R3,#0FFH
+0055 7D01              MOV     R5,#01H
+                                           ; SOURCE LINE # 1069
+0057 110000      R     ACALL   L?0077
+005A 7B32              MOV     R3,#032H
+005C 7D02              MOV     R5,#02H
+005E 110000      R     ACALL   _SavePCDataEE
+                                           ; SOURCE LINE # 1070
+0061 7B32              MOV     R3,#032H
+0063 7D03              MOV     R5,#03H
+                                           ; SOURCE LINE # 1071
+0065 110000      R     ACALL   L?0077
+0068 7B32              MOV     R3,#032H
+006A 7D04              MOV     R5,#04H
+006C 110000      R     ACALL   _SavePCDataEE
+                                           ; SOURCE LINE # 1072
+                                           ; SOURCE LINE # 1073
+006F         ?C0065:
+C51 COMPILER V9.56.0.0   EEPROM                                                            07/18/2018 10:44:37 PAGE 37  
+
+006F 90000000    R     MOV     DPTR,#mode
+0073 E0                MOVX    A,@DPTR
+0074 04                INC     A
+0075 F0                MOVX    @DPTR,A
+0076 808E              SJMP    ?C0063
+0078         ?C0064:
+                                           ; SOURCE LINE # 1074
+0078 90000000    R     MOV     DPTR,#mode
+007C E0                MOVX    A,@DPTR
+007D 75F005            MOV     B,#05H
+0080 A4                MUL     AB
+0081 24D0              ADD     A,#0D0H
+0083 FE                MOV     R6,A
+0084 E4                CLR     A
+0085 35F0              ADDC    A,B
+0087 A3                INC     DPTR
+0088 F0                MOVX    @DPTR,A
+0089 A3                INC     DPTR
+008A CE                XCH     A,R6
+008B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1078
+008C 22                RET     
+008D         L?0077:
+008D 90000000    R     MOV     DPTR,#mode
+0091 E0                MOVX    A,@DPTR
+0092 FF                MOV     R7,A
+0093 110000      R     ACALL   _SavePCDataEE
+0096 90000000    R     MOV     DPTR,#mode
+009A E0                MOVX    A,@DPTR
+009B FF                MOV     R7,A
+009C 22                RET     
+             ; FUNCTION InitPCDataEE (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1257    ----
+   CONSTANT SIZE    =     57    ----
+   XDATA SIZE       =      4      34
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

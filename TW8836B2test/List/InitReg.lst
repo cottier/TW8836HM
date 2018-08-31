@@ -1,0 +1,2486 @@
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE INITREG
+OBJECT MODULE PLACED IN .\Output\InitReg.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE Source36\InitReg.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\Out
+                    -put\TW8836B_EVB11.ORC) BROWSE INCDIR(SiI-SW;SiI-SW\HAL;SiI-SW\DEBUG;SiI-SW\CEC;.\Source36\LIB) DEFINE(EVB_11,nullFn=//) 
+                    -DEBUG CODE PRINT(.\List\InitReg.lst) TABS(2) OBJECT(.\Output\InitReg.obj)
+
+line level    source
+
+   1          /*
+   2          Disclaimer: THIS INFORMATION IS PROVIDED 'AS-IS' FOR EVALUATION PURPOSES ONLY.  
+   3          INTERSIL CORPORATION AND ITS SUBSIDIARIES ('INTERSIL') DISCLAIM ALL WARRANTIES, 
+   4          INCLUDING WITHOUT LIMITATION FITNESS FOR A PARTICULAR PURPOSE AND MERCHANTABILITY.  
+   5          Intersil provides evaluation platforms to help our customers to develop products. 
+   6          However, factors beyond Intersil's control could significantly affect Intersil 
+   7          product performance. 
+   8          It remains the customers' responsibility to verify the actual system performance.
+   9          */
+  10          #include "Config.h"
+  11          #include "reg.h"
+  12          #include "typedefs.h"
+  13          #include "TW8836.h"
+  14          
+  15          #include "Global.h"
+  16          #include "CPU.h"
+  17          #include "Printf.h"
+  18          #include "util.h"
+  19          #include "Monitor.h"
+  20          
+  21          #include "I2C.h"
+  22          #include "SPI.h"
+  23          
+  24          #include "main.h"
+  25          #include "SOsd.h"
+  26          #include "FOsd.h"
+  27          #include "Scaler.h"
+  28          #include "decoder.h"
+  29          #include "InputCtrl.h"
+  30          #include "EEPROM.h"
+  31          #include "ImageCtrl.h"
+  32          #include "decoder.h"
+  33          #include "InputCtrl.h"
+  34          #include "Settings.h"
+  35          #include "measure.h"
+  36          #include "BT656.h"
+  37          
+  38          
+  39          //typedef struct REG_IDX_DATA_s {
+  40          //  WORD idx;
+  41          //  BYTE value;
+  42          //} REG_IDX_DATA_t;
+  43          
+  44          /*=====================================================
+  45          * Default HW register value.
+  46          *   !!!DO NOT CHANGE.!!!
+  47          *======================================================*/
+  48          code REG_IDX_DATA_t InitHwDefault_Table[] = {
+  49                    //-----------------
+  50                    //clock
+  51                    //use 27MHz. SYNC.
+  52                    //-----------------
+  53          
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 2   
+
+  54            {0x4DF, 0x00},  //ASync control
+  55          
+  56            {0x4E0, 0x00},  //ASyncWait:0,PLLCLK:0:SSPLL
+  57            {0x4E1, 0x06},  //-Edge,0_delay,27MHz,PLLCLK_DIV:6:div4.
+  58          
+  59            {0x4F0, 0x00},  //MCU_DIV:0:div1, MCU_WAIT_OFF:0:Note
+  60            {0x4F2, 0x00},  //MCU_SYNC,DMA_SYNC
+  61          
+  62                    //-----------------
+  63                    //SSPLL2
+  64            {0x0E7, 0x16},  //
+  65            {0x0E8, 0x01},  //60.750MHz
+  66            {0x0E9, 0x20},  //
+  67            {0x0EA, 0x00},  //
+  68            {0x0EB, 0x40},  //FSS2  
+  69            {0x0EC, 0xB0},  //PD_SSPLL2.Note
+  70            {0x0ED, 0x11},  //POST:0,VCO:27~54,pump:2.5
+  71          
+  72                    //-----------------
+  73            {0x0F6, 0x04},  //PCLK_DIV:4:div3.
+  74          
+  75                    //-----------------
+  76                    //SSPLL1
+  77            {0x0F7, 0x16},  //
+  78            {0x0F8, 0x01},  //60.750MHz
+  79            {0x0F9, 0x20},  //
+  80            {0x0FA, 0x00},  //
+  81            {0x0FB, 0x40},  //FSS
+  82            {0x0FC, 0xB0},  //PD_SSPLL1.Note
+  83            {0x0FD, 0x11},  //POST:0,VCO:27~54,pump:2.5
+  84          
+  85            //FYI. before 131114, FW used below values.
+  86            //{0x0F6, 0x00},
+  87            //{0x0FC, 0x23},
+  88          
+  89          
+  90          
+  91            //REG000    ID def:36   TW8836
+  92            //REG001    REV def:11    B2        
+  93                    //-----------------
+  94                    //interrupt
+  95          #if 0 //InitCore already updates it. Do not check this two registers.
+                {0x003, 0xFF},  //irq mask first.  def:FF
+                {0x002, 0xFF},  //and then clean.  def:CA
+              #endif
+  99          
+ 100          
+ 101            //REG004    STATUS readonly
+ 102            //REG005    IRQ&MASK def:F0
+ 103            {0x006, 0x00},  //SRST def:00
+ 104                    //[7] SRST. SW chip reset. Do not execute it with SSPLL1.
+ 105                    //[6] SwapBT656_OUT 1:swap
+ 106                    //[5] i2c auto idx increase. 1:disable
+ 107                    //[4:0] TCon output
+ 108                    //BKTODO131125 :move to InitSwDefault_Table[] 
+ 109          #ifdef  PANEL_FP_LSB
+                {0x007, 0x02},  //
+              #else
+ 112            {0x007, 0x00},  //OUTPUT CTRL I. def:00
+ 113          #endif
+ 114                    //[7] FP data port swap R<->B
+ 115                    //[6] swap MSB and LSB
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 3   
+
+ 116                    //[5:4] FP data port bit shifting
+ 117                    //[3] En BT656Enc interface
+ 118                    //[2:0] TCON pin output mode
+ 119            {0x008, 0x30},  //Output CTL II def:30
+ 120                    //[7:6] TCCLK driver strength. TCON uses 8mA. cfg file error
+ 121                    //    00:0 01:4mA 10:8mA 11:12mA
+ 122                    //      TCON only.
+ 123                    //[5] TRI_FPD   1:Tristate all FP data pins
+ 124                    //[4] TRI_EN  1:Tristate all output pins
+ 125                    //[3:0] GPO pin mode
+ 126                    //    TW8836 EVB uses GPOSEL=tcpol, because REMO uses INT11(TCPOLP).
+ 127            //REG009      for FW I2C Server
+ 128            //REG00F      INT0 Write Port
+ 129            {0x01F, 0x00},  //test mode def:00
+ 130          
+ 131                    //-----------------
+ 132            {0x040, 0x00},  //input control I. def:00
+ 133                    //[7:6] hStart[9:8]
+ 134                    //[5] VDCLK_POL
+ 135                    //[4] Scaler Input Clk Pol
+ 136                    //[3]   En DTVDE
+ 137                    //[2]   En DTVCLK2 for BT656Loop
+ 138                    //[1:0] Input Selection
+ 139            {0x041, 0xC0},  //input control II, def:C0 FW uses 0x00
+ 140                    //[7] DTV input threshold 0:1.8V 1:3.3V DEF:1 
+ 141                    //[6] BT656 input threshold 0:1.8V 1:3.3V DEF:1
+ 142                    //[5] Field control for progressive input
+ 143                    //[4] Implicit DE => Explicit DE
+ 144                    //[3] vSync Pol
+ 145                    //[2] hSync Pol
+ 146                    //[1] field pol
+ 147                    //[0] data format 0:YCbCr 1:RGB
+ 148          
+ 149          
+ 150                    //-----------------
+ 151                    //input crop
+ 152                    //def   hStart 0x020 = 32
+ 153                    //    hLen   0x2D0 = 720
+ 154                    //    vStart 0x20  = 32
+ 155                    //    vLen   0x0F0 = 240
+ 156            {0x042,0x02}, //    def:02
+ 157            //          [7] Enable P10 pin(#60) as MUTE pin input
+ 158            //                [6:4] vLen[10:8]
+ 159            //          [3:0] hLen[11:8]
+ 160            //0x043       [7:0] vStart[7:0]
+ 161            //0x044       [7:0] vLen[7:0], with REG042[6:4]
+ 162            //0x045       [7:0] hStart[7:0], with REG040[7:6]
+ 163            //0x046       [7:0] hLen[7:0], with REG042[3:0]
+ 164            {0x047, 0x00},  //BT656Dec CTRL I def:00
+ 165                    //[7] internal pattern
+ 166                    //[6] 1=50Hz
+ 167                    //[5] DTV input clock control.
+ 168                    //[4:0] BT656Dec input V delay.
+ 169            //REG048          BT656 Dec CTRL II def:00
+ 170            //REG04B      VSYNC input cnotrol def:00
+ 171                    //[7] En delay. BKTODO:Unknown.
+ 172                    //[6] UART1_SWAP. swap UART1 pins form 120,121 to 60,61.
+ 173                    //[5] SPI clk PLL select. 0:SSPLL1, 1:SSPLL2
+ 174                    //[4] PCLK PLL select. 0:SSPLL2,1:SSPLL1
+ 175                    //[3:0] VSync input delay
+ 176                    //-----------------
+ 177                    //DTV
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 4   
+
+ 178            //REG050~REG056
+ 179            {0x057, 0x00},  //SEQUENCUAL RGB def:00
+ 180                    //-----------------
+ 181            {0x05F, 0x00},  // test pattern def:00
+ 182          
+ 183            //REG060~REG061
+ 184            //REG062~REG06F BT656
+ 185            //REG077~REG07F
+ 186          
+ 187                    //-----------------
+ 188                    //GPIO
+ 189            {0x080, 0x00},
+ 190            {0x081, 0x00},
+ 191            {0x082, 0x00},
+ 192            {0x083, 0x00},
+ 193            {0x084, 0x00},
+ 194            {0x085, 0x00},
+ 195            {0x086, 0x00},
+ 196            {0x088, 0x00},
+ 197            {0x089, 0x00},
+ 198            {0x08A, 0x00},
+ 199            {0x08B, 0x00},
+ 200            {0x08C, 0x00},
+ 201            {0x08D, 0x00},
+ 202            {0x08E, 0x00},
+ 203            {0x090, 0x00},
+ 204            {0x091, 0x00},
+ 205            {0x092, 0x00},
+ 206            {0x093, 0x00},
+ 207            {0x094, 0x00},
+ 208            {0x095, 0x00},
+ 209            {0x096, 0x00},
+ 210                    //-----------------
+ 211            {0x0A0, 0x00},  //MBIST
+ 212                    //-----------------
+ 213                    //TSC
+ 214            {0x0B0, 0x87},  //TSC CTRL I. def:87
+ 215                    //[7] PD
+ 216                    //[2:0] TSC mode
+ 217            {0x0B1, 0x00},  //TSC CTRL II. def:00
+ 218                    //[7] 1:disable Ready Interrupt
+ 219                    //[6] 1:disable Pen Interrupt
+ 220                    //[5:3] Tsc sensitivity R selection.
+ 221                    //    FYI. InitAux() updates it as 10K.
+ 222                    //[2:0] ADC test mode
+ 223            //REG0B2      TSC DATA HI
+ 224            //          [7:0] TSC_ADOUT[11:4]
+ 225            //REG0B3      TSC DATA LO
+ 226            //          [3:0] TSC_ADOUT[3:0]
+ 227            {0x0B4, 0x00},  //TSC ADC SAMPLE & Clock. def:00
+ 228                    //[7:4] reserved
+ 229                    //[3] 1:continus sampling.
+ 230                    //[2:0] TSC_ADC clock
+ 231                    //      FYI. InitAux() updates [3] and [2:0]. and uses div8.
+ 232                    //-----------------
+ 233            {0x0D4, 0x00},  //LOPOR def:00
+ 234                    //-----------------         
+ 235            {0x0D6, 0x00},  //PWM def:00
+ 236            //REG0D7      def:00      
+ 237            //REG0D8      def:80      
+ 238            //REG0D9      def:00      
+ 239            //REG0DA      def:80      
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 5   
+
+ 240            //REG0DB      def:55      
+ 241            //REG0DC      def:00      
+ 242            //REG0DD      def:80      
+ 243            //REG0DE      def:00      
+ 244            //REG0DF      def:80      
+ 245          
+ 246            //        SSPLL2
+ 247            //          SSPLL2:60.75Mhz,PCLK:20.25MHz
+ 248            //REG0E7      def:16
+ 249            //REG0E8      def:01
+ 250            //REG0E9      def:20
+ 251            //REG0EA      def:00
+ 252            //REG0EB      def:40
+ 253            //REG0EC      def:B0
+ 254            //REG0ED      def:11
+ 255            //REG0F6    CLOCK_DIV def:04
+ 256            //        SSPLL1
+ 257            //          SSPLL1:60.75MHz,PLLCLK:15.1875MHz,SPICLK:27MHz,MCUCLK:27MHz
+ 258            //REG0F7      def:16
+ 259            //REG0F8      def:01
+ 260            //REG0F9      def:20
+ 261            //REG0FA      def:00
+ 262            //REG0FB      def:40
+ 263            //REG0FC      def:B0
+ 264            //REG0FD      def:11
+ 265          
+ 266                    //-----------------
+ 267                    //decoder
+ 268            //REG101      CSTATUS readonly
+ 269            {0x102, 0x40},  //INFORM. def:40
+ 270                    //[7] CSEL_HI
+ 271                    //[6] 1:27MHz 0:Square pixel, 60Hz:24.54MHz, 50Hz:29.5MHz.
+ 272                    //[5:4]
+ 273                    //[3:2]
+ 274                    //[1] CSEL_LO
+ 275                    //[0] VSEL
+ 276            //REG103      LLC mode. def:00 read:24
+ 277            //          [5] 1:Enable LLCMode
+ 278            {0x104, 0x00},  //hSync Delay  def:00
+ 279                    //[6:5] Color Killer time constant. 0:Fast..3:Slow
+ 280            {0x105, 0x00},  //BT656Enc output ctrl II. def:00
+ 281            {0x106, 0x00},  //ACNTL def:00
+ 282                    //..
+ 283                    //[2] Y_PDN
+ 284                    //[1] C_PDN
+ 285                    //[0] V_PDN
+ 286                    //BKTODO131125. def was inforrect. and disable [2] on HDMI.
+ 287                    //---------------------------
+ 288                    //decoder output crop       Normal      OverScan    
+ 289                    //            def   table NTSC  PAL   NTSC  PAL
+ 290                    //    hDelay: 0x00A  = 10 10    10    7   8   6
+ 291                    //    hActive:0x2D0 = 720 720   720   720   716   716
+ 292                    //    vDelay: 0x012 = 18  18    20    24    21    27
+ 293                    //    vActive:0x120 = 288 240   241   288   238   285
+ 294          //  {0x107, 0x12},  //DEC Crop Hi. def:12
+ 295          //          //[7:6] vDelay_hi
+ 296          //          //[5:4] vActive_hi
+ 297          //          //[3:2] hDelay_hi
+ 298          //          //[1:0] hActive_hi
+ 299            {0x108, 0x12},  //vDelay def:12
+ 300          //  {0x109, 0x20},  //vActive def:20
+ 301          //  {0x10A, 0x0A},  //hDelay def:0A
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 6   
+
+ 302            {0x10B, 0xD0},  //hActive def:D0
+ 303          
+ 304            {0x10C, 0xCC},  //CTRL1 def:CC
+ 305            {0x10D, 0x00},  //SS/WSS CTRL. def:15 read:00
+ 306                    //[4:0] closed caption decoding line number on odd field.
+ 307                    //color
+ 308            {0x110, 0x00},  //Brightness def:00
+ 309            {0x111, 0x5C},  //contrase def:5C
+ 310            {0x112, 0x11},  //sharpness def:11
+ 311            {0x113, 0x80},  //chroma SAT_U def:80
+ 312            {0x114, 0x80},  //chroma SAT_V def:80
+ 313            {0x115, 0x00},  //hue def:00
+ 314            {0x117, 0x80},  //vertical peak def:40 read:80
+ 315                    //[7:4] coring for sharpness control
+ 316                    //[2:0] vertical peaking control
+ 317                    //FYI FW uses 0x30
+ 318            {0x118, 0x44},  //corning def:44
+ 319            {0x11A, 0x00},  //SS_STATUS def:00 read:0x10
+ 320                    //[6]
+ 321                    //[5]
+ 322                    //other readonly
+ 323            //REG11B    CC_DATA readonly
+ 324            {0x11C, 0x07},  //SDT  def:07
+ 325                    //[3]
+ 326                    //[2:0]
+ 327                    //other readonly
+ 328            {0x11D, 0x7F},  //SDTR def:7F
+ 329            {0x11E, 0x00},  //comp video format def:00
+ 330                    //[3:0]
+ 331                    //other readonly
+ 332            {0x120, 0x50},  //def:50
+ 333            {0x121, 0x22},  //def:22
+ 334            {0x122, 0xF0},  //def:F0
+ 335            {0x123, 0xD8},  //def:D8
+ 336            {0x124, 0xBC},  //def:BC
+ 337            {0x125, 0xB8},  //def:B8
+ 338            {0x126, 0x44},  //def:44
+ 339            {0x127, 0x38},  //def:38
+ 340            {0x128, 0x00},  //def:00
+ 341            {0x129, 0x00},  //def:00
+ 342            {0x12A, 0x78},  //def:78
+ 343            {0x12B, 0x44},  //def:44
+ 344            {0x12C, 0x30},  //def:30
+ 345            {0x12D, 0x14},  //def:14
+ 346            {0x12E, 0xA5},  //def:A5
+ 347            {0x12F, 0xE0},  //def:E0
+ 348            //REG131 readonly
+ 349            //REG132 readonly
+ 350            {0x133, 0x05},  //def:05
+ 351            {0x134, 0x1A},  //def:1A
+ 352            {0x135, 0x00},  //def:00
+ 353            //REG140 readonly
+ 354            //REG141 readonly
+ 355            //REG142 readonly
+ 356          
+ 357                    //-----------------
+ 358                    //LLPLL
+ 359            {0x1C0, 0x00},  //LLPLL input ctrl def:00 
+ 360            //REG1C1      LLPLL input detection, readonly
+ 361            {0x1C2, 0x01},  //LLPLL CTRL def:01. FW uses D2
+ 362            {0x1C3, 0x03},  //LLPLL DIV def:03
+ 363            {0x1C4, 0x5A},  //LLPLL DIV def:5A
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 7   
+
+ 364            {0x1C5, 0x00},  //LLPLL Clock Phase def:00
+ 365            {0x1C6, 0x20},  //LLPLL Loop ctrl def:20
+ 366            {0x1C7, 0x04},  //LLPLL vco def:04
+ 367            {0x1C8, 0x00},  //LLPLL vco def:00
+ 368            {0x1C9, 0x06},  //LLPLL PreCoast def:06
+ 369            {0x1CA, 0x06},  //LLPLL PostCoast def:06
+ 370            {0x1CB, 0x30},  //SOG Threshold def:30
+ 371                    //  COMP starts from 0xD6
+ 372                    //  PC   starts from 0x56
+ 373                    //[7] SOG power down. 1:Power up
+ 374                    //[6] PLL power down. 1:Power up
+ 375                    //[5] PLL coast control. 1:Enable
+ 376                    //[4:0] SOG slicer threshold
+ 377            {0x1CC, 0x00},  //Scaler Sync Selection. def:00
+ 378            {0x1CD, 0x54},  //PLL init. def:54
+ 379          
+ 380            {0x1D0, 0x00},  //CLAMP gain control def:00
+ 381            {0x1D1, 0xF0},  //Y gain def:F0
+ 382            {0x1D2, 0xF0},  //C gain def:F0
+ 383            {0x1D3, 0xF0},  //V gain def:F0
+ 384            {0x1D4, 0x00},  //clamp mode control def:00 FW uses 0x20. rising.
+ 385                    //[5] ref edge
+ 386            {0x1D5, 0x00},  //clamp start position def:00
+ 387            {0x1D6, 0x10},  //clamp stop position def:10
+ 388            {0x1D7, 0x70},  //clamp master location def:0x70 FW starts from 0x00 and changes that depend on mode.
+ 389            {0x1D8, 0x00},  //ADC Test def:00
+ 390            {0x1D9, 0x04},  //Y clamp ref. def:04 FW uses 0x02
+ 391            {0x1DA, 0x80},  //C clamp ref. def:80
+ 392            {0x1DB, 0x80},  //V clamp ref. def:80
+ 393            {0x1DC, 0x20},  // def:0x20 FW uses 0x10.
+ 394                    //[7] Edge Select
+ 395                    //[5:0] Output HS width in number of output clocks
+ 396            {0x1E0, 0x00},  //LLPLL CTRL def:00
+ 397            {0x1E1, 0x05},  //LLPLL CTRL def:05 Note:1E1[5]:GPLL_PD
+ 398            {0x1E2, 0xD9},  //ADC CTRL I def:59 or D9
+ 399            {0x1E3, 0x07},  //ADC CTRL II def:87 read:0x07 DEC:0x07, aREG:0x37. error on datasheet
+ 400                    //[7] Bias current 0:Normal 1=half
+ 401                    //[6:4] Bias Control 0=10uA(Dec) 3=40uA(RGB)
+ 402                    //[3:0] Clamp current control
+ 403            {0x1E4, 0x33},  //ADC CTRL III def:33 DEC:0x33, aREG:0x55
+ 404            {0x1E5, 0x31},  //ADC CTRL IV def:31 DEC:0x33, aRGB:0x55
+ 405            {0x1E6, 0x00},  //ADC CTRL V  def:00 DEC:0x00, aRGB:0x20
+ 406            {0x1E7, 0x2A},  //ADC CTRL VI def:2A
+ 407            {0x1E8, 0x01},  //ADC CTRL VII  def:01  DEC:0x0F, aRGB:0x00
+ 408            {0x1E9, 0x00},  //CLOCK CTRL I  def:00
+ 409            {0x1EA, 0x03},  //CLOCK CTRL II def:03
+ 410          
+ 411            {0x1F6, 0x30},  //DIFF CLAMP CTRL I   def:30 On CM_SLEEP.
+ 412            //REG1F7      DIFF CLAMP CTRL II  def:00
+ 413            //REG1F8      DIFF CLAMP CTRL III def:00
+ 414            //REG1F9      DIFF CLAMP CTRL IV  def:00
+ 415            //REG1FA      DIFF CLAMP CTRL V   def:38
+ 416                    //-----------------
+ 417                    //scaler
+ 418            {0x201, 0x00},  //general scaler ctrl def:00  
+ 419            {0x202, 0x20},  //SCALING OFFSET    DEF:20
+ 420            {0x203, 0x00},  //XScale_Lo       def:00
+ 421            {0x204, 0x20},  //XScale_hi       def:20
+ 422            {0x205, 0x00},  //YScale_lo       def:00
+ 423            {0x206, 0x20},  //YScale_hi       def:20
+ 424            {0x207, 0x80},  //PXScale       def:80 FW uses 0x40
+ 425            {0x208, 0x10},  //PXInc_Lo        def:10 FW uses 0x20
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 8   
+
+ 426            {0x209, 0x00},  //HDScale_Lo      def:00
+ 427            {0x20A, 0x04},  //HDScale_hi      def:04
+ 428            {0x20B, 0x30},  //HDelay2       def:30 FW uses 0x10(16).
+ 429            {0x20C, 0xD0},  //HACTIVE2 withREG20E[6:4]    def:D0  
+ 430            {0x20D, 0x00},  //LNTT_HI def:00    see InitSwDefault_Table[]
+ 431            {0x20E, 0x20},  //HPADJ_HI    def:20
+ 432                    //[7] 
+ 433                    //[6:4] HACTIVE2_HI
+ 434                    //[3:0] HPADJ_HI
+ 435            {0x20F, 0x00},  //HPADJ_LO  def:00 FW uses 0x02
+ 436          
+ 437            {0x210, 0x10},  //HA_POS_LO with REG221[5:4] def:10 FW uses 0x30. it should be REG20B[]+0x20.
+ 438            {0x211, 0x00},  //HA_LEN_LO with def:00. depend on PANEL_H
+ 439            {0x212, 0x03},  //HA_LEN_Hi def:03
+ 440            {0x213, 0x10},  //HA_POS_Lo with def:10
+ 441            {0x214, 0x20},  //HS_LEN def:20
+ 442            {0x215, 0x20},  //def:20
+ 443            {0x216, 0x00},  //def:00
+ 444            {0x217, 0x03},  //def:03
+ 445            {0x218, 0x00},  //def:00
+ 446            {0x219, 0x00},  //def:00
+ 447            {0x21A, 0x00},  //def:00
+ 448            {0x21B, 0x00},  //def:00
+ 449            {0x21C, 0x00},  //def:40 read:0x00  BUGBUG130327 need manual.
+ 450            {0x21D, 0x00},  //def:00
+ 451            {0x21E, 0x00},  //def:00
+ 452            {0x220, 0x00},  //def:00
+ 453            {0x221, 0x00},  //def:00
+ 454          
+ 455                    //-----------------
+ 456                    // scaler output timing. for No video at first time.
+ 457                    //-----------------
+ 458          
+ 459                    //TCON
+ 460            {0x240, 0x10},  //def:10
+ 461            {0x241, 0x00},  //def:00
+ 462            {0x242, 0x01},  //def:01
+ 463            {0x243, 0x00},  //def:00
+ 464            {0x244, 0x00},  //def:00
+ 465            {0x245, 0x01},  //def:01
+ 466            {0x246, 0x00},  //def:00
+ 467            {0x247, 0x00},  //def:00
+ 468            {0x248, 0x01},  //def:01
+ 469            {0x249, 0x10},  //def:10
+ 470            {0x24A, 0x00},  //def:00
+ 471            {0x24B, 0x00},  //def:00
+ 472            {0x24C, 0x10},  //def:10
+ 473            {0x24D, 0x80},  //def:80
+ 474            {0x24E, 0x00},  //def:00
+ 475            //REG24F      def:00
+ 476            //REG250      def:00
+ 477            //REG251      def:00
+ 478                    //-----------------
+ 479                    //Image Adjustment
+ 480            {0x280, 0x20},  //def:20
+ 481            {0x281, 0x80},  //def:80
+ 482            {0x282, 0x80},  //def:80
+ 483            {0x283, 0x80},  //def:80
+ 484            {0x284, 0x80},  //def:80
+ 485            {0x285, 0x80},  //def:80
+ 486            {0x286, 0x80},  //def:80
+ 487            {0x287, 0x80},  //def:80
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 9   
+
+ 488            {0x288, 0x80},  //def:80
+ 489            {0x289, 0x80},  //def:80
+ 490            {0x28A, 0x80},  //def:80
+ 491            {0x28B, 0x30},  //def:30  FW uses 0x40
+ 492            {0x28C, 0x00},  //def:00
+ 493                    //-----------------
+ 494                    //Test Pattern
+ 495            {0x2BF, 0x00},
+ 496                    //-----------------
+ 497                    //Gamma
+ 498            {0x2E0, 0x00}, 
+ 499                    //-----------------
+ 500                    //Dither option
+ 501            {0x2E4, 0x00},  //def:00  FW starts from 0x21
+ 502                    //-----------------
+ 503                    //8bit PANEL Interface
+ 504            {0x2F8, 0x00},
+ 505            {0x2F9, 0x80},
+ 506                    //-----------------
+ 507                    //FOSD
+ 508          // Font download have to be exec when 
+ 509          //  {0x30C, 0x40},
+ 510            {0x30C, 0x00},  //turn on FOSD
+ 511            {0x310, 0x00},  //diable WIN1..WIN8
+ 512            {0x320, 0x00},
+ 513            {0x330, 0x00},
+ 514            {0x340, 0x00},
+ 515            {0x350, 0x00},
+ 516            {0x360, 0x00},
+ 517            {0x370, 0x00},
+ 518            {0x380, 0x00},
+ 519                    //-----------------
+ 520                    //SOSD
+ 521            {0x400, 0x00},
+ 522                    //-----------------
+ 523                    //LVDS Tx
+ 524            {0x640, 0x00},
+ 525            {0x641, 0x00},
+ 526            {0x642, 0x00},
+ 527            {0x643, 0x00},
+ 528            {0x644, 0x00},
+ 529            {0x647, 0x00},
+ 530                    //-----------------
+ 531                    //LVDS Rx
+ 532            {0x648, 0x00},  //def:01, read:00
+ 533            {0x649, 0x00},
+ 534            {0x64A, 0x00},
+ 535            {0x64B, 0x00},
+ 536            {0x64C, 0x00},
+ 537            {0x64D, 0x00},
+ 538            {0x64E, 0x00},
+ 539            {0x64F, 0x00},
+ 540                    //-----------------
+ 541            {0xFFF, 0xFF} //EOF
+ 542          };
+ 543          
+ 544          
+ 545          /*=====================================================
+ 546          * Software Default register value.
+ 547          *   If you need to change the default, modify below table.
+ 548          *======================================================*/
+ 549          
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 10  
+
+ 550          #if defined(PANEL_1280X800) && defined(PANEL_LVDS)
+              code REG_IDX_DATA_t InitSwDefault_Table[] = {
+              
+                {0x007, 0x10},        //PANEL_AUO_B133EW01
+                              //It is a LVDS, so dont care Output.
+                              //but, it needs 2bit shift down.
+                {0x040, 0x20},  //VDCLK_POL=1, High Active.
+                {0x041, 0x00},  //input control II, def:C0
+                {0x0B1, 0xC0},  //TSC CTRL II. def:00
+                {0x106, 0x03},  //ACNTL def:00
+                {0x107, 0x02},  //DEC Crop. vActive 288 to 240
+                {0x109, 0xF0},  
+                {0x10A, 0x0B},  //hDelay def:0A
+                {0x117, 0x30},  //vertical peak def:40 read:80, FW uses 0x30
+                {0x1C2, 0xD2},  //LLPLL CTRL def:01
+                {0x1CB, 0x16},  //SOG Threshold def:30 COMP:0xD6 PC:0x56
+                {0x1D4, 0x20},  //clamp mode control def:00 FW uses 0x20. rising.
+                {0x1D7, 0x00},  //clamp master location def:0x70 FW starts from 0x00.
+                {0x1D9, 0x02},  //Y clamp ref. def:04 FW uses 0x02
+                {0x1DC, 0x10},  // def:0x20 FW uses 0x10.
+                {0x1E3, 0x37},  //ADC CTRL II def:87 read:0x07 DEC:0x07, aREG:0x37. error on datasheet
+                {0x1E4, 0x55},  //ADC CTRL III def:33 DEC:0x33, aREG:0x55
+                {0x1E5, 0x55},  //ADC CTRL IV def:31 DEC:0x33, aRGB:0x55  FW BUG.DEC:0x31 BKTODO131126
+                {0x1E6, 0x20},  //ADC CTRL V  def:00 DEC:0x00, aRGB:0x20
+                {0x1E8, 0x20},  //ADC CTRL VII  def:01  DEC:0x0F, aRGB:0x00
+                {0x1F6, 0xB0},  //DIFF CLAMP CTRL I   def:30 On CM_SLEEP.
+              
+              
+                {0x205, 0x00},  //??
+                {0x206, 0x10},  //it assume 480i ???
+              
+                {0x207, 0x40},  //PXScale   def:80 FW uses 0x40
+                {0x208, 0x20},  //PXInc_Lo    def:10 FW uses 0x20
+                {0x20B, 0x10},  //HDelay2   def:30 FW uses 0x10(16).
+              
+                {0x20D, 0x92},  //temp....
+                
+              
+                {0x20F, 0x02},  //HPADJ_LO    def:00 FW uses 0x02
+              
+                {0x210, 0x30},  //HA_POS_LO with REG221[5:4] def:10 FW uses 0x30. it should be REG20B[]+0x20.
+                {0x211, 0x00},  //(PANEL_H==1280)
+                {0x212, 0x05},
+                {0x213, 0x00},  //HA_POS_Lo with def:10
+                {0x214, 0x0A},  //HS_LEN def:20
+                {0x216, 0x20},  //(PANEL_V==800)
+                {0x217, 0x03},
+                {0x219, 0x27},  //def:00
+              
+                {0x21C, 0x42},  //def:40 read:0x00  BUGBUG130327 need manual.
+                {0x21D, 0x3E},  //def:00
+              
+                {0x21E, 0x02},  //def:00
+              
+                        //TCON
+                {0x240, 0x10},  //def:10
+                {0x241, 0x00},  //def:00
+                {0x242, 0x05},  //def:01
+                {0x243, 0x01},  //def:00
+                {0x244, 0x64},  //def:00
+                {0x245, 0xF4},  //def:01
+                {0x246, 0x00},  //def:00
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 11  
+
+                {0x247, 0x0A},  //def:00
+                {0x248, 0x36},  //def:01
+                {0x249, 0x10},  //def:10
+                {0x24A, 0x00},  //def:00
+                {0x24B, 0x00},  //def:00
+                {0x24C, 0x00},  //def:10
+                {0x24D, 0x44},  //def:80
+                {0x24E, 0x04},  //def:00
+                //REG24F      def:00
+                //REG250      def:00
+                //REG251      def:00
+              
+                {0x28B, 0x40},  //def:30  FW uses 0x40
+              //#if defined(PANEL_FORMAT_666)
+                {0x2E4, 0x21},  //def:00  FW starts from 0x21
+              //#endif
+                {0x648, 0x01},  //def:01, read:00
+              
+                {0xFFF, 0xFF} //EOF
+              };
+              #elif defined(PANEL_1024X600) && defined(PANEL_LVDS)
+              code REG_IDX_DATA_t InitSwDefault_Table[] = {
+              #ifdef MODEL_TW8836DEMO
+                {0x007, 0x02},        //It is a LVDS, so dont care Output.
+                              //but, it needs to remove TCON to use TCREV.      
+                {0x008, 0xBC},  //4mA. TRI_FPD, TRI_EN. GPOSEL=1 for FP_PWC off
+              #endif
+                {0x040, 0x20},  //VDCLK_POL=1, High Active.
+                {0x041, 0x00},  //input control II, def:C0
+                {0x0B1, 0xC0},  //TSC CTRL II. def:00
+                {0x106, 0x03},  //ACNTL def:00
+                {0x107, 0x02},  //DEC Crop. vActive 288 to 240
+                {0x109, 0xF0},  
+                {0x10A, 0x0B},  //hDelay def:0A
+                {0x117, 0x30},  //vertical peak def:40 read:80, FW uses 0x30
+                {0x1C2, 0xD2},  //LLPLL CTRL def:01
+                {0x1CB, 0x16},  //SOG Threshold def:30 COMP:0xD6 PC:0x56
+                {0x1D4, 0x20},  //clamp mode control def:00 FW uses 0x20. rising.
+                {0x1D7, 0x00},  //clamp master location def:0x70 FW starts from 0x00.
+                {0x1D9, 0x02},  //Y clamp ref. def:04 FW uses 0x02
+                {0x1DC, 0x10},  // def:0x20 FW uses 0x10.
+                {0x1E3, 0x37},  //ADC CTRL II def:87 read:0x07 DEC:0x07, aREG:0x37. error on datasheet
+                {0x1E4, 0x55},  //ADC CTRL III def:33 DEC:0x33, aREG:0x55
+                {0x1E5, 0x55},  //ADC CTRL IV def:31 DEC:0x33, aRGB:0x55  FW BUG.DEC:0x31 BKTODO131126
+                {0x1E6, 0x20},  //ADC CTRL V  def:00 DEC:0x00, aRGB:0x20
+                {0x1E8, 0x20},  //ADC CTRL VII  def:01  DEC:0x0F, aRGB:0x00
+                {0x1F6, 0xB0},  //DIFF CLAMP CTRL I   def:30 On CM_SLEEP.
+              
+                {0x205, 0xCD},  //(PANEL_H==1024 && PANEL_V==600)
+                {0x206, 0x0C},  
+              
+                {0x207, 0x40},  //PXScale   def:80 FW uses 0x40
+                {0x208, 0x20},  //PXInc_Lo    def:10 FW uses 0x20
+                {0x20B, 0x10},  //HDelay2   def:30 FW uses 0x10(16).
+              
+                {0x20D, 0x90},  //if PANEL_1024X600
+              
+                {0x20F, 0x02},  //HPADJ_LO    def:00 FW uses 0x02
+                {0x210, 0x30},  //HA_POS_LO with REG221[5:4] def:10 FW uses 0x30. it should be REG20B[]+0x20.
+              
+                {0x211, 0x00},  //(PANEL_H==1024)
+                {0x212, 0x04},
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 12  
+
+              
+                {0x213, 0x00},  //HA_POS_Lo with def:10
+                {0x214, 0x0A},  //HS_LEN def:20
+              
+                {0x216, 0x58},  //(PANEL_V==600)
+                {0x217, 0x02},
+              
+                {0x219, 0x27},  //def:00
+              
+                        //(PANEL_H==1024)
+                        //need freerun value depend on PANEL_H.
+                {0x21C, 0x42},  //AUTO_ON + Htotal value(1144) 
+                {0x21D, 0x78},
+              
+                {0x21E, 0x02},  //def:00
+              
+                        //TCON
+                {0x240, 0x10},  //def:10
+                {0x241, 0x00},  //def:00
+                {0x242, 0x05},  //def:01
+                {0x243, 0x01},  //def:00
+                {0x244, 0x64},  //def:00
+                {0x245, 0xF4},  //def:01
+                {0x246, 0x00},  //def:00
+                {0x247, 0x0A},  //def:00
+                {0x248, 0x36},  //def:01
+                {0x249, 0x10},  //def:10
+                {0x24A, 0x00},  //def:00
+                {0x24B, 0x00},  //def:00
+                {0x24C, 0x00},  //def:10
+                {0x24D, 0x44},  //def:80
+                {0x24E, 0x04},  //def:00
+                //REG24F      def:00
+                //REG250      def:00
+                //REG251      def:00
+              
+                {0x28B, 0x40},  //def:30  FW uses 0x40
+              //  {0x2E4, 0x21},  //def:00  FW starts from 0x21
+              
+                {0x648, 0x01},  //def:01, read:00
+              
+                {0xFFF, 0xFF} //EOF
+              };
+              #else //TCON 
+ 718          code REG_IDX_DATA_t InitSwDefault_Table[] = {
+ 719            {0x006, 0x06},  //SRST def:00
+ 720            {0x008, 0xB6},  //Output CTL II def:30
+ 721            {0x040, 0x20},  //VDCLK_POL=1, High Active.
+ 722            {0x041, 0x00},  //input control II, def:C0
+ 723            {0x0B1, 0xC0},  //TSC CTRL II. def:00
+ 724            {0x106, 0x03},  //ACNTL def:00
+ 725            {0x107, 0x02},  //DEC Crop. vActive 288 to 240
+ 726            {0x109, 0xF0},  
+ 727            {0x10A, 0x0B},  //hDelay def:0A
+ 728            {0x117, 0x30},  //vertical peak def:40 read:80, FW uses 0x30
+ 729            {0x1C2, 0xD2},  //LLPLL CTRL def:01
+ 730            {0x1CB, 0x16},  //SOG Threshold def:30 COMP:0xD6 PC:0x56
+ 731            {0x1D4, 0x20},  //clamp mode control def:00 FW uses 0x20. rising.
+ 732            {0x1D7, 0x00},  //clamp master location def:0x70 FW starts from 0x00.
+ 733            {0x1D9, 0x02},  //Y clamp ref. def:04 FW uses 0x02
+ 734            {0x1DC, 0x10},  // def:0x20 FW uses 0x10.
+ 735            {0x1E3, 0x37},  //ADC CTRL II def:87 read:0x07 DEC:0x07, aREG:0x37. error on datasheet
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 13  
+
+ 736            {0x1E4, 0x55},  //ADC CTRL III def:33 DEC:0x33, aREG:0x55
+ 737            {0x1E5, 0x55},  //ADC CTRL IV def:31 DEC:0x33, aRGB:0x55  FW BUG.DEC:0x31 BKTODO131126
+ 738            {0x1E6, 0x20},  //ADC CTRL V  def:00 DEC:0x00, aRGB:0x20
+ 739            {0x1E8, 0x20},  //ADC CTRL VII  def:01  DEC:0x0F, aRGB:0x00
+ 740            {0x1F6, 0xB0},  //DIFF CLAMP CTRL I   def:30 On CM_SLEEP.
+ 741          
+ 742            {0x205, 0x00},
+ 743            {0x206, 0x10},  //it assume 480i ???
+ 744          
+ 745            {0x207, 0x40},  //PXScale   def:80 FW uses 0x40
+ 746            {0x208, 0x20},  //PXInc_Lo    def:10 FW uses 0x20
+ 747            {0x20B, 0x10},  //HDelay2   def:30 FW uses 0x10(16).
+ 748          
+ 749            //{0x20D, 0x92},
+ 750            {0x20D, 0x81}, //BK140902, 72MHz/1/2 Pol:0
+ 751          
+ 752            {0x20F, 0x02},  //HPADJ_LO    def:00 FW uses 0x02
+ 753            {0x210, 0x30},  //HA_POS_LO with REG221[5:4] def:10 FW uses 0x30. it should be REG20B[]+0x20.
+ 754                  
+ 755            {0x211, 0x20},  //(PANEL_H==800)
+ 756            {0x212, 0x03},
+ 757          
+ 758            {0x213, 0x00},  //HA_POS_Lo with def:10
+ 759            {0x214, 0x0A},  //HS_LEN def:20
+ 760                    //(PANEL_V==480)
+ 761            {0x216, 0xE0},  //def:00
+ 762            {0x217, 0x01},  //def:03
+ 763          
+ 764            {0x219, 0x27},  //def:00
+ 765          
+ 766            {0x21C, 0x42},  //def:40 read:0x00  BUGBUG130327 need manual.
+ 767            {0x21D, 0x3E},  //def:00
+ 768          
+ 769            {0x21E, 0x02},  //def:00
+ 770          
+ 771                    //TCON
+ 772            {0x240, 0x10},  //def:10
+ 773            {0x241, 0x00},  //def:00
+ 774            {0x242, 0x05},  //def:01
+ 775            {0x243, 0x01},  //def:00
+ 776            {0x244, 0x64},  //def:00
+ 777            {0x245, 0xF4},  //def:01
+ 778            {0x246, 0x00},  //def:00
+ 779            {0x247, 0x0A},  //def:00
+ 780            {0x248, 0x36},  //def:01
+ 781            {0x249, 0x10},  //def:10
+ 782            {0x24A, 0x00},  //def:00
+ 783            {0x24B, 0x00},  //def:00
+ 784            {0x24C, 0x00},  //def:10
+ 785            {0x24D, 0x44},  //def:80
+ 786            {0x24E, 0x04},  //def:00
+ 787            //REG24F      def:00
+ 788            //REG250      def:00
+ 789            //REG251      def:00
+ 790          
+ 791            {0x28B, 0x40},  //def:30  FW uses 0x40
+ 792                    //(PANEL_FORMAT_666)
+ 793            {0x2E4, 0x21},  //def:00  FW starts from 0x21
+ 794          
+ 795            {0x648, 0x01},  //def:01, read:00
+ 796          
+ 797            {0xFFF, 0xFF} //EOF
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 14  
+
+ 798          };
+ 799          #endif
+ 800          
+ 801          
+ 802          code REG_IDX_DATA_t Recover_Decoder[] = {
+ 803            {0x10C, 0xCC},  //DEC:0xDC, aRGB:0xCC
+ 804            {0x1E3, 0x07},  //DEC:0x07, aREG:0x37
+ 805            {0x1E4, 0x33},  //DEC:0x33, aREG:0x55
+ 806            {0x1E5, 0x33},  //DEC:0x33, aRGB:0x55
+ 807            {0x1E6, 0x00},  //DEC:0x00, aRGB:0x20
+ 808            {0x1E8, 0x2F},  //DEC:0x0F, aRGB:0x00
+ 809            {0xFFF, 0xFF} //EOF
+ 810          };
+ 811          
+ 812          
+ 813          code REG_IDX_DATA_t Recover_aRGB[] = {
+ 814            {0x10C, 0xCC},  //DEC:0xCC, aRGB:0xCC
+ 815            {0x1E3, 0x37},  //DEC:0x07, aREG:0x37
+ 816            {0x1E4, 0x55},  //DEC:0x33, aREG:0x55
+ 817            {0x1E5, 0x55},  //DEC:0x33, aRGB:0x55
+ 818            {0x1E6, 0x20},  //DEC:0x00, aRGB:0x20
+ 819            {0x1E8, 0x20},  //DEC:0x0F, aRGB:0x00
+ 820            {0x1EA, 0x03},
+ 821            {0xFFF, 0xFF} //EOF
+ 822          };
+ 823          
+ 824          #ifdef SUPPORT_COMPONENT
+ 825          CODE REG_IDX_DATA_t DataInit_Component_Init1080p60_step1[] = {
+ 826          //{0x102, 0x2a},    //+ Mux sel.
+ 827            {0x105, 0x20},    //* AFE Mode, AAF on/off
+ 828          //{0x106, 0x00},    //+ Enable ADC
+ 829          
+ 830          //----- LLPLL
+ 831          //{0x1c0, 0x10},    //+ Input config.
+ 832            {0x1C2, 0xE2},    //* VCO, Charge Pump
+ 833            {0x1C3, 0x08},    //* Divider H
+ 834            {0x1C4, 0x97},    //* Divider L
+ 835            {0x1C5, 0x00},    //* Phase
+ 836          //{0x1c6, 0x20},    //+ Loop Filter 0, Change to 7 later...
+ 837          //{0x1c7, 0x04},    //- VCO Norminal freq.
+ 838          //{0x1c8, 0x00},    //- VCO Norminal freq.
+ 839          //{0x1c9, 0x00},    //+ Pre Coast
+ 840          //{0x1ca, 0x00},    //+ Post Coast
+ 841          //{0x1cb, 0xce},    //+ Power, SOG Threshold
+ 842          //{0x1cc, 0x02},    //+ Sync Output sel.
+ 843          //{0x1cd, 0x54},    //. Charge Pump Fine Control
+ 844          //----- ADC Gain
+ 845            {0x1D0, 0x07},    //*
+ 846            {0x1D1, 0x10},    //*
+ 847            {0x1D2, 0x10},    //*
+ 848            {0x1D3, 0x10},    //*
+ 849          //----- Clamp
+ 850          //{0x1d4, 0x00},    //+ Mode
+ 851          //{0x1d5, 0x00},    //+ Start
+ 852          //{0x1d6, 0x10},    //+ Stop
+ 853            {0x1D7, 0x0E},    //* Master Location
+ 854          //{0x1d8, 0x00},    //- Debug off
+ 855          //{0x1d9, 0x01},    //+ G Level
+ 856          //{0x1da, 0x80},    //+ B Level
+ 857          //{0x1db, 0x80},    //+ R Level
+ 858          //----- LLPLL Misc.
+ 859          //{0x1dc, 0x10},    //+ HS width
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 15  
+
+ 860          //{0x1e0, 0x00},    //- Test
+ 861          //{0x1e1, 0x05},    //+ GPLL Pd.
+ 862          //----- AFE
+ 863            {0x1E2, 0x59},    //* Bais, VREF
+ 864            {0x1E3, 0x17},    //* Bias
+ 865            {0x1E4, 0x34},    //* Bias
+ 866            {0x1E5, 0x33},    //* Bias
+ 867            {0x1E6, 0x20},    //* Bias
+ 868            {0x1E7, 0x2A},    //* AAF  
+ 869          
+ 870            {0xFFF, 0xFF} //EOF
+ 871          };
+ 872          
+ 873          CODE REG_IDX_DATA_t DataInit_Component_Init1080p50_H56_step1[] = {
+ 874          //{0x102, 0x2a},    //+ Mux sel.
+ 875            {0x105, 0x20},    //* AFE Mode, AAF on/off
+ 876          //{0x106, 0x00},    //+ Enable ADC
+ 877          
+ 878          //----- LLPLL
+ 879          //{0x1c0, 0x10},    //+ Input config.
+ 880            {0x1C2, 0xF2},    //* VCO, Charge Pump
+ 881            {0x1C3, 0x0A},    //* Divider H
+ 882            {0x1C4, 0x4F},    //* Divider L
+ 883            {0x1C5, 0x03},    //* Phase
+ 884          //{0x1c6, 0x20},    //+ Loop Filter 0, Change to 7 later...
+ 885          //{0x1c7, 0x04},    //- VCO Norminal freq.
+ 886          //{0x1c8, 0x00},    //- VCO Norminal freq.
+ 887          //{0x1c9, 0x00},    //+ Pre Coast
+ 888          //{0x1ca, 0x00},    //+ Post Coast
+ 889          //{0x1cb, 0xce},    //+ Power, SOG Threshold
+ 890          //{0x1cc, 0x02},    //+ Sync Output sel.
+ 891          //{0x1cd, 0x54},    //. Charge Pump Fine Control
+ 892          //----- ADC Gain
+ 893            {0x1D0, 0x07},    //*
+ 894            {0x1D1, 0x10},    //*
+ 895            {0x1D2, 0x10},    //*
+ 896            {0x1D3, 0x10},    //*
+ 897          //----- Clamp
+ 898          //{0x1d4, 0x00},    //+ Mode
+ 899          //{0x1d5, 0x00},    //+ Start
+ 900          //{0x1d6, 0x10},    //+ Stop
+ 901            {0x1D7, 0x0E},    //* Master Location
+ 902          //{0x1d8, 0x00},    //- Debug off
+ 903          //{0x1d9, 0x01},    //+ G Level
+ 904          //{0x1da, 0x80},    //+ B Level
+ 905          //{0x1db, 0x80},    //+ R Level
+ 906          //----- LLPLL Misc.
+ 907          //{0x1dc, 0x10},    //+ HS width
+ 908          //{0x1e0, 0x00},    //- Test
+ 909          //{0x1e1, 0x05},    //+ GPLL Pd.
+ 910          //----- AFE
+ 911            {0x1E2, 0x59},    //* Bais, VREF
+ 912            {0x1E3, 0x17},    //* Bias
+ 913            {0x1E4, 0x34},    //* Bias
+ 914            {0x1E5, 0x33},    //* Bias
+ 915            {0x1E6, 0x20},    //* Bias
+ 916            {0x1E7, 0x2A},    //* AAF  
+ 917            
+ 918            {0xFFF, 0xFF} //EOF
+ 919          };
+ 920          
+ 921          
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 16  
+
+ 922          CODE REG_IDX_DATA_t DataInit_Component_Init1080i30_step1[] = {
+ 923          //{0x102, 0x2a},    //+ Mux sel.
+ 924            {0x105, 0x20},    //* AFE Mode, AAF on/off
+ 925          //{0x106, 0x00},    //+ Enable ADC
+ 926          
+ 927          //----- LLPLL
+ 928          //{0x1c0, 0x10},    //+ Input config.
+ 929            {0x1C2, 0xE2},    //* VCO, Charge Pump
+ 930            {0x1C3, 0x08},    //* Divider H
+ 931            {0x1C4, 0x97},    //* Divider L
+ 932            {0x1C5, 0x00},    //* Phase
+ 933          //{0x1c6, 0x20},    //+ Loop Filter 0, Change to 7 later...
+ 934          //{0x1c7, 0x04},    //- VCO Norminal freq.
+ 935          //{0x1c8, 0x00},    //- VCO Norminal freq.
+ 936          //{0x1c9, 0x00},    //+ Pre Coast
+ 937          //{0x1ca, 0x00},    //+ Post Coast
+ 938          //{0x1cb, 0xce},    //+ Power, SOG Threshold
+ 939          //{0x1cc, 0x02},    //+ Sync Output sel.
+ 940          //{0x1cd, 0x54},    //. Charge Pump Fine Control
+ 941          //----- ADC Gain
+ 942            {0x1D0, 0x07},    //*
+ 943            {0x1D1, 0x10},    //*
+ 944            {0x1D2, 0x10},    //*
+ 945            {0x1D3, 0x10},    //*
+ 946          //----- Clamp
+ 947          //{0x1d4, 0x00},    //+ Mode
+ 948          //{0x1d5, 0x00},    //+ Start
+ 949          //{0x1d6, 0x10},    //+ Stop
+ 950            {0x1D7, 0x18},    //* Master Location
+ 951          //{0x1d8, 0x00},    //- Debug off
+ 952          //{0x1d9, 0x01},    //+ G Level
+ 953          //{0x1da, 0x80},    //+ B Level
+ 954          //{0x1db, 0x80},    //+ R Level
+ 955          //----- LLPLL Misc.
+ 956          //{0x1dc, 0x10},    //+ HS width
+ 957          //{0x1e0, 0x00},    //- Test
+ 958          //{0x1e1, 0x05},    //+ GPLL Pd.
+ 959          //----- AFE
+ 960            {0x1E2, 0x59},    //* Bais, VREF
+ 961            {0x1E3, 0x17},    //* Bias
+ 962            {0x1E4, 0x34},    //* Bias
+ 963            {0x1E5, 0x33},    //* Bias
+ 964            {0x1E6, 0x20},    //* Bias
+ 965            {0x1E7, 0x2A},    //* AAF  
+ 966          
+ 967            {0xFFF, 0xFF} //EOF
+ 968          };
+ 969          
+ 970          
+ 971          CODE REG_IDX_DATA_t DataInit_Component_Init1080i25_H28_step1[] = {
+ 972          
+ 973          //{0x102, 0x2a},    //+ Mux sel.
+ 974            {0x105, 0x20},    //* AFE Mode, AAF on/off
+ 975          //{0x106, 0x00},    //+ Enable ADC
+ 976          
+ 977          //----- LLPLL
+ 978          //{0x1c0, 0x10},    //+ Input config.
+ 979            {0x1C2, 0xF2},    //* VCO, Charge Pump
+ 980            {0x1C3, 0x0A},    //* Divider H
+ 981            {0x1C4, 0x4F},    //* Divider L
+ 982            {0x1C5, 0x0F},    //* Phase
+ 983          //{0x1c6, 0x20},    //+ Loop Filter 0, Change to 7 later...
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 17  
+
+ 984          //{0x1c7, 0x04},    //- VCO Norminal freq.
+ 985          //{0x1c8, 0x00},    //- VCO Norminal freq.
+ 986          //{0x1c9, 0x00},    //+ Pre Coast
+ 987          //{0x1ca, 0x00},    //+ Post Coast
+ 988          //{0x1cb, 0xce},    //+ Power, SOG Threshold
+ 989          //{0x1cc, 0x02},    //+ Sync Output sel.
+ 990          //{0x1cd, 0x54},    //. Charge Pump Fine Control
+ 991          //----- ADC Gain
+ 992            {0x1D0, 0x07},    //*
+ 993            {0x1D1, 0x10},    //*
+ 994            {0x1D2, 0x10},    //*
+ 995            {0x1D3, 0x10},    //*
+ 996          //----- Clamp
+ 997          //{0x1d4, 0x00},    //+ Mode
+ 998          //{0x1d5, 0x00},    //+ Start
+ 999          //{0x1d6, 0x10},    //+ Stop
+1000            {0x1D7, 0x28},    //* Master Location
+1001          //{0x1d8, 0x00},    //- Debug off
+1002          //{0x1d9, 0x01},    //+ G Level
+1003          //{0x1da, 0x80},    //+ B Level
+1004          //{0x1db, 0x80},    //+ R Level
+1005          //----- LLPLL Misc.
+1006          //{0x1dc, 0x10},    //+ HS width
+1007          //{0x1e0, 0x00},    //- Test
+1008          //{0x1e1, 0x05},    //+ GPLL Pd.
+1009          //----- AFE
+1010            {0x1E2, 0x59},    //* Bais, VREF
+1011            {0x1E3, 0x17},    //* Bias
+1012            {0x1E4, 0x34},    //* Bias
+1013            {0x1E5, 0x33},    //* Bias
+1014            {0x1E6, 0x20},    //* Bias
+1015            {0x1E7, 0x2A},    //* AAF  
+1016          
+1017            {0xFFF, 0xFF} //EOF
+1018          };
+1019          
+1020          
+1021          CODE REG_IDX_DATA_t DataInit_Component_Init1080i25_H31_step1[] = {
+1022          
+1023          //{0x102, 0x2a},    //+ Mux sel.
+1024            {0x105, 0x20},    //* AFE Mode, AAF on/off
+1025          //{0x106, 0x00},    //+ Enable ADC
+1026          
+1027          //----- LLPLL
+1028          //{0x1c0, 0x10},    //+ Input config.
+1029            {0x1C2, 0xF2},    //* VCO, Charge Pump
+1030            {0x1C3, 0x09},    //* Divider H
+1031            {0x1C4, 0x47},    //* Divider L
+1032            {0x1C5, 0x0F},    //* Phase
+1033          //{0x1c6, 0x20},    //+ Loop Filter 0, Change to 7 later...
+1034          //{0x1c7, 0x04},    //- VCO Norminal freq.
+1035          //{0x1c8, 0x00},    //- VCO Norminal freq.
+1036          //{0x1c9, 0x00},    //+ Pre Coast
+1037          //{0x1ca, 0x00},    //+ Post Coast
+1038          //{0x1cb, 0xce},    //+ Power, SOG Threshold
+1039          //{0x1cc, 0x02},    //+ Sync Output sel.
+1040          //{0x1cd, 0x54},    //. Charge Pump Fine Control
+1041          //----- ADC Gain
+1042            {0x1D0, 0x07},    //*
+1043            {0x1D1, 0x10},    //*
+1044            {0x1D2, 0x10},    //*
+1045            {0x1D3, 0x10},    //*
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 18  
+
+1046          //----- Clamp
+1047          //{0x1d4, 0x00},    //+ Mode
+1048          //{0x1d5, 0x00},    //+ Start
+1049          //{0x1d6, 0x10},    //+ Stop
+1050            {0x1D7, 0x28},    //* Master Location
+1051          //{0x1d8, 0x00},    //- Debug off
+1052          //{0x1d9, 0x01},    //+ G Level
+1053          //{0x1da, 0x80},    //+ B Level
+1054          //{0x1db, 0x80},    //+ R Level
+1055          //----- LLPLL Misc.
+1056          //{0x1dc, 0x10},    //+ HS width
+1057          //{0x1e0, 0x00},    //- Test
+1058          //{0x1e1, 0x05},    //+ GPLL Pd.
+1059          //----- AFE
+1060            {0x1E2, 0x59},    //* Bais, VREF
+1061            {0x1E3, 0x17},    //* Bias
+1062            {0x1E4, 0x34},    //* Bias
+1063            {0x1E5, 0x33},    //* Bias
+1064            {0x1E6, 0x20},    //* Bias
+1065            {0x1E7, 0x2A},    //* AAF  
+1066          
+1067            {0xFFF, 0xFF} //EOF
+1068          };
+1069          
+1070          CODE REG_IDX_DATA_t DataInit_Component_Init720p60_step1[] = {
+1071          //{0x102, 0x2a},    //+ Mux sel.
+1072            {0x105, 0x20},    //* AFE Mode, AAF on/off
+1073          //{0x106, 0x00},    //+ Enable ADC
+1074          
+1075          //----- LLPLL
+1076          //{0x1c0, 0x10},    //+ Input config.
+1077            {0x1C2, 0xE2},    //* VCO, Charge Pump
+1078            {0x1C3, 0x06},    //* Divider H
+1079            {0x1C4, 0x71},    //* Divider L
+1080            {0x1C5, 0x09},    //* Phase
+1081          //{0x1c6, 0x20},    //+ Loop Filter 0, Change to 7 later...
+1082          //{0x1c7, 0x04},    //- VCO Norminal freq.
+1083          //{0x1c8, 0x00},    //- VCO Norminal freq.
+1084          //{0x1c9, 0x00},    //+ Pre Coast
+1085          //{0x1ca, 0x00},    //+ Post Coast
+1086          //{0x1cb, 0xce},    //+ Power, SOG Threshold
+1087          //{0x1cc, 0x02},    //+ Sync Output sel.
+1088          //{0x1cd, 0x54},    //. Charge Pump Fine Control
+1089          //----- ADC Gain
+1090            {0x1D0, 0x07},    //*
+1091            {0x1D1, 0x10},    //*
+1092            {0x1D2, 0x10},    //*
+1093            {0x1D3, 0x10},    //*
+1094          //----- Clamp
+1095          //{0x1d4, 0x00},    //+ Mode
+1096          //{0x1d5, 0x00},    //+ Start
+1097          //{0x1d6, 0x10},    //+ Stop
+1098            {0x1D7, 0x26},    //* Master Location
+1099          //{0x1d8, 0x00},    //- Debug off
+1100          //{0x1d9, 0x01},    //+ G Level
+1101          //{0x1da, 0x80},    //+ B Level
+1102          //{0x1db, 0x80},    //+ R Level
+1103          //----- LLPLL Misc.
+1104          //{0x1dc, 0x10},    //+ HS width
+1105          //{0x1e0, 0x00},    //- Test
+1106          //{0x1e1, 0x05},    //+ GPLL Pd.
+1107          //----- AFE
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 19  
+
+1108            {0x1E2, 0x59},    //* Bais, VREF
+1109            {0x1E3, 0x17},    //* Bias
+1110            {0x1E4, 0x34},    //* Bias
+1111            {0x1E5, 0x33},    //* Bias
+1112            {0x1E6, 0x20},    //* Bias
+1113            {0x1E7, 0x2A},    //* AAF  
+1114          
+1115            {0xFFF, 0xFF} //EOF
+1116          };
+1117          
+1118          CODE REG_IDX_DATA_t DataInit_Component_Init720p50_step1[] = {
+1119          
+1120          //{0x041, 0x3E, 
+1121          
+1122          //{0x102, 0x2a},    //+ Mux sel.
+1123            {0x105, 0x20},    //* AFE Mode, AAF on/off
+1124          //{0x106, 0x00},    //+ Enable ADC
+1125          
+1126          //----- LLPLL
+1127          //{0x1c0, 0x10},    //+ Input config.
+1128            {0x1C2, 0xE2},    //* VCO, Charge Pump
+1129            {0x1C3, 0x07},    //* Divider H
+1130            {0x1C4, 0xBB},    //* Divider L
+1131            {0x1C5, 0x00},    //* Phase
+1132          //{0x1c6, 0x20},    //+ Loop Filter 0, Change to 7 later...
+1133          //{0x1c7, 0x04},    //- VCO Norminal freq.
+1134          //{0x1c8, 0x00},    //- VCO Norminal freq.
+1135          //{0x1c9, 0x00},    //+ Pre Coast
+1136          //{0x1ca, 0x00},    //+ Post Coast
+1137          //{0x1cb, 0xce},    //+ Power, SOG Threshold
+1138          //{0x1cc, 0x02},    //+ Sync Output sel.
+1139          //{0x1cd, 0x54},    //. Charge Pump Fine Control
+1140          //----- ADC Gain
+1141            {0x1D0, 0x07},    //*
+1142            {0x1D1, 0x10},    //*
+1143            {0x1D2, 0x10},    //*
+1144            {0x1D3, 0x10},    //*
+1145          //----- Clamp
+1146          //{0x1d4, 0x00},    //+ Mode
+1147          //{0x1d5, 0x00},    //+ Start
+1148          //{0x1d6, 0x10},    //+ Stop
+1149            {0x1D7, 0x26},    //* Master Location
+1150          //{0x1d8, 0x00},    //- Debug off
+1151          //{0x1d9, 0x01},    //+ G Level
+1152          //{0x1da, 0x80},    //+ B Level
+1153          //{0x1db, 0x80},    //+ R Level
+1154          //----- LLPLL Misc.
+1155          //{0x1dc, 0x10},    //+ HS width
+1156          //{0x1e0, 0x00},    //- Test
+1157          //{0x1e1, 0x05},    //+ GPLL Pd.
+1158          //----- AFE
+1159            {0x1E2, 0x59},    //* Bais, VREF
+1160            {0x1E3, 0x17},    //* Bias
+1161            {0x1E4, 0x34},    //* Bias
+1162            {0x1E5, 0x33},    //* Bias
+1163            {0x1E6, 0x20},    //* Bias
+1164            {0x1E7, 0x2A},    //* AAF  
+1165          
+1166            {0xFFF, 0xFF} //EOF
+1167          };
+1168          
+1169          CODE REG_IDX_DATA_t DataInit_Component_Init576p_step1[] = {
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 20  
+
+1170          //{0x041, 0x3E, 
+1171          
+1172          //{0x102, 0x2a},    //+ Mux sel.
+1173            {0x105, 0x20},    //* AFE Mode, AAF on/off
+1174          //{0x106, 0x00},    //+ Enable ADC
+1175          
+1176          //----- LLPLL
+1177          //{0x1c0, 0x10},    //+ Input config.
+1178            {0x1C2, 0xE2},    //* VCO, Charge Pump
+1179            {0x1C3, 0x03},    //* Divider H
+1180            {0x1C4, 0x5F},    //* Divider L
+1181            {0x1C5, 0x0E},    //* Phase
+1182          //{0x1c6, 0x20},    //+ Loop Filter 0, Change to 7 later...
+1183          //{0x1c7, 0x04},    //- VCO Norminal freq.
+1184          //{0x1c8, 0x00},    //- VCO Norminal freq.
+1185          //{0x1c9, 0x00},    //+ Pre Coast
+1186          //{0x1ca, 0x00},    //+ Post Coast
+1187          //{0x1cb, 0xce},    //+ Power, SOG Threshold
+1188          //{0x1cc, 0x02},    //+ Sync Output sel.
+1189          //{0x1cd, 0x54},    //. Charge Pump Fine Control
+1190          //----- ADC Gain
+1191            {0x1D0, 0x07},    //*
+1192            {0x1D1, 0x10},    //*
+1193            {0x1D2, 0x10},    //*
+1194            {0x1D3, 0x10},    //*
+1195          //----- Clamp
+1196          //{0x1d4, 0x00},    //+ Mode
+1197          //{0x1d5, 0x00},    //+ Start
+1198          //{0x1d6, 0x10},    //+ Stop
+1199            {0x1D7, 0x3A},    //* Master Location
+1200          //{0x1d8, 0x00},    //- Debug off
+1201          //{0x1d9, 0x01},    //+ G Level
+1202          //{0x1da, 0x80},    //+ B Level
+1203          //{0x1db, 0x80},    //+ R Level
+1204          //----- LLPLL Misc.
+1205          //{0x1dc, 0x10},    //+ HS width
+1206          //{0x1e0, 0x00},    //- Test
+1207          //{0x1e1, 0x05},    //+ GPLL Pd.
+1208          //----- AFE
+1209            {0x1E2, 0x59},    //* Bais, VREF
+1210            {0x1E3, 0x37},    //* Bias
+1211            {0x1E4, 0x14},    //* Bias
+1212            {0x1E5, 0x42},    //* Bias
+1213            {0x1E6, 0x20},    //* Bias
+1214            {0x1E7, 0x2A},    //* AAF  
+1215          
+1216            {0xFFF, 0xFF} //EOF
+1217          };
+1218          
+1219          
+1220          CODE REG_IDX_DATA_t DataInit_Component_Init576i_step1[] = {
+1221          
+1222          //{0x102, 0x2a},    //+ Mux sel.
+1223            {0x105, 0x2E},    //* AFE Mode, AAF on/off
+1224          //{0x106, 0x00},    //+ Enable ADC
+1225          
+1226          //----- LLPLL
+1227          //{0x1c0, 0x10},    //+ Input config.
+1228            {0x1C2, 0xC1},    //* VCO, Charge Pump
+1229            {0x1C3, 0x03},    //* Divider H
+1230            {0x1C4, 0x5F},    //* Divider L
+1231            {0x1C5, 0x00},    //* Phase
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 21  
+
+1232          //{0x1c6, 0x20},    //+ Loop Filter 0, Change to 7 later...
+1233          //{0x1c7, 0x04},    //- VCO Norminal freq.
+1234          //{0x1c8, 0x00},    //- VCO Norminal freq.
+1235          //{0x1c9, 0x00},    //+ Pre Coast
+1236          //{0x1ca, 0x00},    //+ Post Coast
+1237          //{0x1cb, 0xce},    //+ Power, SOG Threshold
+1238          //{0x1cc, 0x02},    //+ Sync Output sel.
+1239          //{0x1cd, 0x54},    //. Charge Pump Fine Control
+1240          //----- ADC Gain
+1241            {0x1D0, 0x07},    //*
+1242            {0x1D1, 0x80},    //*
+1243            {0x1D2, 0x80},    //*
+1244            {0x1D3, 0x80},    //*
+1245          //----- Clamp
+1246          //{0x1d4, 0x00},    //+ Mode
+1247          //{0x1d5, 0x00},    //+ Start
+1248          //{0x1d6, 0x10},    //+ Stop
+1249            {0x1D7, 0x80},    //* Master Location
+1250          //{0x1d8, 0x00},    //- Debug off
+1251          //{0x1d9, 0x01},    //+ G Level
+1252          //{0x1da, 0x80},    //+ B Level
+1253          //{0x1db, 0x80},    //+ R Level
+1254          //----- LLPLL Misc.
+1255          //{0x1dc, 0x10},    //+ HS width
+1256          //{0x1e0, 0x00},    //- Test
+1257          //{0x1e1, 0x05},    //+ GPLL Pd.
+1258          //----- AFE
+1259            {0x1E2, 0x59},    //* Bais, VREF
+1260            {0x1E3, 0x37},    //* Bias
+1261            {0x1E4, 0x14},    //* Bias
+1262            {0x1E5, 0x42},    //* Bias
+1263            {0x1E6, 0x20},    //* HS PGA
+1264            {0x1E7, 0x2A},    //* AAF  
+1265            {0x1E8, 0x2E},
+1266          
+1267            {0xFFF, 0xFF} //EOF
+1268          };
+1269          
+1270          CODE REG_IDX_DATA_t DataInit_Component_Init480p_step1[] = {
+1271          //{0x041, 0x3E, 
+1272          
+1273          //{0x102, 0x2a},    //+ Mux sel.
+1274            {0x105, 0x20},    //* AFE Mode, AAF on/off
+1275          //{0x106, 0x00},    //+ Enable ADC
+1276          
+1277          //----- LLPLL
+1278          //{0x1c0, 0x10},    //+ Input config.
+1279            {0x1C2, 0xE2},    //* VCO, Charge Pump
+1280            {0x1C3, 0x03},    //* Divider H
+1281            {0x1C4, 0x59},    //* Divider L
+1282            {0x1C5, 0x00},    //* Phase
+1283          //{0x1c6, 0x20},    //+ Loop Filter 0, Change to 7 later...
+1284          //{0x1c7, 0x04},    //- VCO Norminal freq.
+1285          //{0x1c8, 0x00},    //- VCO Norminal freq.
+1286          //{0x1c9, 0x00},    //+ Pre Coast
+1287          //{0x1ca, 0x00},    //+ Post Coast
+1288          //{0x1cb, 0xce},    //+ Power, SOG Threshold
+1289          //{0x1cc, 0x02},    //+ Sync Output sel.
+1290          //{0x1cd, 0x54},    //. Charge Pump Fine Control
+1291          //----- ADC Gain
+1292            {0x1D0, 0x07},    //*
+1293            {0x1D1, 0x90},    //*
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 22  
+
+1294            {0x1D2, 0x90},    //*
+1295            {0x1D3, 0x90},    //*
+1296          //----- Clamp
+1297          //{0x1d4, 0x00},    //+ Mode
+1298          //{0x1d5, 0x00},    //+ Start
+1299          //{0x1d6, 0x10},    //+ Stop
+1300            {0x1D7, 0x40},    //* Master Location
+1301          //{0x1d8, 0x00},    //- Debug off
+1302          //{0x1d9, 0x01},    //+ G Level
+1303          //{0x1da, 0x80},    //+ B Level
+1304          //{0x1db, 0x80},    //+ R Level
+1305          //----- LLPLL Misc.
+1306          //{0x1dc, 0x10},    //+ HS width
+1307          //{0x1e0, 0x00},    //- Test
+1308          //{0x1e1, 0x05},    //+ GPLL Pd.
+1309          //----- AFE
+1310            {0x1E2, 0x59},    //* Bais, VREF
+1311            {0x1E3, 0x37},    //* Bias
+1312            {0x1E4, 0x14},    //* Bias
+1313            {0x1E5, 0x42},    //* Bias
+1314            {0x1E6, 0x00},    //* Bias
+1315            {0x1E7, 0x2A},    //* AAF  
+1316          
+1317            {0xFFF, 0xFF} //EOF
+1318          };
+1319          
+1320          
+1321          CODE REG_IDX_DATA_t DataInit_Component_Init480i_step1[] = {
+1322          
+1323          //{0x102, 0x2a},    //+ Mux sel.
+1324            {0x105, 0x20},    //* AFE Mode, AAF on/off
+1325          //{0x106, 0x00},    //+ Enable ADC
+1326          
+1327          //----- LLPLL
+1328          //{0x1c0, 0x10},    //+ Input config.
+1329            {0x1C2, 0xE2},    //* VCO, Charge Pump
+1330            {0x1C3, 0x03},    //* Divider H
+1331            {0x1C4, 0x59},    //* Divider L
+1332            {0x1C5, 0x00},    //* Phase
+1333          //{0x1c6, 0x20},    //+ Loop Filter 0, Change to 7 later...
+1334          //{0x1c7, 0x04},    //- VCO Norminal freq.
+1335          //{0x1c8, 0x00},    //- VCO Norminal freq.
+1336          //{0x1c9, 0x00},    //+ Pre Coast
+1337          //{0x1ca, 0x00},    //+ Post Coast
+1338          //{0x1cb, 0xce},    //+ Power, SOG Threshold
+1339          //{0x1cc, 0x02},    //+ Sync Output sel.
+1340          //{0x1cd, 0x54},    //. Charge Pump Fine Control
+1341          //----- ADC Gain
+1342            {0x1D0, 0x07},    //*
+1343            {0x1D1, 0x10},    //*
+1344            {0x1D2, 0x10},    //*
+1345            {0x1D3, 0x10},    //*
+1346          //----- Clamp
+1347          //{0x1d4, 0x00},    //+ Mode
+1348          //{0x1d5, 0x00},    //+ Start
+1349          //{0x1d6, 0x10},    //+ Stop
+1350            {0x1D7, 0x80},    //* Master Location
+1351          //{0x1d8, 0x00},    //- Debug off
+1352          //{0x1d9, 0x01},    //+ G Level
+1353          //{0x1da, 0x80},    //+ B Level
+1354          //{0x1db, 0x80},    //+ R Level
+1355          //----- LLPLL Misc.
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 23  
+
+1356          //{0x1dc, 0x10},    //+ HS width
+1357          //{0x1e0, 0x00},    //- Test
+1358          //{0x1e1, 0x05},    //+ GPLL Pd.
+1359          //----- AFE
+1360            {0x1E2, 0x59},    //* Bais, VREF
+1361            {0x1E3, 0x17},    //* Bias
+1362            {0x1E4, 0x34},    //* Bias
+1363            {0x1E5, 0x33},    //* Bias
+1364            {0x1E6, 0x20},    //* HS PGA
+1365            {0x1E7, 0x2A},    //* AAF  
+1366            {0x1E8, 0x2E},
+1367          
+1368            {0xFFF, 0xFF} //EOF
+1369          };
+1370          
+1371          #endif
+1372          
+1373          
+1374          
+1375          
+1376          
+1377          /**
+1378          * Description: download indexed register value
+1379          * @param
+1380          * pTbl : REG_IDX_DATA pointer.
+1381          */
+1382          static void Init8836Register(REG_IDX_DATA_t *pTbl, BYTE fCheck)
+1383          {
+1384   1        BYTE bTemp;
+1385   1      
+1386   1        if(fCheck) {
+1387   2          while(1) {
+1388   3            if(pTbl->idx==0xFFF)
+1389   3              break;
+1390   3            bTemp = ReadTW88(pTbl->idx);
+1391   3            //these two regs complain the readonly area. let's mask it.
+1392   3            if(pTbl->idx == 0x11A)
+1393   3              bTemp &= 0xE0;
+1394   3            else if(pTbl->idx == 0x11C)
+1395   3              bTemp &= 0x0F;
+1396   3      
+1397   3            if(bTemp != pTbl->value) {
+1398   4              wPrintf("\n\rREG%03X R:%02bx W:%02bx", pTbl->idx, bTemp,pTbl->value); 
+1399   4              WriteTW88(pTbl->idx,pTbl->value);
+1400   4            }
+1401   3            pTbl++;
+1402   3          }
+1403   2        }
+1404   1        else {
+1405   2          while(1) {
+1406   3            if(pTbl->idx==0xFFF /*&& pTbl->value==0xFF*/)
+1407   3              break;
+1408   3            WriteTW88(pTbl->idx,pTbl->value);
+1409   3            pTbl++;
+1410   3          }
+1411   2        }
+1412   1      }
+1413          
+1414          /**
+1415          * Description: initialize TW8836 Default value
+1416          * @param
+1417          * InputMain : Input Type
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 24  
+
+1418          * fPowerOn 1:Powerup boot, 0:recover for InputMain.
+1419          *   if fPowerUpBoot==1, it will ignore InputMain value.
+1420          */
+1421          //void Init8836AsDefault_for_watchdog(void)
+1422          //{
+1423          //  Init8836Register(InitHwDefault_Table, 0);
+1424          //}
+1425          void Init8836AsDefault(BYTE _InputMain, BYTE _fPowerOn)
+1426          {
+1427   1        if(_fPowerOn) {
+1428   2          //If power on, download HW default & SW default.
+1429   2          Puts("\n\rInit8836AsDefault");
+1430   2          Init8836Register(InitHwDefault_Table, 0);
+1431   2          Init8836Register(InitSwDefault_Table, 0);
+1432   2          return;
+1433   2        }
+1434   1        
+1435   1        //--- recover
+1436   1        Puts("\n\rRecover8836AsDefault(");
+1437   1        PrintfInput(_InputMain,0);
+1438   1        Puts(")");
+1439   1      
+1440   1        //mute scler output.
+1441   1        WriteTW88(REG21E,0x03);   
+1442   1       
+1443   1        //Recover only the selected input.
+1444   1        if(_InputMain == INPUT_CVBS 
+1445   1        || _InputMain == INPUT_SVIDEO 
+1446   1        || _InputMain == INPUT_BT656)
+1447   1          Init8836Register(Recover_Decoder, 0);
+1448   1        else if(_InputMain == INPUT_COMP 
+1449   1             || _InputMain == INPUT_PC)
+1450   1          Init8836Register(Recover_aRGB, 0);
+1451   1        //else
+1452   1        //  INPUT_HDMI
+1453   1        //  INPUT_LVDS
+1454   1      
+1455   1      #if defined(PANEL_AUO_B133EW01) || defined(PANEL_1024X600)
+              #else
+1457   1        //BK130307. PC->CVBS needs to recover SSPLL 
+1458   1        //start from SSPLL 108MHz.
+1459   1        
+1460   1      //  if(SpiFlashVendor==SFLASH_VENDOR_EON 
+1461   1      //  || SpiFlashVendor==SFLASH_VENDOR_EON_256)
+1462   1      //    Sspll1SetFreqReg(SSPLL_105M_REG);
+1463   1      //  else  
+1464   1      //    Sspll1SetFreqReg(SSPLL_108M_REG);
+1465   1        //BKTODO150122    --- please remove 
+1466   1      //  if(spiflash_chip->mid == SPIFLASH_MID_EON)
+1467   1      //    Sspll1SetFreqReg(SSPLL_105M_REG);
+1468   1      //  else
+1469   1      //    Sspll1SetFreqReg(SSPLL_108M_REG);
+1470   1                  
+1471   1      #endif      
+1472   1      }
+1473          
+1474          
+1475          /*
+1476          * BT656 External Encoder table.
+1477          *   TW8836 EVB only supports 8Bit SD.
+1478          */
+1479          code BYTE BT656_table_8BIT_525I_YCBCR_TO_CVBS[] = {
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 25  
+
+1480            I2CID_ADV7390, 0x00,
+1481            0x17, 0x02,
+1482            0x00, 0x1C,
+1483            0x01, 0x00,
+1484            0x80, 0x10,
+1485            0x82, 0xCB, 
+1486            0xFF,0xFF 
+1487          };
+1488          code BYTE BT656_table_8BIT_625I_YCBCR_TO_CVBS[] = {
+1489            I2CID_ADV7390, 0x00,
+1490            0x17,0x02,
+1491            0x00,0x1c,
+1492            0x01,0x00,
+1493            0x80,0x11,
+1494            0x82,0xC3,
+1495            0x8C,0xCB,
+1496            0x8D,0x8A,
+1497            0x8E,0x09,
+1498            0x8F,0x2A,  
+1499            0xFF,0xFF 
+1500          };
+1501          code BYTE BT656_table_8BIT_525P_YCBCR_TO_YPBPR[] = {   //=>YPbPr
+1502            I2CID_ADV7390, 0x00,
+1503            0x17,0x02,
+1504            0x00,0x1c,
+1505            0x01,0x20,
+1506            0x30,0x04,
+1507            0x31,0x01,
+1508            0xFF,0xFF 
+1509          };
+1510          code BYTE BT656_table_8BIT_625P_YCBCR_TO_YPBPR[] = {
+1511            I2CID_ADV7390, 0x00,
+1512            0x17,0x02,
+1513            0x00,0x1c,
+1514            0x01,0x20,
+1515            0x30,0x1C,
+1516            0x31,0x01,
+1517            0xFF,0xFF 
+1518          };
+1519          #if 0
+              code BYTE BT656_table_8BIT_720P_YCBCR_TO_YPBPR[] = {
+                I2CID_ADV7390, 0x00,
+                0x17,0x02,
+                0x00,0x1c,
+                0x01,0x20,
+                0x30,0x2C,
+                0x31,0x01,
+                0xFF,0xFF 
+              };
+              code BYTE BT656_table_8BIT_1080I_YCBCR_TO_YPBPR[] = {
+                I2CID_ADV7390, 0x00,
+                0x17,0x02,
+                0x00,0x1c,
+                0x01,0x20,
+                0x30,0x6C,
+                0x31,0x01,
+                0xFF,0xFF 
+              };
+              #endif
+1539          
+1540          //-----------------------------------------------------------------------------
+1541          /*
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 26  
+
+1542          * init BT656 encoder
+1543          *
+1544          * TW8835 EVB2.1 and EVB3.1 use ADV7390.
+1545          * TW8835 EVB2.0 and EVB3.0 use BU9969.
+1546          *
+1547          * @param mode
+1548          * 0: BT656_8BIT_525I_YCBCR_TO_CVBS  
+1549          * 1: BT656_8BIT_625I_YCBCR_TO_CVBS  
+1550          * 2: BT656_8BIT_525P_YCBCR_TO_YPBPR 
+1551          * 3: BT656_8BIT_625P_YCBCR_TO_YPBPR 
+1552          * 4: BT656_8BIT_720P_YCBCR_TO_YPBPR 
+1553          * 5: BT656_8BIT_1080I_YCBCR_TO_YPBPR
+1554          */
+1555          void BT656_InitExtEncoder(BYTE mode)
+1556          {
+1557   1        BYTE *p;
+1558   1        BYTE addr;
+1559   1      
+1560   1        switch(mode) {
+1561   2        case BT656_8BIT_525I_YCBCR_TO_CVBS: 
+1562   2          p = BT656_table_8BIT_525I_YCBCR_TO_CVBS; 
+1563   2          break;
+1564   2        case BT656_8BIT_625I_YCBCR_TO_CVBS:
+1565   2          p = BT656_table_8BIT_625I_YCBCR_TO_CVBS; 
+1566   2          break;
+1567   2        case BT656_8BIT_525P_YCBCR_TO_YPBPR:
+1568   2          p = BT656_table_8BIT_525P_YCBCR_TO_YPBPR; 
+1569   2          break;
+1570   2        case BT656_8BIT_625P_YCBCR_TO_YPBPR:
+1571   2          p = BT656_table_8BIT_625P_YCBCR_TO_YPBPR; 
+1572   2          break;
+1573   2      #if 0
+                case BT656_8BIT_720P_YCBCR_TO_YPBPR:
+                  p = BT656_table_8BIT_720P_YCBCR_TO_YPBPR; 
+                  break;
+                case BT656_8BIT_1080I_YCBCR_TO_YPBPR:
+                  p = BT656_table_8BIT_1080I_YCBCR_TO_YPBPR; 
+                  break;
+              #endif
+1581   2        default:
+1582   2          //unknown.
+1583   2          return;
+1584   2        }
+1585   1      
+1586   1        addr = p[0]; //ignore counter, p[1].
+1587   1        p+=2;
+1588   1      
+1589   1      #if defined(SUPPORT_I2C_MASTER)
+1590   1        while (( p[0] != 0xFF ) || ( p[1]!= 0xFF )) {     // 0xff, 0xff is a end of data
+1591   2          WriteI2CByte(addr, p[0], p[1]);
+1592   2          p+=2;
+1593   2        }
+1594   1      #endif
+1595   1      }
+1596          
+1597          /**
+1598          * download component default registers
+1599          *
+1600          * @param mode
+1601          * 0: 480i
+1602          * 1: 576i
+1603          * 2: 480p
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 27  
+
+1604          * 3: 576p
+1605          * 4: 1080i@25_H28
+1606          * 5: 1080i@30
+1607          * 6: 720p@50
+1608          * 7: 720p@60
+1609          * 8: 1080p@50
+1610          * 9: 1080p@60
+1611          */
+1612          #ifdef SUPPORT_COMPONENT
+1613          void InitComponentReg(BYTE mode)
+1614          {
+1615   1        WORD w_page=0;
+1616   1        REG_IDX_DATA_t *p;
+1617   1      //  BYTE index,value;
+1618   1      
+1619   1        switch(mode) {
+1620   2        case 0: p=DataInit_Component_Init480i_step1;  break;
+1621   2        case 1: p=DataInit_Component_Init576i_step1;  break;
+1622   2        case 2: p=DataInit_Component_Init480p_step1;  break;
+1623   2        case 3: p=DataInit_Component_Init576p_step1;  break;
+1624   2        case 4: //we can't distinglish H28 and H31. Please select one.
+1625   2            p=DataInit_Component_Init1080i25_H28_step1; break;
+1626   2            //p=DataInit_Component_Init1080i25_H31_step1; break;
+1627   2        case 5: p=DataInit_Component_Init1080i30_step1;   break;
+1628   2        case 6: p=DataInit_Component_Init720p50_step1;    break;
+1629   2        case 7: p=DataInit_Component_Init720p60_step1;    break;
+1630   2        case 8: p=DataInit_Component_Init1080p50_H56_step1; break;
+1631   2        case 9: p=DataInit_Component_Init1080p60_step1;   break;
+1632   2        default:
+1633   2          return;
+1634   2        }
+1635   1      
+1636   1        Init8836Register(p,0);
+1637   1      }
+1638          #endif
+1639          
+1640          //-----------------------------------------------------------------------------
+1641          /**
+1642          * print Input string
+1643          */
+1644          void PrintfInput(BYTE Input, BYTE debug)
+1645          {
+1646   1        if(debug <= DebugLevel) {
+1647   2          switch(Input) {
+1648   3          case INPUT_CVBS:  Printf("CVBS");         break;
+1649   3          case INPUT_SVIDEO:  Printf("SVIDEO");         break;
+1650   3          case INPUT_COMP:  Printf("Component");      break;
+1651   3          case INPUT_PC:    Printf("PC");           break;
+1652   3          case INPUT_DVI:   Printf("DVI");          break;
+1653   3          case INPUT_HDMIPC:  Printf("HDMIPC");         break;
+1654   3          case INPUT_HDMITV:  Printf("HDMITV");         break;
+1655   3          case INPUT_BT656:   Printf("BT656");        break;
+1656   3          case INPUT_LVDS:  Printf("LVDSRx");       break;
+1657   3          default:      Printf("unknown:%02bd",Input);  break;
+1658   3          }
+1659   2        }
+1660   1      }
+1661          
+1662          
+1663          #if defined(DEBUG_BT656)
+              void PrintfBT656Input(BYTE Input, BYTE debug)
+              {
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 28  
+
+                if(debug > DebugLevel)
+                  return;
+              
+                switch(Input) {
+                case BT656ENC_SRC_DEC:   Printf("DEC");         break;
+                case BT656ENC_SRC_ARGB:  Printf("ARGB");        break;
+                case BT656ENC_SRC_DTV:   Printf("DTV");         break;
+                case BT656ENC_SRC_LVDS:  Printf("LVDS");        break;
+                case BT656ENC_SRC_PANEL: Printf("PANEL");         break;
+                case BT656ENC_SRC_OFF:   Printf("OFF");         break;
+                case BT656ENC_SRC_AUTO:  Printf("AUTO");        break;
+                default:         Printf("unknown:%02bd",Input); break;
+                }
+              }
+              #endif
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 29  
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com004B (BEGIN)
+0000         L?0076:
+0000         L?0077:
+0000 90000000    R     MOV     DPTR,#pTbl
+0004         L?0078:
+0004 E0                MOVX    A,@DPTR
+0005 FB                MOV     R3,A
+0006 A3                INC     DPTR
+0007 E0                MOVX    A,@DPTR
+0008 FA                MOV     R2,A
+0009 A3                INC     DPTR
+000A E0                MOVX    A,@DPTR
+000B 22                RET     
+000C         L?0079:
+000C 90000000    R     MOV     DPTR,#p
+0010 F0                MOVX    @DPTR,A
+0011 A3                INC     DPTR
+0012 22                RET     
+0013         L?0080:
+0013 90000000    R     MOV     DPTR,#p
+0017 F0                MOVX    @DPTR,A
+0018 A3                INC     DPTR
+0019 22                RET     
+001A         L?0081:
+001A         L?0082:
+001A 2402              ADD     A,#02H
+001C         L?0083:
+001C F9                MOV     R1,A
+001D E4                CLR     A
+001E 3A                ADDC    A,R2
+001F FA                MOV     R2,A
+0020 010000      E     AJMP    ?C?CLDPTR
+0023         L?0084:
+0023 F9                MOV     R1,A
+0024 110000      E     ACALL   ?C?ILDPTR
+0027 ACF0              MOV     R4,B
+0029 759300      E     MOV     DPX,#?C?XDATASEG
+002C 2500        E     ADD     A,regTW88+01H
+002E F582              MOV     DPL,A
+0030 E500        E     MOV     A,regTW88
+0032 3C                ADDC    A,R4
+0033 F583              MOV     DPH,A
+0035 759300      E     MOV     DPX,#?C?XDATASEG
+0038 EF                MOV     A,R7
+0039 F0                MOVX    @DPTR,A
+003A 22                RET     
+003B         L?0085:
+003B 90000000    R     MOV     DPTR,#p
+003F F0                MOVX    @DPTR,A
+0040 A3                INC     DPTR
+0041 22                RET     
+0042         L?0086:
+0042 90000000    R     MOV     DPTR,#p
+0046 F0                MOVX    @DPTR,A
+0047 A3                INC     DPTR
+0048 22                RET     
+0049         L?0087:
+0049 90000000    R     MOV     DPTR,#p
+004D F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 30  
+
+004E A3                INC     DPTR
+004F 22                RET     
+0050         L?0088:
+0050 90000000    R     MOV     DPTR,#pTbl+01H
+0054 E4                CLR     A
+0055 75F003            MOV     B,#03H
+0058 010000      E     AJMP    ?C?IILDX
+005B         L?0089:
+005B 90000000    R     MOV     DPTR,#pTbl
+005F A3                INC     DPTR
+0060 E0                MOVX    A,@DPTR
+0061 FA                MOV     R2,A
+0062 A3                INC     DPTR
+0063 E0                MOVX    A,@DPTR
+0064 22                RET     
+0065         L?0090:
+0065         L?0091:
+0065 90000000    R     MOV     DPTR,#_InputMain
+0069 E0                MOVX    A,@DPTR
+006A FF                MOV     R7,A
+006B 22                RET     
+             ; FUNCTION Com004B (END)
+
+             ; FUNCTION _Init8836Register (BEGIN)
+                                           ; SOURCE LINE # 1382
+0000 90000000    R     MOV     DPTR,#pTbl
+0004 EB                MOV     A,R3
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 EA                MOV     A,R2
+0008 F0                MOVX    @DPTR,A
+0009 A3                INC     DPTR
+000A E9                MOV     A,R1
+000B F0                MOVX    @DPTR,A
+;---- Variable 'fCheck' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 1383
+                                           ; SOURCE LINE # 1386
+000C ED                MOV     A,R5
+000D 7003              JNZ     $ + 5H
+000F 010000      R     AJMP    ?C0010
+0012         ?C0002:
+                                           ; SOURCE LINE # 1387
+                                           ; SOURCE LINE # 1388
+0012 110000      R     ACALL   L?0076
+0015 F9                MOV     R1,A
+0016 110000      E     ACALL   ?C?ILDPTR
+0019 F4                CPL     A
+001A 7004              JNZ     ?C0057
+001C E5F0              MOV     A,B
+001E 640F              XRL     A,#0FH
+0020         ?C0057:
+0020 7003              JNZ     $ + 5H
+0022 010000      R     AJMP    ?C0013
+                                           ; SOURCE LINE # 1389
+0025         ?C0004:
+                                           ; SOURCE LINE # 1390
+0025 110000      R     ACALL   L?0077
+0028 F9                MOV     R1,A
+0029 110000      E     ACALL   ?C?ILDPTR
+002C FF                MOV     R7,A
+002D AEF0              MOV     R6,B
+002F 759300      E     MOV     DPX,#?C?XDATASEG
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 31  
+
+0032 2500        E     ADD     A,regTW88+01H
+0034 F582              MOV     DPL,A
+0036 E500        E     MOV     A,regTW88
+0038 3E                ADDC    A,R6
+0039 F583              MOV     DPH,A
+003B 759300      E     MOV     DPX,#?C?XDATASEG
+003E E0                MOVX    A,@DPTR
+003F FD                MOV     R5,A
+;---- Variable 'bTemp' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 1392
+0040 BE0108            CJNE    R6,#01H,?C0005
+0043 BF1A05            CJNE    R7,#01AH,?C0005
+                                           ; SOURCE LINE # 1393
+0046 54E0              ANL     A,#0E0H
+0048 FD                MOV     R5,A
+0049 8014              SJMP    ?C0006
+004B         ?C0005:
+                                           ; SOURCE LINE # 1394
+004B 110000      R     ACALL   L?0077
+004E F9                MOV     R1,A
+004F 110000      E     ACALL   ?C?ILDPTR
+0052 FF                MOV     R7,A
+0053 AEF0              MOV     R6,B
+0055 BE0107            CJNE    R6,#01H,?C0006
+0058 BF1C04            CJNE    R7,#01CH,?C0006
+                                           ; SOURCE LINE # 1395
+005B ED                MOV     A,R5
+005C 540F              ANL     A,#0FH
+005E FD                MOV     R5,A
+005F         ?C0006:
+                                           ; SOURCE LINE # 1397
+005F 110000      R     ACALL   L?0077
+0062 110000      R     ACALL   L?0081
+0065 FF                MOV     R7,A
+0066 6D                XRL     A,R5
+0067 6030              JZ      ?C0008
+                                           ; SOURCE LINE # 1398
+0069 110000      R     ACALL   L?0089
+006C F9                MOV     R1,A
+006D 110000      E     ACALL   ?C?ILDPTR
+0070 FB                MOV     R3,A
+0071 90000000    E     MOV     DPTR,#?_wPrintf?BYTE+03H
+0075 E5F0              MOV     A,B
+0077 F0                MOVX    @DPTR,A
+0078 A3                INC     DPTR
+0079 EB                MOV     A,R3
+007A F0                MOVX    @DPTR,A
+007B AE05              MOV     R6,AR5
+007D A3                INC     DPTR
+007E ED                MOV     A,R5
+007F F0                MOVX    @DPTR,A
+0080 A3                INC     DPTR
+0081 EF                MOV     A,R7
+0082 F0                MOVX    @DPTR,A
+0083 7B00        R     MOV     R3,#MBYTE ?SC_0
+0085 7A00        R     MOV     R2,#HIGH ?SC_0
+0087 7900        R     MOV     R1,#LOW ?SC_0
+0089 110000      E     ACALL   _wPrintf
+                                           ; SOURCE LINE # 1399
+008C 110000      R     ACALL   L?0077
+008F 110000      R     ACALL   L?0081
+0092 FF                MOV     R7,A
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 32  
+
+0093 110000      R     ACALL   L?0089
+0096 110000      R     ACALL   L?0084
+                                           ; SOURCE LINE # 1400
+0099         ?C0008:
+                                           ; SOURCE LINE # 1401
+0099 110000      R     ACALL   L?0088
+                                           ; SOURCE LINE # 1402
+009C 010000      R     AJMP    ?C0002
+                                           ; SOURCE LINE # 1403
+                                           ; SOURCE LINE # 1404
+009F         ?C0010:
+                                           ; SOURCE LINE # 1405
+                                           ; SOURCE LINE # 1406
+009F 110000      R     ACALL   L?0077
+00A2 F9                MOV     R1,A
+00A3 110000      E     ACALL   ?C?ILDPTR
+00A6 F4                CPL     A
+00A7 7004              JNZ     ?C0058
+00A9 E5F0              MOV     A,B
+00AB 640F              XRL     A,#0FH
+00AD         ?C0058:
+00AD 6010              JZ      ?C0013
+                                           ; SOURCE LINE # 1407
+00AF         ?C0012:
+                                           ; SOURCE LINE # 1408
+00AF E9                MOV     A,R1
+00B0 110000      R     ACALL   L?0082
+00B3 FF                MOV     R7,A
+00B4 110000      R     ACALL   L?0076
+00B7 110000      R     ACALL   L?0084
+                                           ; SOURCE LINE # 1409
+00BA 110000      R     ACALL   L?0088
+                                           ; SOURCE LINE # 1410
+00BD 80E0              SJMP    ?C0010
+                                           ; SOURCE LINE # 1411
+                                           ; SOURCE LINE # 1412
+00BF         ?C0013:
+00BF 22                RET     
+             ; FUNCTION _Init8836Register (END)
+
+             ; FUNCTION _Init8836AsDefault (BEGIN)
+                                           ; SOURCE LINE # 1425
+0000 90000000    R     MOV     DPTR,#_InputMain
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+;---- Variable '_fPowerOn' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 1426
+                                           ; SOURCE LINE # 1427
+0006 ED                MOV     A,R5
+0007 601C              JZ      ?C0014
+                                           ; SOURCE LINE # 1429
+0009 7B00        R     MOV     R3,#MBYTE ?SC_26
+000B 7A00        R     MOV     R2,#HIGH ?SC_26
+000D 7900        R     MOV     R1,#LOW ?SC_26
+000F 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 1430
+0012 7B00        R     MOV     R3,#MBYTE InitHwDefault_Table
+0014 7A00        R     MOV     R2,#HIGH InitHwDefault_Table
+0016 7900        R     MOV     R1,#LOW InitHwDefault_Table
+0018 E4                CLR     A
+0019 FD                MOV     R5,A
+001A 110000      R     ACALL   _Init8836Register
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 33  
+
+                                           ; SOURCE LINE # 1431
+001D 7B00        R     MOV     R3,#MBYTE InitSwDefault_Table
+001F 7A00        R     MOV     R2,#HIGH InitSwDefault_Table
+0021 7900        R     MOV     R1,#LOW InitSwDefault_Table
+0023 8055              SJMP    ?C0064
+                                           ; SOURCE LINE # 1433
+0025         ?C0014:
+                                           ; SOURCE LINE # 1436
+0025 7B00        R     MOV     R3,#MBYTE ?SC_46
+0027 7A00        R     MOV     R2,#HIGH ?SC_46
+0029 7900        R     MOV     R1,#LOW ?SC_46
+002B 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 1437
+002E 110000      R     ACALL   L?0090
+0031 E4                CLR     A
+0032 FD                MOV     R5,A
+0033 110000      R     ACALL   _PrintfInput
+                                           ; SOURCE LINE # 1438
+0036 7B00        R     MOV     R3,#MBYTE ?SC_70
+0038 7A00        R     MOV     R2,#HIGH ?SC_70
+003A 7900        R     MOV     R1,#LOW ?SC_70
+003C 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 1441
+003F 759300      E     MOV     DPX,#?C?XDATASEG
+0042 E500        E     MOV     A,regTW88+01H
+0044 241E              ADD     A,#01EH
+0046 F582              MOV     DPL,A
+0048 E500        E     MOV     A,regTW88
+004A 3402              ADDC    A,#02H
+004C F583              MOV     DPH,A
+004E 759300      E     MOV     DPX,#?C?XDATASEG
+0051 7403              MOV     A,#03H
+0053 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1444
+0054 110000      R     ACALL   L?0090
+0057 6008              JZ      ?C0017
+0059 6401              XRL     A,#01H
+005B 6004              JZ      ?C0017
+005D EF                MOV     A,R7
+005E B40708            CJNE    A,#07H,?C0016
+0061         ?C0017:
+                                           ; SOURCE LINE # 1447
+0061 7B00        R     MOV     R3,#MBYTE Recover_Decoder
+0063 7A00        R     MOV     R2,#HIGH Recover_Decoder
+0065 7900        R     MOV     R1,#LOW Recover_Decoder
+0067         ?C0063:
+0067 8011              SJMP    ?C0064
+0069         ?C0016:
+                                           ; SOURCE LINE # 1448
+0069 110000      R     ACALL   L?0091
+006C 6402              XRL     A,#02H
+006E 6004              JZ      ?C0020
+0070 EF                MOV     A,R7
+0071 B4030B            CJNE    A,#03H,?C0015
+0074         ?C0020:
+                                           ; SOURCE LINE # 1450
+0074 7B00        R     MOV     R3,#MBYTE Recover_aRGB
+0076 7A00        R     MOV     R2,#HIGH Recover_aRGB
+0078 7900        R     MOV     R1,#LOW Recover_aRGB
+007A         ?C0064:
+007A E4                CLR     A
+007B FD                MOV     R5,A
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 34  
+
+007C 110000      R     ACALL   _Init8836Register
+                                           ; SOURCE LINE # 1472
+007F         ?C0015:
+007F 22                RET     
+             ; FUNCTION _Init8836AsDefault (END)
+
+             ; FUNCTION _BT656_InitExtEncoder (BEGIN)
+                                           ; SOURCE LINE # 1555
+;---- Variable 'mode' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 1556
+                                           ; SOURCE LINE # 1560
+0000 EF                MOV     A,R7
+0001 14                DEC     A
+0002 601B              JZ      ?C0023
+0004 14                DEC     A
+0005 6026              JZ      ?C0024
+0007 14                DEC     A
+0008 6034              JZ      ?C0025
+000A 2403              ADD     A,#03H
+000C 6003              JZ      $ + 5H
+000E 010000      R     AJMP    ?C0027
+                                           ; SOURCE LINE # 1561
+0011         ?C0022:
+                                           ; SOURCE LINE # 1562
+0011 7400        R     MOV     A,#MBYTE BT656_table_8BIT_525I_YCBCR_TO_CVBS
+0013 110000      R     ACALL   L?0086
+0016 7400        R     MOV     A,#HIGH BT656_table_8BIT_525I_YCBCR_TO_CVBS
+0018 F0                MOVX    @DPTR,A
+0019 A3                INC     DPTR
+001A 7400        R     MOV     A,#LOW BT656_table_8BIT_525I_YCBCR_TO_CVBS
+001C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1563
+001D 802E              SJMP    ?C0021
+                                           ; SOURCE LINE # 1564
+001F         ?C0023:
+                                           ; SOURCE LINE # 1565
+001F 7400        R     MOV     A,#MBYTE BT656_table_8BIT_625I_YCBCR_TO_CVBS
+0021 110000      R     ACALL   L?0086
+0024 7400        R     MOV     A,#HIGH BT656_table_8BIT_625I_YCBCR_TO_CVBS
+0026 F0                MOVX    @DPTR,A
+0027 A3                INC     DPTR
+0028 7400        R     MOV     A,#LOW BT656_table_8BIT_625I_YCBCR_TO_CVBS
+002A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1566
+002B 8020              SJMP    ?C0021
+                                           ; SOURCE LINE # 1567
+002D         ?C0024:
+                                           ; SOURCE LINE # 1568
+002D 90000000    R     MOV     DPTR,#p
+0031 7400        R     MOV     A,#MBYTE BT656_table_8BIT_525P_YCBCR_TO_YPBPR
+0033 F0                MOVX    @DPTR,A
+0034 A3                INC     DPTR
+0035 7400        R     MOV     A,#HIGH BT656_table_8BIT_525P_YCBCR_TO_YPBPR
+0037 F0                MOVX    @DPTR,A
+0038 A3                INC     DPTR
+0039 7400        R     MOV     A,#LOW BT656_table_8BIT_525P_YCBCR_TO_YPBPR
+003B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1569
+003C 800F              SJMP    ?C0021
+                                           ; SOURCE LINE # 1570
+003E         ?C0025:
+                                           ; SOURCE LINE # 1571
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 35  
+
+003E 90000000    R     MOV     DPTR,#p
+0042 7400        R     MOV     A,#MBYTE BT656_table_8BIT_625P_YCBCR_TO_YPBPR
+0044 F0                MOVX    @DPTR,A
+0045 A3                INC     DPTR
+0046 7400        R     MOV     A,#HIGH BT656_table_8BIT_625P_YCBCR_TO_YPBPR
+0048 F0                MOVX    @DPTR,A
+0049 A3                INC     DPTR
+004A 7400        R     MOV     A,#LOW BT656_table_8BIT_625P_YCBCR_TO_YPBPR
+004C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1572
+                                           ; SOURCE LINE # 1581
+                                           ; SOURCE LINE # 1584
+004D         ?C0021:
+                                           ; SOURCE LINE # 1586
+004D 90000000    R     MOV     DPTR,#p
+0051 110000      R     ACALL   L?0078
+0054 F9                MOV     R1,A
+0055 110000      E     ACALL   ?C?CLDPTR
+0058 90000000    R     MOV     DPTR,#addr
+005C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1587
+005D 802E              SJMP    ?C0065
+005F         ?C0028:
+                                           ; SOURCE LINE # 1590
+005F 90000000    R     MOV     DPTR,#p
+0063 110000      R     ACALL   L?0078
+0066 F9                MOV     R1,A
+0067 110000      E     ACALL   ?C?CLDPTR
+006A FD                MOV     R5,A
+006B B4FF09            CJNE    A,#0FFH,?C0030
+006E E9                MOV     A,R1
+006F 2401              ADD     A,#01H
+0071 110000      R     ACALL   L?0083
+0074 F4                CPL     A
+0075 6023              JZ      ?C0027
+0077         ?C0030:
+                                           ; SOURCE LINE # 1591
+0077 90000000    R     MOV     DPTR,#addr
+007B E0                MOVX    A,@DPTR
+007C FF                MOV     R7,A
+007D 90000000    R     MOV     DPTR,#p
+0081 110000      R     ACALL   L?0078
+0084 2401              ADD     A,#01H
+0086 110000      R     ACALL   L?0083
+0089 FB                MOV     R3,A
+008A 110000      E     ACALL   _WriteI2CByte
+                                           ; SOURCE LINE # 1592
+008D         ?C0065:
+008D 90000000    R     MOV     DPTR,#p+01H
+0091 E4                CLR     A
+0092 75F002            MOV     B,#02H
+0095 110000      E     ACALL   ?C?IILDX
+                                           ; SOURCE LINE # 1593
+0098 80C5              SJMP    ?C0028
+                                           ; SOURCE LINE # 1595
+009A         ?C0027:
+009A 22                RET     
+             ; FUNCTION _BT656_InitExtEncoder (END)
+
+             ; FUNCTION _InitComponentReg (BEGIN)
+                                           ; SOURCE LINE # 1613
+;---- Variable 'mode' assigned to Register 'R7' ----
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 36  
+
+                                           ; SOURCE LINE # 1614
+                                           ; SOURCE LINE # 1615
+0000 E4                CLR     A
+0001 90000000    R     MOV     DPTR,#w_page
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1619
+0008 EF                MOV     A,R7
+0009 B40A00            CJNE    A,#0AH,?C0059
+000C         ?C0059:
+000C 4003              JC      $ + 5H
+000E 010000      R     AJMP    ?C0043
+0011 90000000    R     MOV     DPTR,#?C0060
+0015 F8                MOV     R0,A
+0016 28                ADD     A,R0
+0017 28                ADD     A,R0
+0018 73                JMP     @A+DPTR
+0019         ?C0060:
+0019 010000      R     AJMP    ?C0032
+001C 010000      R     AJMP    ?C0033
+001F 010000      R     AJMP    ?C0034
+0022 010000      R     AJMP    ?C0035
+0025 010000      R     AJMP    ?C0036
+0028 010000      R     AJMP    ?C0037
+002B 010000      R     AJMP    ?C0038
+002E 010000      R     AJMP    ?C0039
+0031 010000      R     AJMP    ?C0040
+0034 010000      R     AJMP    ?C0041
+                                           ; SOURCE LINE # 1620
+0037         ?C0032:
+0037 7400        R     MOV     A,#MBYTE DataInit_Component_Init480i_step1
+0039 110000      R     ACALL   L?0079
+003C 7400        R     MOV     A,#HIGH DataInit_Component_Init480i_step1
+003E F0                MOVX    @DPTR,A
+003F A3                INC     DPTR
+0040 7400        R     MOV     A,#LOW DataInit_Component_Init480i_step1
+0042 F0                MOVX    @DPTR,A
+0043 010000      R     AJMP    ?C0031
+                                           ; SOURCE LINE # 1621
+0046         ?C0033:
+0046 7400        R     MOV     A,#MBYTE DataInit_Component_Init576i_step1
+0048 110000      R     ACALL   L?0079
+004B 7400        R     MOV     A,#HIGH DataInit_Component_Init576i_step1
+004D F0                MOVX    @DPTR,A
+004E A3                INC     DPTR
+004F 7400        R     MOV     A,#LOW DataInit_Component_Init576i_step1
+0051 F0                MOVX    @DPTR,A
+0052 8074              SJMP    ?C0031
+                                           ; SOURCE LINE # 1622
+0054         ?C0034:
+0054 7400        R     MOV     A,#MBYTE DataInit_Component_Init480p_step1
+0056 110000      R     ACALL   L?0080
+0059 7400        R     MOV     A,#HIGH DataInit_Component_Init480p_step1
+005B F0                MOVX    @DPTR,A
+005C A3                INC     DPTR
+005D 7400        R     MOV     A,#LOW DataInit_Component_Init480p_step1
+005F F0                MOVX    @DPTR,A
+0060 8066              SJMP    ?C0031
+                                           ; SOURCE LINE # 1623
+0062         ?C0035:
+0062 7400        R     MOV     A,#MBYTE DataInit_Component_Init576p_step1
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 37  
+
+0064 110000      R     ACALL   L?0080
+0067 7400        R     MOV     A,#HIGH DataInit_Component_Init576p_step1
+0069 F0                MOVX    @DPTR,A
+006A A3                INC     DPTR
+006B 7400        R     MOV     A,#LOW DataInit_Component_Init576p_step1
+006D F0                MOVX    @DPTR,A
+006E 8058              SJMP    ?C0031
+                                           ; SOURCE LINE # 1624
+0070         ?C0036:
+                                           ; SOURCE LINE # 1625
+0070 7400        R     MOV     A,#MBYTE DataInit_Component_Init1080i25_H28_step1
+0072 110000      R     ACALL   L?0085
+0075 7400        R     MOV     A,#HIGH DataInit_Component_Init1080i25_H28_step1
+0077 F0                MOVX    @DPTR,A
+0078 A3                INC     DPTR
+0079 7400        R     MOV     A,#LOW DataInit_Component_Init1080i25_H28_step1
+007B F0                MOVX    @DPTR,A
+007C 804A              SJMP    ?C0031
+                                           ; SOURCE LINE # 1627
+007E         ?C0037:
+007E 7400        R     MOV     A,#MBYTE DataInit_Component_Init1080i30_step1
+0080 110000      R     ACALL   L?0085
+0083 7400        R     MOV     A,#HIGH DataInit_Component_Init1080i30_step1
+0085 F0                MOVX    @DPTR,A
+0086 A3                INC     DPTR
+0087 7400        R     MOV     A,#LOW DataInit_Component_Init1080i30_step1
+0089 F0                MOVX    @DPTR,A
+008A 803C              SJMP    ?C0031
+                                           ; SOURCE LINE # 1628
+008C         ?C0038:
+008C 7400        R     MOV     A,#MBYTE DataInit_Component_Init720p50_step1
+008E 110000      R     ACALL   L?0087
+0091 7400        R     MOV     A,#HIGH DataInit_Component_Init720p50_step1
+0093 F0                MOVX    @DPTR,A
+0094 A3                INC     DPTR
+0095 7400        R     MOV     A,#LOW DataInit_Component_Init720p50_step1
+0097 F0                MOVX    @DPTR,A
+0098 802E              SJMP    ?C0031
+                                           ; SOURCE LINE # 1629
+009A         ?C0039:
+009A 7400        R     MOV     A,#MBYTE DataInit_Component_Init720p60_step1
+009C 110000      R     ACALL   L?0087
+009F 7400        R     MOV     A,#HIGH DataInit_Component_Init720p60_step1
+00A1 F0                MOVX    @DPTR,A
+00A2 A3                INC     DPTR
+00A3 7400        R     MOV     A,#LOW DataInit_Component_Init720p60_step1
+00A5 F0                MOVX    @DPTR,A
+00A6 8020              SJMP    ?C0031
+                                           ; SOURCE LINE # 1630
+00A8         ?C0040:
+00A8 90000000    R     MOV     DPTR,#p
+00AC 7400        R     MOV     A,#MBYTE DataInit_Component_Init1080p50_H56_step1
+00AE F0                MOVX    @DPTR,A
+00AF A3                INC     DPTR
+00B0 7400        R     MOV     A,#HIGH DataInit_Component_Init1080p50_H56_step1
+00B2 F0                MOVX    @DPTR,A
+00B3 A3                INC     DPTR
+00B4 7400        R     MOV     A,#LOW DataInit_Component_Init1080p50_H56_step1
+00B6 F0                MOVX    @DPTR,A
+00B7 800F              SJMP    ?C0031
+                                           ; SOURCE LINE # 1631
+00B9         ?C0041:
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 38  
+
+00B9 90000000    R     MOV     DPTR,#p
+00BD 7400        R     MOV     A,#MBYTE DataInit_Component_Init1080p60_step1
+00BF F0                MOVX    @DPTR,A
+00C0 A3                INC     DPTR
+00C1 7400        R     MOV     A,#HIGH DataInit_Component_Init1080p60_step1
+00C3 F0                MOVX    @DPTR,A
+00C4 A3                INC     DPTR
+00C5 7400        R     MOV     A,#LOW DataInit_Component_Init1080p60_step1
+00C7 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1632
+                                           ; SOURCE LINE # 1634
+00C8         ?C0031:
+                                           ; SOURCE LINE # 1636
+00C8 90000000    R     MOV     DPTR,#p
+00CC 110000      R     ACALL   L?0078
+00CF F9                MOV     R1,A
+00D0 E4                CLR     A
+00D1 FD                MOV     R5,A
+00D2 110000      R     ACALL   _Init8836Register
+                                           ; SOURCE LINE # 1637
+00D5         ?C0043:
+00D5 22                RET     
+             ; FUNCTION _InitComponentReg (END)
+
+             ; FUNCTION _PrintfInput (BEGIN)
+                                           ; SOURCE LINE # 1644
+0000 90000000    R     MOV     DPTR,#Input
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+;---- Variable 'debug' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 1645
+                                           ; SOURCE LINE # 1646
+0006 90000000    E     MOV     DPTR,#DebugLevel
+000A E0                MOVX    A,@DPTR
+000B FF                MOV     R7,A
+000C ED                MOV     A,R5
+000D D3                SETB    C
+000E 9F                SUBB    A,R7
+000F 4003              JC      $ + 5H
+0011 010000      R     AJMP    ?C0056
+                                           ; SOURCE LINE # 1647
+0014 90000000    R     MOV     DPTR,#Input
+0018 E0                MOVX    A,@DPTR
+0019 B40900            CJNE    A,#09H,?C0061
+001C         ?C0061:
+001C 506B              JNC     ?C0055
+001E 90000000    R     MOV     DPTR,#?C0062
+0022 F8                MOV     R0,A
+0023 28                ADD     A,R0
+0024 28                ADD     A,R0
+0025 73                JMP     @A+DPTR
+0026         ?C0062:
+0026 010000      R     AJMP    ?C0046
+0029 010000      R     AJMP    ?C0047
+002C 010000      R     AJMP    ?C0048
+002F 010000      R     AJMP    ?C0049
+0032 010000      R     AJMP    ?C0050
+0035 010000      R     AJMP    ?C0051
+0038 010000      R     AJMP    ?C0052
+003B 010000      R     AJMP    ?C0053
+003E 010000      R     AJMP    ?C0054
+                                           ; SOURCE LINE # 1648
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 39  
+
+0041         ?C0046:
+0041 7B00        R     MOV     R3,#MBYTE ?SC_72
+0043 7A00        R     MOV     R2,#HIGH ?SC_72
+0045 7900        R     MOV     R1,#LOW ?SC_72
+0047 8050              SJMP    ?C0074
+                                           ; SOURCE LINE # 1649
+0049         ?C0047:
+0049 7B00        R     MOV     R3,#MBYTE ?SC_77
+004B 7A00        R     MOV     R2,#HIGH ?SC_77
+004D 7900        R     MOV     R1,#LOW ?SC_77
+004F         ?C0066:
+004F 8048              SJMP    ?C0074
+                                           ; SOURCE LINE # 1650
+0051         ?C0048:
+0051 7B00        R     MOV     R3,#MBYTE ?SC_84
+0053 7A00        R     MOV     R2,#HIGH ?SC_84
+0055 7900        R     MOV     R1,#LOW ?SC_84
+0057         ?C0067:
+0057 8040              SJMP    ?C0074
+                                           ; SOURCE LINE # 1651
+0059         ?C0049:
+0059 7B00        R     MOV     R3,#MBYTE ?SC_94
+005B 7A00        R     MOV     R2,#HIGH ?SC_94
+005D 7900        R     MOV     R1,#LOW ?SC_94
+005F         ?C0068:
+005F 8038              SJMP    ?C0074
+                                           ; SOURCE LINE # 1652
+0061         ?C0050:
+0061 7B00        R     MOV     R3,#MBYTE ?SC_97
+0063 7A00        R     MOV     R2,#HIGH ?SC_97
+0065 7900        R     MOV     R1,#LOW ?SC_97
+0067         ?C0069:
+0067 8030              SJMP    ?C0074
+                                           ; SOURCE LINE # 1653
+0069         ?C0051:
+0069 7B00        R     MOV     R3,#MBYTE ?SC_101
+006B 7A00        R     MOV     R2,#HIGH ?SC_101
+006D 7900        R     MOV     R1,#LOW ?SC_101
+006F         ?C0070:
+006F 8028              SJMP    ?C0074
+                                           ; SOURCE LINE # 1654
+0071         ?C0052:
+0071 7B00        R     MOV     R3,#MBYTE ?SC_108
+0073 7A00        R     MOV     R2,#HIGH ?SC_108
+0075 7900        R     MOV     R1,#LOW ?SC_108
+0077         ?C0071:
+0077 8020              SJMP    ?C0074
+                                           ; SOURCE LINE # 1655
+0079         ?C0053:
+0079 7B00        R     MOV     R3,#MBYTE ?SC_115
+007B 7A00        R     MOV     R2,#HIGH ?SC_115
+007D 7900        R     MOV     R1,#LOW ?SC_115
+007F         ?C0072:
+007F 8018              SJMP    ?C0074
+                                           ; SOURCE LINE # 1656
+0081         ?C0054:
+0081 7B00        R     MOV     R3,#MBYTE ?SC_121
+0083 7A00        R     MOV     R2,#HIGH ?SC_121
+0085 7900        R     MOV     R1,#LOW ?SC_121
+0087         ?C0073:
+0087 8010              SJMP    ?C0074
+                                           ; SOURCE LINE # 1657
+C51 COMPILER V9.56.0.0   INITREG                                                           07/18/2018 10:45:00 PAGE 40  
+
+0089         ?C0055:
+0089 7B00        R     MOV     R3,#MBYTE ?SC_128
+008B 7A00        R     MOV     R2,#HIGH ?SC_128
+008D 7900        R     MOV     R1,#LOW ?SC_128
+008F 90000000    R     MOV     DPTR,#Input
+0093 E0                MOVX    A,@DPTR
+0094 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0098 F0                MOVX    @DPTR,A
+0099         ?C0074:
+0099 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 1658
+                                           ; SOURCE LINE # 1659
+                                           ; SOURCE LINE # 1660
+009C         ?C0056:
+009C 22                RET     
+             ; FUNCTION _PrintfInput (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    954    ----
+   CONSTANT SIZE    =   1667    ----
+   XDATA SIZE       =   ----      14
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

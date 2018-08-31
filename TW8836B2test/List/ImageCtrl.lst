@@ -1,0 +1,3097 @@
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE IMAGECTRL
+OBJECT MODULE PLACED IN .\Output\ImageCtrl.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source36\ImageCtrl.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\O
+                    -utput\TW8836B_EVB11.ORC) BROWSE INCDIR(SiI-SW;SiI-SW\HAL;SiI-SW\DEBUG;SiI-SW\CEC;.\Source36\LIB) DEFINE(EVB_11,nullFn=//
+                    -) DEBUG CODE PRINT(.\List\ImageCtrl.lst) TABS(2) OBJECT(.\Output\ImageCtrl.obj)
+
+line level    source
+
+   1          /**
+   2           * @file
+   3           * ImageCtrl.c 
+   4           * @author Brian Kang
+   5           * @version 1.0
+   6           * @section LICENSE
+   7           *  Copyright (C) 2011~2012 Intersil Corporation
+   8           * @section DESCRIPTION
+   9           *  Image Enhancement 
+  10           *
+  11           * The Image Control Block is located after UpSacler and before OSD mux.
+  12           * But, If we use a CVBS or SVideo with Internal Decoder, we can also control 
+  13           * the image on the internal decoder. Use a USE_FRONT_IMAGECTRL, if you want 
+  14           * to use the image control block on the front internal decoder.(Removed..)
+  15           * If you using USE_FRONT_IMAGECTRL, the image control for aRGB/YPbPr and DTV input 
+  16           * will be serviced by BackEnd Imange Control Block.
+  17           *
+  18           * We are using 0..100 value for this image effect functions because the register valus
+  19           * have a different value range. 
+  20           *
+  21           * see Image Block diagram
+  22          */
+  23          /*
+  24          Disclaimer: THIS INFORMATION IS PROVIDED 'AS-IS' FOR EVALUATION PURPOSES ONLY.  
+  25          INTERSIL CORPORATION AND ITS SUBSIDIARIES ('INTERSIL') DISCLAIM ALL WARRANTIES, 
+  26          INCLUDING WITHOUT LIMITATION FITNESS FOR A PARTICULAR PURPOSE AND MERCHANTABILITY.  
+  27          Intersil provides evaluation platforms to help our customers to develop products. 
+  28          However, factors beyond Intersil's control could significantly affect Intersil 
+  29          product performance. 
+  30          It remains the customers' responsibility to verify the actual system performance.
+  31          */
+  32          
+  33          /*
+  34          Image block
+  35          ===========
+  36             FrontEnd  <----|---->BackEnd
+  37                  +-------+     +----------+      +--------+      +-------+
+  38          Decoder ===>  |       |     |      |      |    |      |     |
+  39                  | Input |     | Image  |      | RGB  |      |       |
+  40             aRGB ===>  |     | ===>  |      | ===> |    | ===> | Gamma | ==> Display
+  41                  | Mux   |     | Enhancer |      | CSC    |      |       |
+  42              DTV ===>  |     |     |      |      |    |      |     |
+  43                      +-------+     +----------+      +--------+      +-------+
+  44                          <<YUV domain>>  <<RGB domain>>
+  45          
+  46          */
+  47          
+  48          
+  49          #include "Config.h"
+  50          #include "reg.h"
+  51          #include "typedefs.h"
+  52          #include "TW8836.h"
+  53          
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 2   
+
+  54          #include "Global.h"
+  55          #include "CPU.h"
+  56          #include "printf.h"
+  57          #include "util.h"
+  58          #include "monitor.h"
+  59          
+  60          #include "I2C.h"
+  61          #include "spi.h"
+  62          
+  63          #include "SOsd.h"
+  64          #include "InputCtrl.h"
+  65          #include "ImageCtrl.h"
+  66          #include "scaler.h"
+  67          #include "EEPROM.h"
+  68          #include "aRGB.h"
+  69          #include "PC_modes.h"
+  70          #include "measure.h"
+  71          
+  72                       // 0  1   2   3   4   5   6   7   8   9   a   b   c   d   e   f 
+  73          code BYTE Sharpness[16] = { 0, 6, 13, 20, 26, 33, 40, 47, 54, 61, 67, 74, 80, 87, 94, 100 };
+  74          
+  75          
+  76          static WORD PcBaseClock;  
+  77          static BYTE PcBasePhase;
+  78          static WORD PcBasePosH;
+  79          static BYTE PcBasePosV;
+  80          
+  81          
+  82          /*
+  83          Image Adjust block
+  84          */
+  85          
+  86          //============================== YCbCr  ================================================
+  87          
+  88          //#define   ContrastR   0x81
+  89          //#define   BrightnessR   0x87
+  90          //#define   Sharpness   0x8B
+  91          
+  92          
+  93          //#define   ContrastY   0x84
+  94          //#define   BrightnessY   0x8A
+  95          //#define   HueY      0x80
+  96          //#define   SaturationY   0x85
+  97          //#define   SharpnessY    0x8B
+  98          //=============================================================================
+  99          //YCbCrContrast
+ 100          //ImgAdjContrastY
+ 101          //R284[7:0] Contrast Y
+ 102          //    WORD ImgAdjGetContrastY(void)
+ 103          //    WORD ImgAdjSetContrastY(WORD val)
+ 104          //    BYTE ImgAdjChangeContrastY(void)
+ 105          //=============================================================================
+ 106          
+ 107          //-----------------------------------------------------------------------------
+ 108          /**
+ 109          * get ContrastY value
+ 110          */
+ 111          BYTE ImgAdjGetContrastY(void)
+ 112          {
+ 113   1          WORD  val;
+ 114   1      
+ 115   1        val = ReadTW88(REG284_IA_CONTRAST_Y );
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 3   
+
+ 116   1        val *= 100;
+ 117   1        val += 128;
+ 118   1        val /= 255;
+ 119   1        return (BYTE)(val);
+ 120   1      }
+ 121          //-----------------------------------------------------------------------------
+ 122          /**
+ 123          * set ContrastY value
+ 124          */
+ 125          BYTE ImgAdjSetContrastY(BYTE dat)
+ 126          {
+ 127   1        WORD val = dat;
+ 128   1        val *= 255;
+ 129   1        val += 50;
+ 130   1        val /= 100;
+ 131   1        WriteTW88(REG284_IA_CONTRAST_Y, (BYTE)val );
+ 132   1        return ImgAdjGetContrastY();
+ 133   1      }
+ 134          //-----------------------------------------------------------------------------
+ 135          /**
+ 136          * save ContrastY value to EEPROM
+ 137          */
+ 138          BYTE ImgAdjChangeContrastY(void)
+ 139          {
+ 140   1          BYTE  val;
+ 141   1      
+ 142   1        val = ImgAdjGetContrastY();
+ 143   1        SaveVideoDatatoEE( EEP_IA_CONTRASE_Y, val );
+ 144   1        return (val);
+ 145   1      }
+ 146          
+ 147          //=============================================================================
+ 148          //YCbCrBright
+ 149          //ImgAdjBrightnessY
+ 150          //    WORD ImgAdjGetBrightnessY(void)
+ 151          //    WORD ImgAdjSetBrightnessY(WORD val)
+ 152          //    BYTE ImgAdjChangeBrightnessY(void)
+ 153          //=============================================================================
+ 154          
+ 155          //-----------------------------------------------------------------------------
+ 156          /**
+ 157          * set BrightnessY value
+ 158          */
+ 159          BYTE ImgAdjGetBrightnessY(void)
+ 160          {
+ 161   1          WORD  val;
+ 162   1      
+ 163   1        val = ReadTW88(REG28A_IA_BRIGHTNESS_Y );
+ 164   1        val *= 100;
+ 165   1        val += 128;
+ 166   1        val /= 255;
+ 167   1        return (BYTE)(val);
+ 168   1      }
+ 169          //-----------------------------------------------------------------------------
+ 170          /**
+ 171          * get BrightnessY value
+ 172          */
+ 173          BYTE ImgAdjSetBrightnessY(BYTE dat)
+ 174          {
+ 175   1        WORD val=dat;
+ 176   1        val *= 255;
+ 177   1        val += 50;
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 4   
+
+ 178   1        val /= 100;
+ 179   1        WriteTW88(REG28A_IA_BRIGHTNESS_Y, (BYTE)val );
+ 180   1        return ImgAdjGetBrightnessY();
+ 181   1      }
+ 182          //-----------------------------------------------------------------------------
+ 183          /**
+ 184          * save BrightnessY value to EEPROM
+ 185          */
+ 186          BYTE ImgAdjChangeBrightnessY(void)
+ 187          {
+ 188   1          BYTE  val;
+ 189   1      
+ 190   1        val = ImgAdjGetBrightnessY();
+ 191   1        SaveVideoDatatoEE( EEP_IA_BRIGHTNESS_Y, val );
+ 192   1        return (val);
+ 193   1      }
+ 194          //=============================================================================
+ 195          //ImagAdjSaturation
+ 196          //R285[7:0] Contrast Cb
+ 197          //R286[7:0] Contrast Cr
+ 198          //  old name was YCbCrSaturation
+ 199          //  real meaning ImgAdjContrastCb & ImgAdjContrastCr
+ 200          //  HW can support seperate Cb/Cr.
+ 201          //  Cb => U, Cr => V
+ 202          //  and U means Hue, V menas saturation. 
+ 203          //  But, HW have a seperate Cb,Cr,HUE registers,
+ 204          //    Cb & Cr register used for Saturateion and HUE register use only Hue.
+ 205          //
+ 206          //  SaturationY is a incorrect definition.
+ 207          //
+ 208          //    WORD ImgAdjGetSaturation(void)
+ 209          //    WORD ImgAdjSetSaturation(WORD val)
+ 210          //    BYTE ImgAdjChangeSaturation(void)
+ 211          //=============================================================================
+ 212          
+ 213          //-----------------------------------------------------------------------------
+ 214          /**
+ 215          * get Saturation value
+ 216          */
+ 217          BYTE ImgAdjGetSaturation(void)
+ 218          {
+ 219   1          WORD  val;
+ 220   1      
+ 221   1        val = ReadTW88(REG285_IA_CONTRAST_CB );
+ 222   1        val *= 100;
+ 223   1        val += 128;
+ 224   1        val /= 255;
+ 225   1        return (BYTE)(val);
+ 226   1      }
+ 227          //-----------------------------------------------------------------------------
+ 228          /**
+ 229          * set Saturation value
+ 230          */
+ 231          BYTE ImgAdjSetSaturation(BYTE dat)
+ 232          {
+ 233   1        WORD val = dat;
+ 234   1        val *= 255;
+ 235   1        val += 50;
+ 236   1        val /= 100;
+ 237   1        WriteTW88(REG285_IA_CONTRAST_CB, (BYTE)val );   //update Contrast_Cb(U)
+ 238   1        WriteTW88(REG285_IA_CONTRAST_CB+1, (BYTE)val );  //update Contrast_Cr(V)
+ 239   1        return ImgAdjGetSaturation();
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 5   
+
+ 240   1      }
+ 241          //-----------------------------------------------------------------------------
+ 242          /**
+ 243          * save Saturation value to EEPROM
+ 244          */
+ 245          BYTE ImgAdjChangeSaturation(void)
+ 246          {
+ 247   1          BYTE  val;
+ 248   1      
+ 249   1        val = ImgAdjGetSaturation();
+ 250   1        SaveVideoDatatoEE( EEP_IA_SATURATION, val );
+ 251   1        return (val);
+ 252   1      }
+ 253          
+ 254          //=============================================================================
+ 255          //YCbCrHUE
+ 256          //ImgAdjHue
+ 257          //R280[5:0]. +45~-45. degree:1.4 default:0 degree(xx10 0000)
+ 258          //    WORD ImgAdjGetHUE(void)
+ 259          //    WORD ImgAdjSetHUE(WORD val)
+ 260          //    BYTE ImgAdjChangeHUE(void)
+ 261          //=============================================================================
+ 262          
+ 263          //-----------------------------------------------------------------------------
+ 264          /**
+ 265          * get HUE value
+ 266          *
+ 267          * reigster description
+ 268          * HW  logical   SW(0..100)
+ 269          * --  ---     ----
+ 270          * 1F  3F      100
+ 271          * ..
+ 272          * 1 21      52
+ 273          * 0 20      50
+ 274          * 20  1F      49
+ 275          * 3F  1E      47
+ 276          * ...
+ 277          * 21  0     0 
+ 278          */
+ 279          BYTE ImgAdjGetHUE(void)
+ 280          {
+ 281   1          BYTE reg;
+ 282   1        WORD val;
+ 283   1      
+ 284   1        reg = ReadTW88(REG280_IA_HUE_REG );  //0..63
+ 285   1        reg &= 0x3F;
+ 286   1        val = reg;
+ 287   1        
+ 288   1        if(val==0x20)       val = 0x1F;
+ 289   1        else if(val > 0x20)   val = val - 0x21;
+ 290   1        else          val = 0x20 + val;
+ 291   1      
+ 292   1        val *= 100;
+ 293   1        val += 32;
+ 294   1        val /= 63;
+ 295   1        //dPrintf("Get:HW:%bx,SW:%d",reg,val);
+ 296   1        return (BYTE)(val);
+ 297   1      }
+ 298          //-----------------------------------------------------------------------------
+ 299          /**
+ 300          * set HUE value
+ 301          *
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 6   
+
+ 302          * @see ImgAdjGetHUE
+ 303          */
+ 304          BYTE ImgAdjSetHUE(BYTE dat)
+ 305          {
+ 306   1        WORD value;
+ 307   1        BYTE reserved;
+ 308   1        BYTE reg_hw, reg_sw;
+ 309   1      
+ 310   1        reserved = ReadTW88(REG280_IA_HUE_REG ) & 0xC0;  //0..63
+ 311   1      
+ 312   1        value = dat;
+ 313   1        value *= 63;
+ 314   1        value += 50; //roundup
+ 315   1        value /= 100;
+ 316   1        reg_sw = value;
+ 317   1      
+ 318   1        if(reg_sw==0x1F)    reg_hw = 0x20;
+ 319   1        else if(reg_sw >= 0x20) reg_hw = reg_sw - 0x20;
+ 320   1        else          reg_hw = reg_sw + 0x21;
+ 321   1      
+ 322   1        //dPrintf("Set:HW:%bx,SW:%d",value,dat);
+ 323   1        WriteTW88(REG280_IA_HUE_REG, reserved | reg_hw);
+ 324   1      
+ 325   1        return ImgAdjGetHUE();
+ 326   1      }
+ 327          //-----------------------------------------------------------------------------
+ 328          /**
+ 329          * increase/decrease HUE value
+ 330          *
+ 331          * @see ImgAdjGetHUE
+ 332          */
+ 333          BYTE ImgAdjVaryHUE(BYTE dat)
+ 334          {
+ 335   1        BYTE old;
+ 336   1        BYTE reg_hw,reg_sw;
+ 337   1        BYTE reserved;
+ 338   1      
+ 339   1        old = ImgAdjGetHUE(); //0..100
+ 340   1      
+ 341   1        reg_hw = ReadTW88(REG280_IA_HUE_REG );  //0..63
+ 342   1        reserved = reg_hw & 0xC0;
+ 343   1        reg_hw &= 0x3F;
+ 344   1      
+ 345   1        if(reg_hw==0x20)    reg_sw = 0x1F;
+ 346   1        else if(reg_hw > 0x20)  reg_sw = reg_hw - 0x21;
+ 347   1        else          reg_sw = 0x20 + reg_hw;
+ 348   1        
+ 349   1        if(old < dat) {     //inc
+ 350   2          if(reg_sw < 0x3F)
+ 351   2            reg_sw++;
+ 352   2        }
+ 353   1        else if(old > dat) {  //dec
+ 354   2          if(reg_sw)
+ 355   2            reg_sw--;
+ 356   2        }
+ 357   1      
+ 358   1        if(reg_sw==0x1F)    reg_hw = 0x20;
+ 359   1        else if(reg_sw >= 0x20) reg_hw = reg_sw - 0x20;
+ 360   1        else          reg_hw = reg_sw + 0x21;
+ 361   1      
+ 362   1      
+ 363   1        WriteTW88(REG280_IA_HUE_REG, reserved | reg_hw);
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 7   
+
+ 364   1      
+ 365   1        return ImgAdjGetHUE();
+ 366   1      }
+ 367          //-----------------------------------------------------------------------------
+ 368          /**
+ 369          * save HUE value to EEPROM
+ 370          *
+ 371          * @see ImgAdjGetHUE
+ 372          */
+ 373          BYTE ImgAdjChangeHUE(void)
+ 374          {
+ 375   1          BYTE  val;
+ 376   1      
+ 377   1        val = ImgAdjGetHUE();
+ 378   1        SaveVideoDatatoEE( EEP_IA_HUE, val );
+ 379   1        return (val);
+ 380   1      }
+ 381          
+ 382          //=============================================================================
+ 383          //YCbCrSharp
+ 384          //ImgAdjSharpness
+ 385          //    WORD ImgAdjGetSharpness(void)
+ 386          //    WORD ImgAdjSetSharpness(WORD val)
+ 387          //    BYTE ImgAdjChangeSharpness(void)
+ 388          //=============================================================================
+ 389          
+ 390          //-----------------------------------------------------------------------------
+ 391          /**
+ 392          * get Sharpness value
+ 393          */
+ 394          BYTE ImgAdjGetSharpness(void)
+ 395          {
+ 396   1          BYTE  val;
+ 397   1      
+ 398   1        val = Sharpness[(ReadTW88(REG28B_IA_SHARPNESS ) & 0x0f)];
+ 399   1        return (val);
+ 400   1      }
+ 401          //-----------------------------------------------------------------------------
+ 402          /**
+ 403          * increase/decrease Sharpness value
+ 404          */
+ 405          BYTE ImgAdjSetSharpness(BYTE val)  //variation
+ 406          {
+ 407   1        BYTE  i;
+ 408   1      
+ 409   1        for (i=0; i<16; i++) {
+ 410   2          if ( val == (Sharpness[i]+1) ){
+ 411   3            val = i+1;
+ 412   3            break;
+ 413   3          }
+ 414   2          if ( Sharpness[i] == (val+1) ){
+ 415   3            val = i-1;
+ 416   3            break;
+ 417   3          }
+ 418   2        }
+ 419   1      
+ 420   1        if(i==16) {
+ 421   2          if(val > 100)
+ 422   2            val = 100;
+ 423   2          for (i=0; i<16; i++) {
+ 424   3            if(val == Sharpness[i]) {
+ 425   4              val = i;
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 8   
+
+ 426   4              break;
+ 427   4            }
+ 428   3            if(val < Sharpness[i+1]) {
+ 429   4              val = i+1;
+ 430   4              break;
+ 431   4            }
+ 432   3          }
+ 433   2          if(i==16)
+ 434   2            val = i;
+ 435   2        }
+ 436   1      
+ 437   1        WriteTW88(REG28B_IA_SHARPNESS, ((ReadTW88(REG28B_IA_SHARPNESS ) & 0xf0) + val) );   
+ 438   1        val = Sharpness[val];   //BK101028 bugfix //val = Sharpness[i];
+ 439   1        return (val);
+ 440   1      }
+ 441          //-----------------------------------------------------------------------------
+ 442          /**
+ 443          * save Sharpness value to EEPROM
+ 444          */
+ 445          BYTE ImgAdjChangeSharpness(void)
+ 446          {
+ 447   1          BYTE  val;
+ 448   1      
+ 449   1        val = ImgAdjGetSharpness();
+ 450   1        SaveVideoDatatoEE( EEP_IA_SHARPNESS, val );
+ 451   1        return (val);
+ 452   1      }
+ 453          
+ 454          
+ 455          
+ 456          //==============================================================================
+ 457          
+ 458          //=============================================================================
+ 459          //RGBContrast
+ 460          //ImgAdjContrastR
+ 461          //R281[7:0] Contrast R
+ 462          //R282[7:0] Contrast G
+ 463          //R283[7:0] Contrast B
+ 464          //    WORD ImgAdjGetContrastRGB(void)
+ 465          //    WORD ImgAdjSetContrastRGB(WORD val)
+ 466          //    BYTE ImgAdjChangeContrastRGB(void)
+ 467          //=============================================================================
+ 468          
+ 469          //-----------------------------------------------------------------------------
+ 470          /**
+ 471          * get ContrastRGB value
+ 472          */
+ 473          BYTE ImgAdjGetContrastRGB(BYTE index)
+ 474          {
+ 475   1          WORD  val;
+ 476   1      
+ 477   1        val = ReadTW88(REG281_IA_CONTRAST_R + index);           // check GREEN chanel
+ 478   1        val *= 100;
+ 479   1        val += 128;
+ 480   1        val /= 255;
+ 481   1        return (BYTE)(val);
+ 482   1      }
+ 483          //-----------------------------------------------------------------------------
+ 484          /**
+ 485          * set ContrastRGB value
+ 486          */
+ 487          BYTE ImgAdjSetContrastRGB(BYTE index, BYTE dat)
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 9   
+
+ 488          {
+ 489   1        WORD val = dat;
+ 490   1        val *= 255;
+ 491   1        val += 50;
+ 492   1        val /= 100;
+ 493   1        WriteTW88(REG281_IA_CONTRAST_R+index,   (BYTE)val );
+ 494   1        return ImgAdjGetContrastRGB(index);
+ 495   1      }
+ 496          //-----------------------------------------------------------------------------
+ 497          /**
+ 498          * save ContrastRGB value to EEPROM
+ 499          */
+ 500          BYTE ImgAdjChangeContrastRGB(BYTE index)
+ 501          {
+ 502   1          BYTE  val;
+ 503   1      
+ 504   1        val = ImgAdjGetContrastRGB(index);
+ 505   1        SaveVideoDatatoEE( EEP_IA_CONTRAST_R+index, val );
+ 506   1        return (val);
+ 507   1      }
+ 508          //=============================================================================
+ 509          //RGBBright
+ 510          //R287[7:0] Brightness R
+ 511          //R288[7:0] Brightness G
+ 512          //R289[7:0] Brightness B
+ 513          //ImgAdjBrightnessR
+ 514          //    WORD ImgAdjGetBrightnessRGB(void)
+ 515          //    WORD ImgAdjSetBrightnessRGB(WORD val)
+ 516          //    BYTE ImgAdjChangeBrightnessRGB(void)
+ 517          //=============================================================================
+ 518          
+ 519          #if 0
+              #define DITHER_FORMAT_888 0
+              #define DITHER_FORMAT_666 1
+              #define   DITHER_666_OPTION_3   1
+              #define   DITHER_666_OPTION_32  2
+              #define   DITHER_666_OPTION_321 3
+              #define   DITHER_666_OPTION_3210  4
+              #define DITHER_FORMAT_565 2
+              #define DITHER_FORMAT_555 3
+              #define DITHER_FORMAT_444 4
+              #define DITHER_FORMAT_333 5
+              #define DITHER_FORMAT_332 6
+              
+              //-----------------------------------------------------------------------------
+              BYTE ImgAdjDither(BYTE value)
+              {
+                BYTE old;
+                old = ReadTW88(REG2E4);
+                WriteTW88(REG2E4,value);
+                return old;
+              }
+              #endif
+ 541          
+ 542          //=============================================================================
+ 543          //RGBSharp
+ 544          //    void ResetRGBSharp( void )
+ 545          //=============================================================================
+ 546          #ifdef UNCALLED_SEGMENT
+              void ResetRGBSharp( void )
+              {...}
+              #endif
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 10  
+
+ 550          
+ 551          //=============================================================================
+ 552          //    void RGBImageReset(void)
+ 553          //=============================================================================
+ 554          #ifdef UNCALLED_SEGMENT_CODE
+              //void RGBImageReset( void )
+              //{
+              //  ImgAdjSetContrastRGB( 50 );
+              //  ImgAdjSetBrightnessRGB( 50 );
+              //}
+              #endif
+ 561          
+ 562          //=============================================================================
+ 563          //    void RGBAutoAdj(void)
+ 564          //=============================================================================
+ 565          #if 0
+              void RGBAutoAdj( void )
+              {
+                AutoColorAdjust();  //aRGB_ part
+                //BKTODO: Add Phase & Clock detection.
+              }
+              #endif
+ 572          
+ 573          //=============================================================================
+ 574          //RGBPosH - use InputHStart
+ 575          //    WORD GetRGBPosH(void)
+ 576          //    WORD SetRGBPosH(WORD val)
+ 577          //    BYTE ChangeRGBPosH(void)
+ 578          //=============================================================================
+ 579          //return 0..100. default 50
+ 580          // if return value > 50, HW value will be decreased and the screen will be moved to right.
+ 581          //extern BYTE RGB_HDE;
+ 582          
+ 583          //use InputHStart
+ 584          //if HW is decreased, return value will be increased.
+ 585          //extern WORD RGB_hStart;
+ 586          //extern BYTE RGB_vDE;
+ 587          #ifdef SUPPORT_PC
+ 588          //-----------------------------------------------------------------------------
+ 589          /**
+ 590          * get Horizontal position 
+ 591          */
+ 592          BYTE GetRGBPosH(void)
+ 593          {
+ 594   1        return 50+RGB_hStart-InputGetHStart();
+ 595   1      }
+ 596          //-----------------------------------------------------------------------------
+ 597          /**
+ 598          * set Horizontal position 
+ 599          */
+ 600          BYTE SetRGBPosH(BYTE val)
+ 601          {
+ 602   1        WORD hw_value;
+ 603   1        if((RGB_hStart+50) > val)
+ 604   1          hw_value = RGB_hStart + 50 - val;
+ 605   1        else
+ 606   1          hw_value = 1;
+ 607   1      
+ 608   1        InputSetHStart(hw_value);
+ 609   1        return GetRGBPosH();
+ 610   1      }
+ 611          //-----------------------------------------------------------------------------
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 11  
+
+ 612          /**
+ 613          * get Horizontal position to EEPROM
+ 614          */
+ 615          BYTE ChangeRGBPosH()
+ 616          {
+ 617   1        BYTE value;
+ 618   1      
+ 619   1        value = GetRGBPosH();
+ 620   1        SaveHActiveEE(Input_aRGBMode,value);
+ 621   1        return value;
+ 622   1      }
+ 623          #endif
+ 624          
+ 625          //=============================================================================
+ 626          //RGBPosV - use Scaler Output VDE
+ 627          //    WORD GetRGBPosV(void)
+ 628          //    WORD SetRGBPosV(WORD val)
+ 629          //    BYTE ChangeRGBPosH(void)
+ 630          //=============================================================================
+ 631          //return 0..100 base 50.
+ 632          // if return value > 50, move up HW screen
+ 633          //if HW is decreased, return value will be decrease.
+ 634          #if defined(SUPPORT_PC)
+ 635          //-----------------------------------------------------------------------------
+ 636          /**
+ 637          * get Vertical position 
+ 638          */
+ 639          BYTE GetRGBPosV(void)
+ 640          {
+ 641   1        return 50 + ScalerReadVDEReg() - RGB_vDE;
+ 642   1      }
+ 643          //-----------------------------------------------------------------------------
+ 644          /**
+ 645          * set Vertical position 
+ 646          */
+ 647          BYTE SetRGBPosV(BYTE val)
+ 648          {
+ 649   1        WORD hw_value;
+ 650   1        if((RGB_vDE + val) > 50) 
+ 651   1          hw_value = RGB_vDE + val - 50;
+ 652   1        else 
+ 653   1          hw_value = 1;
+ 654   1        ScalerWriteVDEReg(hw_value);
+ 655   1        return GetRGBPosV();
+ 656   1      }
+ 657          //-----------------------------------------------------------------------------
+ 658          /**
+ 659          * save Vertical position to EEPROM
+ 660          */
+ 661          BYTE ChangeRGBPosV(void)
+ 662          {
+ 663   1        BYTE value;
+ 664   1      
+ 665   1        value = GetRGBPosV();
+ 666   1        SaveVBackPorchEE(Input_aRGBMode,value);
+ 667   1        return value; 
+ 668   1      }
+ 669          #endif
+ 670          
+ 671          //=============================================================================
+ 672          //See AutoTunePhase() on TW8816
+ 673          //    WORD GetaRGB_Phase(void)
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 12  
+
+ 674          //    WORD SetaRGB_Phase(WORD val)
+ 675          //    BYTE ChangeaRGB_Phase(void)
+ 676          //=============================================================================
+ 677          //interface between MENU and aRGB_
+ 678          #if defined(SUPPORT_PC)
+ 679          //-----------------------------------------------------------------------------
+ 680          /**
+ 681          * get aRGB Phase value
+ 682          *
+ 683          * @return 0..100
+ 684          */
+ 685          BYTE GetaRGB_Phase(void)
+ 686          {
+ 687   1        WORD value;
+ 688   1      
+ 689   1        value = aRGB_GetPhase();
+ 690   1        value *= 100;
+ 691   1        value += 15;  //roundup
+ 692   1        value /= 31;
+ 693   1        return (BYTE)value;   //0..100
+ 694   1      }
+ 695          
+ 696          //-----------------------------------------------------------------------------
+ 697          /**
+ 698          * increase/decrease aRGB Phase value
+ 699          *
+ 700          * @param 0..100
+ 701          * compare val with old value, and then, do variation. 
+ 702          */
+ 703          BYTE VaryaRGB_Phase(BYTE val)
+ 704          {
+ 705   1        BYTE old,value;
+ 706   1      
+ 707   1        old = GetaRGB_Phase();  //0..100
+ 708   1        value = aRGB_GetPhase();  //0..0x1F
+ 709   1      
+ 710   1        if(old < val) {
+ 711   2          if(value < 0x1F)
+ 712   2            value++;
+ 713   2        }
+ 714   1        else if(old > val) {
+ 715   2          if(value > 0)
+ 716   2            value--;
+ 717   2        }
+ 718   1        aRGB_SetPhase(value,ON);  //WithInit
+ 719   1      
+ 720   1        return GetaRGB_Phase();
+ 721   1      }
+ 722          //-----------------------------------------------------------------------------
+ 723          /**
+ 724          * set aRGB Phase value
+ 725          *
+ 726          * @param 0..100
+ 727          */
+ 728          BYTE SetaRGB_Phase(BYTE val)
+ 729          {
+ 730   1        WORD value;
+ 731   1        value = val * 31;
+ 732   1        value += 50;  //roundup
+ 733   1        value /= 100;
+ 734   1        
+ 735   1        //value = PcBasePhase + val - 50;
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 13  
+
+ 736   1        aRGB_SetPhase((BYTE)value, ON); //WithInit
+ 737   1        return GetaRGB_Phase();
+ 738   1      }
+ 739          
+ 740          #if 0
+              void SetaRGB_Phase100ToReg(BYTE val)
+              {
+              ...
+              }
+              #endif
+ 746          //-----------------------------------------------------------------------------
+ 747          /**
+ 748          * save aRGB Phase value to EEPROM
+ 749          */
+ 750          BYTE ChangeaRGB_Phase(void)
+ 751          {
+ 752   1        BYTE val;
+ 753   1      
+ 754   1        val = aRGB_GetPhase(); //0..0x1F
+ 755   1      
+ 756   1        SavePhaseEE(Input_aRGBMode, val);
+ 757   1      
+ 758   1        val = GetaRGB_Phase(); //0..100
+ 759   1        return val;
+ 760   1      }
+ 761          #endif
+ 762          
+ 763          //=============================================================================
+ 764          //aRGB_Clock
+ 765          //See AutoTuenClock() on TW8816
+ 766          //    WORD GetaRGB_Clock(void)
+ 767          //    WORD SetaRGB_Clock(WORD val)
+ 768          //    BYTE ChangeaRGB_Clock(void)
+ 769          //=============================================================================
+ 770          //interface between MENU and aRGB_
+ 771          
+ 772          #if defined(SUPPORT_PC)
+ 773          //-----------------------------------------------------------------------------
+ 774          /**
+ 775          * Get PC Pixel clock value
+ 776          *
+ 777          * @return 0..100
+ 778          */
+ 779          BYTE GetaRGB_Clock(void)
+ 780          {
+ 781   1        BYTE bTemp;
+ 782   1        WORD wTemp;
+ 783   1        struct DIGIT_VIDEO_TIME_TABLE_s *pVesaTimeTable;
+ 784   1      
+ 785   1        if(Input_aRGBMode==0)
+ 786   1          return 50;
+ 787   1      
+ 788   1        //return (BYTE)(50+PcBaseClock-aRGB_LLPLLGetDivider());
+ 789   1      
+ 790   1        wTemp = aRGB_LLPLLGetDivider();
+ 791   1        pVesaTimeTable = &TW8836_VESA_TABLE[Input_aRGBMode];
+ 792   1        PcBaseClock = pVesaTimeTable->hTotal-1;
+ 793   1        bTemp = 50+aRGB_LLPLLGetDivider()-PcBaseClock;
+ 794   1        //dPrintf("\n\rGetaRGB_Clock PcBaseClock:%d LLPLL:%d ret:%bd",PcBaseClock,wTemp,bTemp);
+ 795   1        return bTemp;
+ 796   1      }
+ 797          //-----------------------------------------------------------------------------
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 14  
+
+ 798          /**
+ 799          * set PC Pixel clock value
+ 800          *
+ 801          * @param 0..100
+ 802          */
+ 803          BYTE SetaRGB_Clock(BYTE val)
+ 804          {
+ 805   1        WORD clock;
+ 806   1        struct DIGIT_VIDEO_TIME_TABLE_s *pVesaTimeTable;
+ 807   1        if(Input_aRGBMode==0)
+ 808   1          return 50;
+ 809   1      
+ 810   1        pVesaTimeTable = &TW8836_VESA_TABLE[Input_aRGBMode];
+ 811   1        PcBaseClock = pVesaTimeTable->hTotal-1;
+ 812   1        clock = PcBaseClock + val - 50;
+ 813   1        aRGB_LLPLLSetDivider(clock, 0); //without INIT
+ 814   1      
+ 815   1        return GetaRGB_Clock();
+ 816   1      }
+ 817          //-----------------------------------------------------------------------------
+ 818          /**
+ 819          * save PC pixel clock value to EEPROM
+ 820          */
+ 821          BYTE ChangeaRGB_Clock(void)
+ 822          {
+ 823   1        BYTE u_val;
+ 824   1        if(Input_aRGBMode==0)
+ 825   1          return 50;
+ 826   1      
+ 827   1        u_val = GetaRGB_Clock(); //0..100
+ 828   1        SavePixelClkEE(Input_aRGBMode, u_val);
+ 829   1        return u_val; 
+ 830   1      }
+ 831          #endif
+ 832          
+ 833          
+ 834          //we assume, we already check the input signal.
+ 835          //external
+ 836          //  InputMain
+ 837          //#define IMAGE_TYPE_YUV    0
+ 838          //#define IMAGE_TYPE_RGB    1
+ 839          //#define IMAGE_TYPE_DTV    3
+ 840          
+ 841          //@param
+ 842          //  type
+ 843          //-----------------------------------------------------------------------------
+ 844          /**
+ 845          * set image effect
+ 846          */
+ 847          void SetImage(BYTE type)
+ 848          {
+ 849   1        if(type==INPUT_CVBS || type==INPUT_SVIDEO) { //CVBS & SVIDEO
+ 850   2          //reset default internal decoder value.
+ 851   2          //FW uses a default front value, and control the backend image control.
+ 852   2          WriteTW88(REG110, 0x00);
+ 853   2          WriteTW88(REG111, 0x5C);
+ 854   2          WriteTW88(REG112, 0x11);
+ 855   2          WriteTW88(REG113, 0x80);
+ 856   2          WriteTW88(REG114, 0x80);
+ 857   2          WriteTW88(REG115, 0x00);
+ 858   2          WriteTW88(REG117, 0x30);
+ 859   2        }
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 15  
+
+ 860   1      
+ 861   1        if(type == INPUT_PC ||type == INPUT_DVI || type == INPUT_HDMIPC || type == INPUT_LVDS) {
+ 862   2          /* RGB domain */
+ 863   2          ImgAdjSetContrastY(     GetVideoDatafromEE( EEP_IA_CONTRASE_Y ) );
+ 864   2          ImgAdjSetBrightnessY(     GetVideoDatafromEE( EEP_IA_BRIGHTNESS_Y ) );
+ 865   2      
+ 866   2          ImgAdjSetContrastRGB(0,   GetVideoDatafromEE( EEP_IA_CONTRAST_R ) );
+ 867   2          ImgAdjSetContrastRGB(1,   GetVideoDatafromEE( EEP_IA_CONTRAST_G ) );
+ 868   2          ImgAdjSetContrastRGB(2,   GetVideoDatafromEE( EEP_IA_CONTRAST_B ) );
+ 869   2      
+ 870   2          WriteTW88(REG280_IA_HUE_REG,      (ReadTW88(REG280_IA_HUE_REG ) & 0xC0) | IA_HUE_DEFAULT);
+ 871   2          WriteTW88(REG285_IA_CONTRAST_CB,  IA_CONTRAST_CB_DEFAULT);
+ 872   2          WriteTW88(REG286_IA_CONTRAST_CR,  IA_CONTRAST_CR_DEFAULT);
+ 873   2          WriteTW88(REG287_IA_BRIGHTNESS_R, IA_BRIGHTNESS_R_DEFAULT);
+ 874   2          WriteTW88(REG288_IA_BRIGHTNESS_G, IA_BRIGHTNESS_G_DEFAULT);
+ 875   2          WriteTW88(REG289_IA_BRIGHTNESS_B, IA_BRIGHTNESS_B_DEFAULT);
+ 876   2          WriteTW88(REG28B_IA_SHARPNESS,    (ReadTW88(REG28B_IA_SHARPNESS ) & 0xf0) | IA_SHARP_DEFAULT);
+ 877   2        }
+ 878   1        else {
+ 879   2          /* YUV domain */
+ 880   2          ImgAdjSetContrastY(     GetVideoDatafromEE( EEP_IA_CONTRASE_Y ) );
+ 881   2          ImgAdjSetBrightnessY(     GetVideoDatafromEE( EEP_IA_BRIGHTNESS_Y ) );
+ 882   2          ImgAdjSetSaturation(    GetVideoDatafromEE( EEP_IA_SATURATION ) );
+ 883   2          ImgAdjSetHUE(         GetVideoDatafromEE( EEP_IA_HUE ) );
+ 884   2          ImgAdjSetSharpness(     GetVideoDatafromEE( EEP_IA_SHARPNESS ) );
+ 885   2      
+ 886   2          WriteTW88(REG281_IA_CONTRAST_R,   IA_CONTRAST_R_DEFAULT);
+ 887   2          WriteTW88(REG282_IA_CONTRAST_G,   IA_CONTRAST_G_DEFAULT);
+ 888   2          WriteTW88(REG283_IA_CONTRAST_B,   IA_CONTRAST_B_DEFAULT);
+ 889   2          WriteTW88(REG287_IA_BRIGHTNESS_R, IA_BRIGHTNESS_R_DEFAULT);
+ 890   2          WriteTW88(REG288_IA_BRIGHTNESS_G, IA_BRIGHTNESS_G_DEFAULT);
+ 891   2          WriteTW88(REG289_IA_BRIGHTNESS_B, IA_BRIGHTNESS_B_DEFAULT);
+ 892   2        }
+ 893   1      }
+ 894          
+ 895          
+ 896          //-----------------------------------------------------------------------------
+ 897          //BKTODO:110518
+ 898          BYTE SetAspectHW(BYTE mode)
+ 899          {
+ 900   1      //  dPrintf("\n\rAspect %bd ",mode);
+ 901   1      #if 0
+                switch(mode) {
+                case 0: dPrintf("normal");  break;
+                case 1: dPrintf("zoom");  break;
+                case 2: dPrintf("full");  break;
+                case 3: dPrintf("panorama");  break;
+                default: dPrintf("unknown");  break;
+                }
+              #else
+ 910   1        BYTE bTemp = mode;
+ 911   1      #endif
+ 912   1        return 0;
+ 913   1      }
+ 914          
+ 915          
+ 916          BYTE OsdTime;
+ 917          //-----------------------------------------------------------------------------
+ 918          /**
+ 919          * Get OsdChangeTime value
+ 920          */
+ 921          BYTE OsdGetTime(void)
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 16  
+
+ 922          {
+ 923   1      //  dPrintf("\n\rOsdGetTime:%bd",OsdTime);
+ 924   1        return OsdTime;
+ 925   1      }
+ 926          //-----------------------------------------------------------------------------
+ 927          /**
+ 928          * increase/decrease OsdChangeTime value
+ 929          */
+ 930          BYTE OsdVaryTime(BYTE dat)
+ 931          {
+ 932   1        if(dat > OsdTime) {
+ 933   2          if(dat < 10)
+ 934   2            OsdTime = 10;
+ 935   2          else if(dat < 100)
+ 936   2            OsdTime++;
+ 937   2        }
+ 938   1        else if(dat < OsdTime) {
+ 939   2          if(dat < 10)
+ 940   2            OsdTime = 0;
+ 941   2          else 
+ 942   2            OsdTime--;
+ 943   2        }
+ 944   1      
+ 945   1        //dPrintf("\n\rOsdSetTime:%bd",OsdTime);
+ 946   1        return OsdTime;
+ 947   1      }
+ 948          //-----------------------------------------------------------------------------
+ 949          /**
+ 950          * set OsdChangeTime value
+ 951          */
+ 952          BYTE OsdSetTime(BYTE dat)
+ 953          {
+ 954   1        if(dat <= 100)
+ 955   1          OsdTime = dat;
+ 956   1        if(OsdTime < 5)
+ 957   1          OsdTime = 0;
+ 958   1      
+ 959   1        //dPrintf("\n\rOsdSetTime:%bd",OsdTime);
+ 960   1        return OsdTime;
+ 961   1      }
+ 962          //-----------------------------------------------------------------------------
+ 963          /**
+ 964          * save OsdChangeTime value to EEPROM
+ 965          */
+ 966          BYTE OsdChangeTime(void)
+ 967          {
+ 968   1        BYTE val;
+ 969   1        val = OsdGetTime();
+ 970   1        EE_Write(EEP_OSD_TIMEOUT, val);
+ 971   1        return (BYTE)(val);
+ 972   1      }
+ 973          
+ 974          BYTE OsdTransRate;  //0..100
+ 975          //-----------------------------------------------------------------------------
+ 976          /**
+ 977          * get Osd Transparent value
+ 978          */
+ 979          BYTE OsdGetTransparent(void) //0..100
+ 980          {
+ 981   1        return OsdTransRate;
+ 982   1      }
+ 983          //-----------------------------------------------------------------------------
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 17  
+
+ 984          /**
+ 985          * convert OsdTransRate to HW value(0..127)
+ 986          */
+ 987          BYTE OsdGetTrans(void)
+ 988          {
+ 989   1        WORD val;
+ 990   1      
+ 991   1        val = OsdTransRate;  //0..100
+ 992   1        val *= 127;
+ 993   1        val += 50;
+ 994   1        val /= 100;
+ 995   1      
+ 996   1        return (BYTE)val; //0..127
+ 997   1      }
+ 998          //-----------------------------------------------------------------------------
+ 999          /**
+1000          * set Osd Transparent value
+1001          */
+1002          BYTE OsdSetTransparent(BYTE dat) //0..100
+1003          {
+1004   1        if(dat <= 100)
+1005   1          OsdTransRate = dat;
+1006   1      
+1007   1        return OsdTransRate;
+1008   1      }
+1009          //-----------------------------------------------------------------------------
+1010          /**
+1011          * save Osd Transparent value to EEPROM
+1012          */
+1013          BYTE OsdChangeTransparent(void)
+1014          {
+1015   1        //BYTE val;
+1016   1        //val = OsdGetTransparent();
+1017   1        EE_Write(EEP_OSD_TRANSPARENCY, OsdTransRate);
+1018   1        return OsdTransRate;
+1019   1      }
+1020          
+1021          BYTE BackLightRate; //0..100
+1022          //-----------------------------------------------------------------------------
+1023          /**
+1024          * get BackLight Rate
+1025          */
+1026          BYTE BackLightGetRate(void) //0..100
+1027          {
+1028   1        return BackLightRate;
+1029   1      }
+1030          //-----------------------------------------------------------------------------
+1031          /**
+1032          * convert BackLight Rate to HW value(0..127)
+1033          */
+1034          BYTE BackLightGet(void)
+1035          {
+1036   1        WORD val;
+1037   1      
+1038   1        val = BackLightRate;   //0..100
+1039   1        val *= 127;
+1040   1        val += 50;
+1041   1        val /= 100;
+1042   1      
+1043   1        return (BYTE)val; //0..127
+1044   1      }
+1045          //-----------------------------------------------------------------------------
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 18  
+
+1046          /**
+1047          * set BackLight Rate
+1048          */
+1049          BYTE BackLightSetRate(BYTE dat) //0..100
+1050          {
+1051   1        BYTE val;
+1052   1        if(dat <= 100)
+1053   1          BackLightRate = dat;
+1054   1      
+1055   1        val = BackLightGet();
+1056   1        //only for test
+1057   1        WriteTW88(REG0E5, (ReadTW88(REG0E5) & 0x80) | val);
+1058   1      
+1059   1        return BackLightRate;
+1060   1      }
+1061          
+1062          #ifdef SUPPORT_UART1
+              //-----------------------------------------------------------------------------
+              /**
+              * increase BackLight value
+              */
+              BYTE BackLightUp(void)
+              {
+                BYTE reg;
+              
+                reg = ReadTW88(REG0E5);
+                if((reg & 0x7F) < 0x7F) {
+                  reg++;
+                  WriteTW88(REG0E5, reg);
+                }
+                return (reg & 0x7F);
+              }
+              //-----------------------------------------------------------------------------
+              /**
+              * decrease BackLight value
+              */
+              BYTE BackLightDown(void)
+              {
+                BYTE reg;
+              
+                reg = ReadTW88(REG0E5);
+                if((reg & 0x7F) != 0) {
+                  reg--;
+                  WriteTW88(REG0E5, reg);
+                }
+                return (reg & 0x7F);
+              }
+              #endif
+1094          
+1095          //-----------------------------------------------------------------------------
+1096          /**
+1097          * save BackLight Rate value to EEPROM
+1098          */
+1099          BYTE BackLightChangeRate(void)
+1100          {
+1101   1        EE_Write(EEP_BACKLIGHT, BackLightRate);
+1102   1        return BackLightRate;
+1103   1      }
+1104          #if 0
+              BYTE GetBackLight(void)
+              {...}
+              BYTE SetBackLight(BYTE value)
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 19  
+
+              {...}
+              BYTE ChangeBackLight(BYTE value)
+              {...}
+              #endif
+1112          
+1113          #ifdef SUPPORT_GAMMA
+              //-----------------------------------------------------------------------------
+              //// RGB Gamma Text File 
+              
+              CODE BYTE GammaRed[]={
+              0x00,0x01,0x03,0x04,0x06,0x07,0x09,0x0A,0x0C,0x0D,0x0F,0x11,0x12,0x14,0x15,0x16,
+              0x18,0x19,0x1B,0x1D,0x1E,0x1F,0x21,0x22,0x24,0x25,0x27,0x28,0x2A,0x2B,0x2C,0x2E,
+              0x2F,0x31,0x32,0x34,0x35,0x36,0x38,0x39,0x3B,0x3C,0x3D,0x3F,0x40,0x42,0x43,0x45,
+              0x46,0x48,0x49,0x4A,0x4B,0x4D,0x4E,0x50,0x51,0x52,0x54,0x55,0x57,0x58,0x59,0x5B,
+              0x5C,0x5D,0x5F,0x60,0x61,0x63,0x64,0x65,0x66,0x68,0x69,0x6A,0x6C,0x6D,0x6E,0x70,
+              0x71,0x72,0x73,0x75,0x76,0x77,0x78,0x7A,0x7B,0x7C,0x7D,0x7F,0x80,0x81,0x82,0x84,
+              0x85,0x87,0x88,0x89,0x8A,0x8B,0x8D,0x8E,0x8F,0x90,0x91,0x93,0x94,0x95,0x96,0x97,
+              0x98,0x9A,0x9B,0x9C,0x9D,0x9E,0x9F,0xA0,0xA2,0xA3,0xA4,0xA5,0xA6,0xA7,0xA8,0xA9,
+              0xAB,0xAC,0xAD,0xAE,0xAF,0xB0,0xB1,0xB2,0xB3,0xB4,0xB5,0xB6,0xB7,0xB8,0xB9,0xBA,
+              0xBB,0xBC,0xBD,0xBE,0xBF,0xC0,0xC1,0xC2,0xC3,0xC4,0xC5,0xC6,0xC7,0xC8,0xC9,0xCA,
+              0xCB,0xCC,0xCD,0xCE,0xCF,0xD0,0xD1,0xD1,0xD2,0xD3,0xD4,0xD5,0xD6,0xD7,0xD8,0xD8,
+              0xD9,0xDA,0xDB,0xDC,0xDD,0xDD,0xDE,0xDF,0xE0,0xE0,0xE1,0xE2,0xE3,0xE3,0xE4,0xE5,
+              0xE6,0xE6,0xE7,0xE8,0xE8,0xE9,0xEA,0xEA,0xEB,0xEC,0xEC,0xED,0xEE,0xEE,0xEF,0xEF,
+              0xF0,0xF1,0xF1,0xF2,0xF2,0xF3,0xF3,0xF4,0xF4,0xF5,0xF5,0xF6,0xF6,0xF7,0xF7,0xF8,
+              0xF8,0xF8,0xF9,0xF9,0xFA,0xFA,0xFA,0xFB,0xFB,0xFB,0xFC,0xFC,0xFC,0xFC,0xFD,0xFD,
+              0xFD,0xFD,0xFE,0xFE,0xFE,0xFE,0xFE,0xFE,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+              };
+              
+              CODE BYTE GammaBlue[]={
+              0x00,0x01,0x03,0x04,0x06,0x07,0x09,0x0A,0x0C,0x0D,0x0F,0x11,0x12,0x14,0x15,0x16,
+              0x18,0x19,0x1B,0x1D,0x1E,0x1F,0x21,0x22,0x24,0x25,0x27,0x28,0x2A,0x2B,0x2C,0x2E,
+              0x2F,0x31,0x32,0x34,0x35,0x36,0x38,0x39,0x3B,0x3C,0x3D,0x3F,0x40,0x42,0x43,0x45,
+              0x46,0x48,0x49,0x4A,0x4B,0x4D,0x4E,0x50,0x51,0x52,0x54,0x55,0x57,0x58,0x59,0x5B,
+              0x5C,0x5D,0x5F,0x60,0x61,0x63,0x64,0x65,0x66,0x68,0x69,0x6A,0x6C,0x6D,0x6E,0x70,
+              0x71,0x72,0x73,0x75,0x76,0x77,0x78,0x7A,0x7B,0x7C,0x7D,0x7F,0x80,0x81,0x82,0x84,
+              0x85,0x87,0x88,0x89,0x8A,0x8B,0x8D,0x8E,0x8F,0x90,0x91,0x93,0x94,0x95,0x96,0x97,
+              0x98,0x9A,0x9B,0x9C,0x9D,0x9E,0x9F,0xA0,0xA2,0xA3,0xA4,0xA5,0xA6,0xA7,0xA8,0xA9,
+              0xAB,0xAC,0xAD,0xAE,0xAF,0xB0,0xB1,0xB2,0xB3,0xB4,0xB5,0xB6,0xB7,0xB8,0xB9,0xBA,
+              0xBB,0xBC,0xBD,0xBE,0xBF,0xC0,0xC1,0xC2,0xC3,0xC4,0xC5,0xC6,0xC7,0xC8,0xC9,0xCA,
+              0xCB,0xCC,0xCD,0xCE,0xCF,0xD0,0xD1,0xD1,0xD2,0xD3,0xD4,0xD5,0xD6,0xD7,0xD8,0xD8,
+              0xD9,0xDA,0xDB,0xDC,0xDD,0xDD,0xDE,0xDF,0xE0,0xE0,0xE1,0xE2,0xE3,0xE3,0xE4,0xE5,
+              0xE6,0xE6,0xE7,0xE8,0xE8,0xE9,0xEA,0xEA,0xEB,0xEC,0xEC,0xED,0xEE,0xEE,0xEF,0xEF,
+              0xF0,0xF1,0xF1,0xF2,0xF2,0xF3,0xF3,0xF4,0xF4,0xF5,0xF5,0xF6,0xF6,0xF7,0xF7,0xF8,
+              0xF8,0xF8,0xF9,0xF9,0xFA,0xFA,0xFA,0xFB,0xFB,0xFB,0xFC,0xFC,0xFC,0xFC,0xFD,0xFD,
+              0xFD,0xFD,0xFE,0xFE,0xFE,0xFE,0xFE,0xFE,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+              };
+              
+              CODE BYTE GammaGreen[]={
+              0x00,0x01,0x03,0x04,0x06,0x07,0x09,0x0A,0x0C,0x0D,0x0F,0x11,0x12,0x14,0x15,0x16,
+              0x18,0x19,0x1B,0x1D,0x1E,0x1F,0x21,0x22,0x24,0x25,0x27,0x28,0x2A,0x2B,0x2C,0x2E,
+              0x2F,0x31,0x32,0x34,0x35,0x36,0x38,0x39,0x3B,0x3C,0x3D,0x3F,0x40,0x42,0x43,0x45,
+              0x46,0x48,0x49,0x4A,0x4B,0x4D,0x4E,0x50,0x51,0x52,0x54,0x55,0x57,0x58,0x59,0x5B,
+              0x5C,0x5D,0x5F,0x60,0x61,0x63,0x64,0x65,0x66,0x68,0x69,0x6A,0x6C,0x6D,0x6E,0x70,
+              0x71,0x72,0x73,0x75,0x76,0x77,0x78,0x7A,0x7B,0x7C,0x7D,0x7F,0x80,0x81,0x82,0x84,
+              0x85,0x87,0x88,0x89,0x8A,0x8B,0x8D,0x8E,0x8F,0x90,0x91,0x93,0x94,0x95,0x96,0x97,
+              0x98,0x9A,0x9B,0x9C,0x9D,0x9E,0x9F,0xA0,0xA2,0xA3,0xA4,0xA5,0xA6,0xA7,0xA8,0xA9,
+              0xAB,0xAC,0xAD,0xAE,0xAF,0xB0,0xB1,0xB2,0xB3,0xB4,0xB5,0xB6,0xB7,0xB8,0xB9,0xBA,
+              0xBB,0xBC,0xBD,0xBE,0xBF,0xC0,0xC1,0xC2,0xC3,0xC4,0xC5,0xC6,0xC7,0xC8,0xC9,0xCA,
+              0xCB,0xCC,0xCD,0xCE,0xCF,0xD0,0xD1,0xD1,0xD2,0xD3,0xD4,0xD5,0xD6,0xD7,0xD8,0xD8,
+              0xD9,0xDA,0xDB,0xDC,0xDD,0xDD,0xDE,0xDF,0xE0,0xE0,0xE1,0xE2,0xE3,0xE3,0xE4,0xE5,
+              0xE6,0xE6,0xE7,0xE8,0xE8,0xE9,0xEA,0xEA,0xEB,0xEC,0xEC,0xED,0xEE,0xEE,0xEF,0xEF,
+              0xF0,0xF1,0xF1,0xF2,0xF2,0xF3,0xF3,0xF4,0xF4,0xF5,0xF5,0xF6,0xF6,0xF7,0xF7,0xF8,
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 20  
+
+              0xF8,0xF8,0xF9,0xF9,0xFA,0xFA,0xFA,0xFB,0xFB,0xFB,0xFC,0xFC,0xFC,0xFC,0xFD,0xFD,
+              0xFD,0xFD,0xFE,0xFE,0xFE,0xFE,0xFE,0xFE,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+              };
+              void DownLoadGamma(void)
+              {
+                BYTE i;
+                
+                WriteTW88(REG2E0, 0xe0|1 );     //RED 
+                WriteTW88(REG2E1, 0x00);      //Start Address
+                for(i=0; i <= 255; i++)
+                  WriteTW88(REG2E2, GammaRed[i]); 
+                  
+                WriteTW88(REG2E0, 0xe0|2 );     //Blue 
+                WriteTW88(REG2E1, 0x00);      // Start Address
+                for(i=0; i <= 255; i++)
+                  WriteTW88(REG2E2, GammaGreen[i]);  
+              
+                WriteTW88(REG2E0, 0xe0|3 );     //Blue
+                WriteTW88(REG2E1, 0x00);      //Start Address
+                for(i=0; i <= 255; i++)
+                  WriteTW88(REG2E2, GammaBlue[i]);  
+              }
+              #endif
+1193          
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 21  
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com0071 (BEGIN)
+0000         L?0114:
+0000 F582              MOV     DPL,A
+0002 E500        E     MOV     A,regTW88
+0004 3402              ADDC    A,#02H
+0006 F583              MOV     DPH,A
+0008 759300      E     MOV     DPX,#?C?XDATASEG
+000B 7480              MOV     A,#080H
+000D F0                MOVX    @DPTR,A
+000E 759300      E     MOV     DPX,#?C?XDATASEG
+0011 E500        E     MOV     A,regTW88+01H
+0013 2487              ADD     A,#087H
+0015 F582              MOV     DPL,A
+0017 E500        E     MOV     A,regTW88
+0019 3402              ADDC    A,#02H
+001B F583              MOV     DPH,A
+001D 759300      E     MOV     DPX,#?C?XDATASEG
+0020 7480              MOV     A,#080H
+0022 F0                MOVX    @DPTR,A
+0023 759300      E     MOV     DPX,#?C?XDATASEG
+0026 E500        E     MOV     A,regTW88+01H
+0028 2488              ADD     A,#088H
+002A F582              MOV     DPL,A
+002C E500        E     MOV     A,regTW88
+002E 3402              ADDC    A,#02H
+0030 F583              MOV     DPH,A
+0032 759300      E     MOV     DPX,#?C?XDATASEG
+0035 7480              MOV     A,#080H
+0037 F0                MOVX    @DPTR,A
+0038 759300      E     MOV     DPX,#?C?XDATASEG
+003B E500        E     MOV     A,regTW88+01H
+003D 2489              ADD     A,#089H
+003F         L?0115:
+003F F582              MOV     DPL,A
+0041 E500        E     MOV     A,regTW88
+0043 3402              ADDC    A,#02H
+0045 F583              MOV     DPH,A
+0047 759300      E     MOV     DPX,#?C?XDATASEG
+004A 22                RET     
+004B         L?0116:
+004B         L?0117:
+004B 7DFF              MOV     R5,#0FFH
+004D         L?0118:
+004D 7E00              MOV     R6,#00H
+004F 7C00              MOV     R4,#00H
+0051         L?0119:
+0051 110000      E     ACALL   ?C?IMUL
+0054 7432              MOV     A,#032H
+0056 7D64              MOV     R5,#064H
+0058         L?0120:
+0058 2F                ADD     A,R7
+0059 FF                MOV     R7,A
+005A E4                CLR     A
+005B 3E                ADDC    A,R6
+005C FE                MOV     R6,A
+005D 010000      E     AJMP    ?C?UIDIV
+0060         L?0121:
+0060         L?0122:
+0060 E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 22  
+
+0061 FF                MOV     R7,A
+0062 7E00              MOV     R6,#00H
+0064 7C00              MOV     R4,#00H
+0066 7D64              MOV     R5,#064H
+0068 110000      E     ACALL   ?C?IMUL
+006B 7480              MOV     A,#080H
+006D 2F                ADD     A,R7
+006E FF                MOV     R7,A
+006F E4                CLR     A
+0070 3E                ADDC    A,R6
+0071 FE                MOV     R6,A
+0072 7DFF              MOV     R5,#0FFH
+0074 010000      E     AJMP    ?C?UIDIV
+0077         L?0123:
+0077 F582              MOV     DPL,A
+0079 E500        E     MOV     A,regTW88
+007B 3401              ADDC    A,#01H
+007D F583              MOV     DPH,A
+007F 759300      E     MOV     DPX,#?C?XDATASEG
+0082         L?0124:
+0082 7480              MOV     A,#080H
+0084         L?0125:
+0084 F0                MOVX    @DPTR,A
+0085 759300      E     MOV     DPX,#?C?XDATASEG
+0088 E500        E     MOV     A,regTW88+01H
+008A 22                RET     
+008B         L?0126:
+008B         L?0127:
+008B F582              MOV     DPL,A
+008D E500        E     MOV     A,regTW88
+008F 3401              ADDC    A,#01H
+0091 F583              MOV     DPH,A
+0093 759300      E     MOV     DPX,#?C?XDATASEG
+0096 22                RET     
+0097         L?0128:
+0097 90000000    E     MOV     DPTR,#Input_aRGBMode
+009B E0                MOVX    A,@DPTR
+009C 75F019            MOV     B,#019H
+009F A4                MUL     AB
+00A0 2400        E     ADD     A,#LOW TW8836_VESA_TABLE
+00A2 F9                MOV     R1,A
+00A3 7400        E     MOV     A,#HIGH TW8836_VESA_TABLE
+00A5 35F0              ADDC    A,B
+00A7 FA                MOV     R2,A
+00A8 7B00        E     MOV     R3,#MBYTE TW8836_VESA_TABLE
+00AA E9                MOV     A,R1
+00AB 2407              ADD     A,#07H
+00AD F9                MOV     R1,A
+00AE E4                CLR     A
+00AF 3A                ADDC    A,R2
+00B0 FA                MOV     R2,A
+00B1 110000      E     ACALL   ?C?ILDPTR
+00B4 C3                CLR     C
+00B5 9401              SUBB    A,#01H
+00B7 22                RET     
+00B8         L?0129:
+00B8 4F                ORL     A,R7
+00B9 FF                MOV     R7,A
+00BA         L?0130:
+00BA 759300      E     MOV     DPX,#?C?XDATASEG
+00BD E500        E     MOV     A,regTW88+01H
+00BF 2480              ADD     A,#080H
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 23  
+
+00C1 22                RET     
+00C2         L?0132:
+00C2         L?0133:
+00C2 EF                MOV     A,R7
+00C3 F0                MOVX    @DPTR,A
+00C4 FD                MOV     R5,A
+00C5         L?0134:
+00C5 90000000    E     MOV     DPTR,#Input_aRGBMode
+00C9 E0                MOVX    A,@DPTR
+00CA FF                MOV     R7,A
+00CB 22                RET     
+00CC         L?0135:
+00CC 759300      E     MOV     DPX,#?C?XDATASEG
+00CF E500        E     MOV     A,regTW88+01H
+00D1 24E5              ADD     A,#0E5H
+00D3 F582              MOV     DPL,A
+00D5 E4                CLR     A
+00D6 3500        E     ADDC    A,regTW88
+00D8 F583              MOV     DPH,A
+00DA 759300      E     MOV     DPX,#?C?XDATASEG
+00DD 22                RET     
+00DE         L?0136:
+00DE         L?0137:
+00DE 90000000    R     MOV     DPTR,#OsdTransRate
+00E2 E0                MOVX    A,@DPTR
+00E3 FF                MOV     R7,A
+00E4 22                RET     
+00E5         L?0138:
+00E5         L?0139:
+00E5 90000000    R     MOV     DPTR,#BackLightRate
+00E9 E0                MOVX    A,@DPTR
+00EA FF                MOV     R7,A
+00EB 22                RET     
+00EC         L?0140:
+00EC         L?0141:
+00EC 759300      E     MOV     DPX,#?C?XDATASEG
+00EF E500        E     MOV     A,regTW88+01H
+00F1 248B              ADD     A,#08BH
+00F3 22                RET     
+00F4         L?0142:
+00F4         L?0143:
+00F4 90000000    R     MOV     DPTR,#OsdTime
+00F8 E0                MOVX    A,@DPTR
+00F9 FF                MOV     R7,A
+00FA 22                RET     
+             ; FUNCTION Com0071 (END)
+
+             ; FUNCTION ImgAdjGetContrastY (BEGIN)
+                                           ; SOURCE LINE # 111
+                                           ; SOURCE LINE # 112
+                                           ; SOURCE LINE # 115
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 2484              ADD     A,#084H
+0007 110000      R     ACALL   L?0115
+;---- Variable 'val' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 116
+                                           ; SOURCE LINE # 117
+                                           ; SOURCE LINE # 118
+000A 110000      R     ACALL   L?0121
+                                           ; SOURCE LINE # 119
+                                           ; SOURCE LINE # 120
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 24  
+
+000D         ?C0001:
+000D 22                RET     
+             ; FUNCTION ImgAdjGetContrastY (END)
+
+             ; FUNCTION _ImgAdjSetContrastY (BEGIN)
+                                           ; SOURCE LINE # 125
+;---- Variable 'dat' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 126
+                                           ; SOURCE LINE # 127
+;---- Variable 'val' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 128
+                                           ; SOURCE LINE # 129
+                                           ; SOURCE LINE # 130
+0000 110000      R     ACALL   L?0116
+                                           ; SOURCE LINE # 131
+0003 759300      E     MOV     DPX,#?C?XDATASEG
+0006 E500        E     MOV     A,regTW88+01H
+0008 2484              ADD     A,#084H
+000A 110000      R     ACALL   L?0115
+000D EF                MOV     A,R7
+000E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 132
+000F 110000      R     ACALL   ImgAdjGetContrastY
+                                           ; SOURCE LINE # 133
+0012         ?C0002:
+0012 22                RET     
+             ; FUNCTION _ImgAdjSetContrastY (END)
+
+             ; FUNCTION ImgAdjChangeContrastY (BEGIN)
+                                           ; SOURCE LINE # 138
+                                           ; SOURCE LINE # 139
+                                           ; SOURCE LINE # 142
+0000 110000      R     ACALL   ImgAdjGetContrastY
+0003 90000000    R     MOV     DPTR,#val
+0007 EF                MOV     A,R7
+0008 F0                MOVX    @DPTR,A
+0009 FD                MOV     R5,A
+                                           ; SOURCE LINE # 143
+000A E4                CLR     A
+000B FF                MOV     R7,A
+000C 110000      E     ACALL   _SaveVideoDatatoEE
+                                           ; SOURCE LINE # 144
+000F 90000000    R     MOV     DPTR,#val
+0013 E0                MOVX    A,@DPTR
+0014 FF                MOV     R7,A
+                                           ; SOURCE LINE # 145
+0015         ?C0003:
+0015 22                RET     
+             ; FUNCTION ImgAdjChangeContrastY (END)
+
+             ; FUNCTION ImgAdjGetBrightnessY (BEGIN)
+                                           ; SOURCE LINE # 159
+                                           ; SOURCE LINE # 160
+                                           ; SOURCE LINE # 163
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 248A              ADD     A,#08AH
+0007 110000      R     ACALL   L?0115
+;---- Variable 'val' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 164
+                                           ; SOURCE LINE # 165
+                                           ; SOURCE LINE # 166
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 25  
+
+000A 110000      R     ACALL   L?0121
+                                           ; SOURCE LINE # 167
+                                           ; SOURCE LINE # 168
+000D         ?C0004:
+000D 22                RET     
+             ; FUNCTION ImgAdjGetBrightnessY (END)
+
+             ; FUNCTION _ImgAdjSetBrightnessY (BEGIN)
+                                           ; SOURCE LINE # 173
+;---- Variable 'dat' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 174
+                                           ; SOURCE LINE # 175
+;---- Variable 'val' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 176
+                                           ; SOURCE LINE # 177
+                                           ; SOURCE LINE # 178
+0000 110000      R     ACALL   L?0116
+                                           ; SOURCE LINE # 179
+0003 759300      E     MOV     DPX,#?C?XDATASEG
+0006 E500        E     MOV     A,regTW88+01H
+0008 248A              ADD     A,#08AH
+000A 110000      R     ACALL   L?0115
+000D EF                MOV     A,R7
+000E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 180
+000F 110000      R     ACALL   ImgAdjGetBrightnessY
+                                           ; SOURCE LINE # 181
+0012         ?C0005:
+0012 22                RET     
+             ; FUNCTION _ImgAdjSetBrightnessY (END)
+
+             ; FUNCTION ImgAdjChangeBrightnessY (BEGIN)
+                                           ; SOURCE LINE # 186
+                                           ; SOURCE LINE # 187
+                                           ; SOURCE LINE # 190
+0000 110000      R     ACALL   ImgAdjGetBrightnessY
+0003 90000000    R     MOV     DPTR,#val
+0007 EF                MOV     A,R7
+0008 F0                MOVX    @DPTR,A
+0009 FD                MOV     R5,A
+                                           ; SOURCE LINE # 191
+000A 7F01              MOV     R7,#01H
+000C 110000      E     ACALL   _SaveVideoDatatoEE
+                                           ; SOURCE LINE # 192
+000F 90000000    R     MOV     DPTR,#val
+0013 E0                MOVX    A,@DPTR
+0014 FF                MOV     R7,A
+                                           ; SOURCE LINE # 193
+0015         ?C0006:
+0015 22                RET     
+             ; FUNCTION ImgAdjChangeBrightnessY (END)
+
+             ; FUNCTION ImgAdjGetSaturation (BEGIN)
+                                           ; SOURCE LINE # 217
+                                           ; SOURCE LINE # 218
+                                           ; SOURCE LINE # 221
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 2485              ADD     A,#085H
+0007 110000      R     ACALL   L?0115
+;---- Variable 'val' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 222
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 26  
+
+                                           ; SOURCE LINE # 223
+                                           ; SOURCE LINE # 224
+000A 110000      R     ACALL   L?0122
+                                           ; SOURCE LINE # 225
+                                           ; SOURCE LINE # 226
+000D         ?C0007:
+000D 22                RET     
+             ; FUNCTION ImgAdjGetSaturation (END)
+
+             ; FUNCTION _ImgAdjSetSaturation (BEGIN)
+                                           ; SOURCE LINE # 231
+;---- Variable 'dat' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 232
+                                           ; SOURCE LINE # 233
+;---- Variable 'val' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 234
+                                           ; SOURCE LINE # 235
+                                           ; SOURCE LINE # 236
+0000 110000      R     ACALL   L?0117
+                                           ; SOURCE LINE # 237
+0003 AD07              MOV     R5,AR7
+0005 759300      E     MOV     DPX,#?C?XDATASEG
+0008 E500        E     MOV     A,regTW88+01H
+000A 2485              ADD     A,#085H
+000C 110000      R     ACALL   L?0115
+000F ED                MOV     A,R5
+                                           ; SOURCE LINE # 238
+0010 110000      R     ACALL   L?0125
+0013 2486              ADD     A,#086H
+0015 110000      R     ACALL   L?0115
+0018 ED                MOV     A,R5
+0019 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 239
+001A 110000      R     ACALL   ImgAdjGetSaturation
+                                           ; SOURCE LINE # 240
+001D         ?C0008:
+001D 22                RET     
+             ; FUNCTION _ImgAdjSetSaturation (END)
+
+             ; FUNCTION ImgAdjChangeSaturation (BEGIN)
+                                           ; SOURCE LINE # 245
+                                           ; SOURCE LINE # 246
+                                           ; SOURCE LINE # 249
+0000 110000      R     ACALL   ImgAdjGetSaturation
+0003 90000000    R     MOV     DPTR,#val
+0007 EF                MOV     A,R7
+0008 F0                MOVX    @DPTR,A
+0009 FD                MOV     R5,A
+                                           ; SOURCE LINE # 250
+000A 7F02              MOV     R7,#02H
+000C 110000      E     ACALL   _SaveVideoDatatoEE
+                                           ; SOURCE LINE # 251
+000F 90000000    R     MOV     DPTR,#val
+0013 E0                MOVX    A,@DPTR
+0014 FF                MOV     R7,A
+                                           ; SOURCE LINE # 252
+0015         ?C0009:
+0015 22                RET     
+             ; FUNCTION ImgAdjChangeSaturation (END)
+
+             ; FUNCTION ImgAdjGetHUE (BEGIN)
+                                           ; SOURCE LINE # 279
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 27  
+
+                                           ; SOURCE LINE # 280
+                                           ; SOURCE LINE # 284
+0000 110000      R     ACALL   L?0130
+0003 110000      R     ACALL   L?0115
+0006 E0                MOVX    A,@DPTR
+;---- Variable 'reg' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 285
+0007 543F              ANL     A,#03FH
+0009 FF                MOV     R7,A
+                                           ; SOURCE LINE # 286
+000A 7E00              MOV     R6,#00H
+;---- Variable 'val' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 288
+000C 6420              XRL     A,#020H
+000E 7004              JNZ     ?C0010
+0010 7F1F              MOV     R7,#01FH
+0012 801A              SJMP    ?C0011
+0014         ?C0010:
+                                           ; SOURCE LINE # 289
+0014 D3                SETB    C
+0015 EF                MOV     A,R7
+0016 9420              SUBB    A,#020H
+0018 EE                MOV     A,R6
+0019 9400              SUBB    A,#00H
+001B 400A              JC      ?C0012
+001D 74DF              MOV     A,#0DFH
+001F 2F                ADD     A,R7
+0020 FF                MOV     R7,A
+0021 74FF              MOV     A,#0FFH
+0023 3E                ADDC    A,R6
+0024 FE                MOV     R6,A
+0025 8007              SJMP    ?C0011
+0027         ?C0012:
+                                           ; SOURCE LINE # 290
+0027 EF                MOV     A,R7
+0028 2420              ADD     A,#020H
+002A FF                MOV     R7,A
+002B E4                CLR     A
+002C 3E                ADDC    A,R6
+002D FE                MOV     R6,A
+002E         ?C0011:
+                                           ; SOURCE LINE # 292
+002E 7C00              MOV     R4,#00H
+0030 7D64              MOV     R5,#064H
+0032 110000      E     ACALL   ?C?IMUL
+                                           ; SOURCE LINE # 293
+0035 7420              MOV     A,#020H
+                                           ; SOURCE LINE # 294
+0037 7D3F              MOV     R5,#03FH
+0039 110000      R     ACALL   L?0120
+                                           ; SOURCE LINE # 296
+                                           ; SOURCE LINE # 297
+003C         ?C0014:
+003C 22                RET     
+             ; FUNCTION ImgAdjGetHUE (END)
+
+             ; FUNCTION _ImgAdjSetHUE (BEGIN)
+                                           ; SOURCE LINE # 304
+;---- Variable 'dat' assigned to Register 'R3' ----
+0000 AB07              MOV     R3,AR7
+                                           ; SOURCE LINE # 305
+                                           ; SOURCE LINE # 310
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 28  
+
+0002 110000      R     ACALL   L?0130
+0005 110000      R     ACALL   L?0115
+0008 E0                MOVX    A,@DPTR
+0009 54C0              ANL     A,#0C0H
+000B 90000000    R     MOV     DPTR,#reserved
+000F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 312
+;---- Variable 'value' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 313
+0010 7D3F              MOV     R5,#03FH
+                                           ; SOURCE LINE # 314
+                                           ; SOURCE LINE # 315
+0012 110000      R     ACALL   L?0118
+                                           ; SOURCE LINE # 316
+;---- Variable 'reg_sw' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 318
+0015 EF                MOV     A,R7
+0016 B41F06            CJNE    A,#01FH,?C0015
+0019 A3                INC     DPTR
+001A 7420              MOV     A,#020H
+001C F0                MOVX    @DPTR,A
+001D 8012              SJMP    ?C0016
+001F         ?C0015:
+                                           ; SOURCE LINE # 319
+001F EF                MOV     A,R7
+0020 C3                CLR     C
+0021 9420              SUBB    A,#020H
+0023 EF                MOV     A,R7
+0024 4004              JC      ?C0017
+0026 9420              SUBB    A,#020H
+0028 8002              SJMP    ?C0112
+002A         ?C0017:
+                                           ; SOURCE LINE # 320
+002A 2421              ADD     A,#021H
+002C         ?C0112:
+002C 90000000    R     MOV     DPTR,#reg_hw
+0030 F0                MOVX    @DPTR,A
+0031         ?C0016:
+                                           ; SOURCE LINE # 323
+0031 90000000    R     MOV     DPTR,#reg_hw
+0035 E0                MOVX    A,@DPTR
+0036 FF                MOV     R7,A
+0037 90000000    R     MOV     DPTR,#reserved
+003B E0                MOVX    A,@DPTR
+003C 110000      R     ACALL   L?0129
+003F 110000      R     ACALL   L?0115
+0042 EF                MOV     A,R7
+0043 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 325
+0044 110000      R     ACALL   ImgAdjGetHUE
+                                           ; SOURCE LINE # 326
+0047         ?C0019:
+0047 22                RET     
+             ; FUNCTION _ImgAdjSetHUE (END)
+
+             ; FUNCTION _ImgAdjVaryHUE (BEGIN)
+                                           ; SOURCE LINE # 333
+;---- Variable 'reg_sw' assigned to Register 'R3' ----
+;---- Variable 'dat' assigned to Register 'R2' ----
+0000 AA07              MOV     R2,AR7
+                                           ; SOURCE LINE # 334
+                                           ; SOURCE LINE # 339
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 29  
+
+0002 110000      R     ACALL   ImgAdjGetHUE
+;---- Variable 'old' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 341
+0005 110000      R     ACALL   L?0130
+0008 110000      R     ACALL   L?0115
+000B E0                MOVX    A,@DPTR
+000C FE                MOV     R6,A
+;---- Variable 'reg_hw' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 342
+000D 54C0              ANL     A,#0C0H
+;---- Variable 'reserved' assigned to Register 'R1' ----
+000F F9                MOV     R1,A
+                                           ; SOURCE LINE # 343
+0010 EE                MOV     A,R6
+0011 543F              ANL     A,#03FH
+0013 FE                MOV     R6,A
+                                           ; SOURCE LINE # 345
+0014 B42004            CJNE    A,#020H,?C0020
+0017 7B1F              MOV     R3,#01FH
+0019 800F              SJMP    ?C0021
+001B         ?C0020:
+                                           ; SOURCE LINE # 346
+001B EE                MOV     A,R6
+001C D3                SETB    C
+001D 9420              SUBB    A,#020H
+001F EE                MOV     A,R6
+0020 4005              JC      ?C0022
+0022 9421              SUBB    A,#021H
+0024 FB                MOV     R3,A
+0025 8003              SJMP    ?C0021
+0027         ?C0022:
+                                           ; SOURCE LINE # 347
+0027 2420              ADD     A,#020H
+0029 FB                MOV     R3,A
+002A         ?C0021:
+                                           ; SOURCE LINE # 349
+002A EF                MOV     A,R7
+002B C3                CLR     C
+002C 9A                SUBB    A,R2
+002D 5009              JNC     ?C0024
+                                           ; SOURCE LINE # 350
+002F EB                MOV     A,R3
+0030 C3                CLR     C
+0031 943F              SUBB    A,#03FH
+0033 500C              JNC     ?C0026
+                                           ; SOURCE LINE # 351
+0035 0B                INC     R3
+                                           ; SOURCE LINE # 352
+0036 8009              SJMP    ?C0026
+0038         ?C0024:
+                                           ; SOURCE LINE # 353
+0038 EF                MOV     A,R7
+0039 D3                SETB    C
+003A 9A                SUBB    A,R2
+003B 4004              JC      ?C0026
+                                           ; SOURCE LINE # 354
+003D EB                MOV     A,R3
+003E 6001              JZ      ?C0026
+                                           ; SOURCE LINE # 355
+0040 1B                DEC     R3
+                                           ; SOURCE LINE # 356
+0041         ?C0026:
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 30  
+
+                                           ; SOURCE LINE # 358
+0041 EB                MOV     A,R3
+0042 B41F04            CJNE    A,#01FH,?C0029
+0045 7E20              MOV     R6,#020H
+0047 800F              SJMP    ?C0030
+0049         ?C0029:
+                                           ; SOURCE LINE # 359
+0049 EB                MOV     A,R3
+004A C3                CLR     C
+004B 9420              SUBB    A,#020H
+004D EB                MOV     A,R3
+004E 4005              JC      ?C0031
+0050 9420              SUBB    A,#020H
+0052 FE                MOV     R6,A
+0053 8003              SJMP    ?C0030
+0055         ?C0031:
+                                           ; SOURCE LINE # 360
+0055 2421              ADD     A,#021H
+0057 FE                MOV     R6,A
+0058         ?C0030:
+                                           ; SOURCE LINE # 363
+0058 AF06              MOV     R7,AR6
+005A E9                MOV     A,R1
+005B 110000      R     ACALL   L?0129
+005E 110000      R     ACALL   L?0115
+0061 EF                MOV     A,R7
+0062 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 365
+0063 110000      R     ACALL   ImgAdjGetHUE
+                                           ; SOURCE LINE # 366
+0066         ?C0033:
+0066 22                RET     
+             ; FUNCTION _ImgAdjVaryHUE (END)
+
+             ; FUNCTION ImgAdjChangeHUE (BEGIN)
+                                           ; SOURCE LINE # 373
+                                           ; SOURCE LINE # 374
+                                           ; SOURCE LINE # 377
+0000 110000      R     ACALL   ImgAdjGetHUE
+0003 90000000    R     MOV     DPTR,#val
+0007 EF                MOV     A,R7
+0008 F0                MOVX    @DPTR,A
+0009 FD                MOV     R5,A
+                                           ; SOURCE LINE # 378
+000A 7F03              MOV     R7,#03H
+000C 110000      E     ACALL   _SaveVideoDatatoEE
+                                           ; SOURCE LINE # 379
+000F 90000000    R     MOV     DPTR,#val
+0013 E0                MOVX    A,@DPTR
+0014 FF                MOV     R7,A
+                                           ; SOURCE LINE # 380
+0015         ?C0034:
+0015 22                RET     
+             ; FUNCTION ImgAdjChangeHUE (END)
+
+             ; FUNCTION ImgAdjGetSharpness (BEGIN)
+                                           ; SOURCE LINE # 394
+                                           ; SOURCE LINE # 395
+                                           ; SOURCE LINE # 398
+0000 110000      R     ACALL   L?0140
+0003 110000      R     ACALL   L?0115
+0006 E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 31  
+
+0007 540F              ANL     A,#0FH
+0009 90000000    R     MOV     DPTR,#Sharpness
+000D 93                MOVC    A,@A+DPTR
+000E FF                MOV     R7,A
+;---- Variable 'val' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 399
+                                           ; SOURCE LINE # 400
+000F         ?C0035:
+000F 22                RET     
+             ; FUNCTION ImgAdjGetSharpness (END)
+
+             ; FUNCTION _ImgAdjSetSharpness (BEGIN)
+                                           ; SOURCE LINE # 405
+;---- Variable 'val' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 406
+                                           ; SOURCE LINE # 409
+;---- Variable 'i' assigned to Register 'R6' ----
+0000 E4                CLR     A
+0001 FE                MOV     R6,A
+0002         ?C0036:
+                                           ; SOURCE LINE # 410
+0002 EE                MOV     A,R6
+0003 90000000    R     MOV     DPTR,#Sharpness
+0007 93                MOVC    A,@A+DPTR
+0008 F9                MOV     R1,A
+0009 2401              ADD     A,#01H
+000B FD                MOV     R5,A
+000C E4                CLR     A
+000D 33                RLC     A
+000E FC                MOV     R4,A
+000F EF                MOV     A,R7
+0010 B50509            CJNE    A,AR5,?C0039
+0013 E4                CLR     A
+0014 B50405            CJNE    A,AR4,?C0039
+                                           ; SOURCE LINE # 411
+0017 EE                MOV     A,R6
+0018 04                INC     A
+0019 FF                MOV     R7,A
+                                           ; SOURCE LINE # 412
+001A 801B              SJMP    ?C0037
+                                           ; SOURCE LINE # 413
+001C         ?C0039:
+                                           ; SOURCE LINE # 414
+001C EF                MOV     A,R7
+001D 2401              ADD     A,#01H
+001F FD                MOV     R5,A
+0020 E4                CLR     A
+0021 33                RLC     A
+0022 FC                MOV     R4,A
+0023 E9                MOV     A,R1
+0024 B5050B            CJNE    A,AR5,?C0038
+0027 E4                CLR     A
+0028 B50407            CJNE    A,AR4,?C0038
+                                           ; SOURCE LINE # 415
+002B C3                CLR     C
+002C EE                MOV     A,R6
+002D 9401              SUBB    A,#01H
+002F FF                MOV     R7,A
+                                           ; SOURCE LINE # 416
+0030 8005              SJMP    ?C0037
+                                           ; SOURCE LINE # 417
+                                           ; SOURCE LINE # 418
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 32  
+
+0032         ?C0038:
+0032 0E                INC     R6
+0033 EE                MOV     A,R6
+0034 B410CB            CJNE    A,#010H,?C0036
+0037         ?C0037:
+                                           ; SOURCE LINE # 420
+0037 EE                MOV     A,R6
+0038 6410              XRL     A,#010H
+003A 7032              JNZ     ?C0041
+                                           ; SOURCE LINE # 421
+003C EF                MOV     A,R7
+003D D3                SETB    C
+003E 9464              SUBB    A,#064H
+0040 4002              JC      ?C0042
+                                           ; SOURCE LINE # 422
+0042 7F64              MOV     R7,#064H
+0044         ?C0042:
+                                           ; SOURCE LINE # 423
+0044 E4                CLR     A
+0045 FE                MOV     R6,A
+0046         ?C0043:
+                                           ; SOURCE LINE # 424
+0046 EE                MOV     A,R6
+0047 90000000    R     MOV     DPTR,#Sharpness
+004B 93                MOVC    A,@A+DPTR
+004C B50704            CJNE    A,AR7,?C0046
+                                           ; SOURCE LINE # 425
+004F AF06              MOV     R7,AR6
+                                           ; SOURCE LINE # 426
+0051 8016              SJMP    ?C0044
+                                           ; SOURCE LINE # 427
+0053         ?C0046:
+                                           ; SOURCE LINE # 428
+0053 EE                MOV     A,R6
+0054 90000000    R     MOV     DPTR,#Sharpness+01H
+0058 93                MOVC    A,@A+DPTR
+0059 FD                MOV     R5,A
+005A EF                MOV     A,R7
+005B C3                CLR     C
+005C 9D                SUBB    A,R5
+005D 5005              JNC     ?C0045
+                                           ; SOURCE LINE # 429
+005F EE                MOV     A,R6
+0060 04                INC     A
+0061 FF                MOV     R7,A
+                                           ; SOURCE LINE # 430
+0062 8005              SJMP    ?C0044
+                                           ; SOURCE LINE # 431
+                                           ; SOURCE LINE # 432
+0064         ?C0045:
+0064 0E                INC     R6
+0065 EE                MOV     A,R6
+0066 B410DD            CJNE    A,#010H,?C0043
+0069         ?C0044:
+                                           ; SOURCE LINE # 433
+0069 EE                MOV     A,R6
+006A B41001            CJNE    A,#010H,?C0041
+                                           ; SOURCE LINE # 434
+006D FF                MOV     R7,A
+                                           ; SOURCE LINE # 435
+006E         ?C0041:
+                                           ; SOURCE LINE # 437
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 33  
+
+006E 110000      R     ACALL   L?0140
+0071 110000      R     ACALL   L?0115
+0074 E0                MOVX    A,@DPTR
+0075 54F0              ANL     A,#0F0H
+0077 2F                ADD     A,R7
+0078 FE                MOV     R6,A
+0079 110000      R     ACALL   L?0141
+007C 110000      R     ACALL   L?0115
+007F EE                MOV     A,R6
+0080 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 438
+0081 EF                MOV     A,R7
+0082 90000000    R     MOV     DPTR,#Sharpness
+0086 93                MOVC    A,@A+DPTR
+0087 FF                MOV     R7,A
+                                           ; SOURCE LINE # 439
+                                           ; SOURCE LINE # 440
+0088         ?C0049:
+0088 22                RET     
+             ; FUNCTION _ImgAdjSetSharpness (END)
+
+             ; FUNCTION ImgAdjChangeSharpness (BEGIN)
+                                           ; SOURCE LINE # 445
+                                           ; SOURCE LINE # 446
+                                           ; SOURCE LINE # 449
+0000 110000      R     ACALL   ImgAdjGetSharpness
+0003 90000000    R     MOV     DPTR,#val
+0007 EF                MOV     A,R7
+0008 F0                MOVX    @DPTR,A
+0009 FD                MOV     R5,A
+                                           ; SOURCE LINE # 450
+000A 7F04              MOV     R7,#04H
+000C 110000      E     ACALL   _SaveVideoDatatoEE
+                                           ; SOURCE LINE # 451
+000F 90000000    R     MOV     DPTR,#val
+0013 E0                MOVX    A,@DPTR
+0014 FF                MOV     R7,A
+                                           ; SOURCE LINE # 452
+0015         ?C0050:
+0015 22                RET     
+             ; FUNCTION ImgAdjChangeSharpness (END)
+
+             ; FUNCTION _ImgAdjGetContrastRGB (BEGIN)
+                                           ; SOURCE LINE # 473
+;---- Variable 'index' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 474
+                                           ; SOURCE LINE # 477
+0000 EF                MOV     A,R7
+0001 2481              ADD     A,#081H
+0003 FF                MOV     R7,A
+0004 E4                CLR     A
+0005 3402              ADDC    A,#02H
+0007 FE                MOV     R6,A
+0008 759300      E     MOV     DPX,#?C?XDATASEG
+000B E500        E     MOV     A,regTW88+01H
+000D 2F                ADD     A,R7
+000E F582              MOV     DPL,A
+0010 E500        E     MOV     A,regTW88
+0012 3E                ADDC    A,R6
+0013 F583              MOV     DPH,A
+0015 759300      E     MOV     DPX,#?C?XDATASEG
+;---- Variable 'val' assigned to Register 'R6/R7' ----
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 34  
+
+                                           ; SOURCE LINE # 478
+                                           ; SOURCE LINE # 479
+                                           ; SOURCE LINE # 480
+0018 110000      R     ACALL   L?0122
+                                           ; SOURCE LINE # 481
+                                           ; SOURCE LINE # 482
+001B         ?C0051:
+001B 22                RET     
+             ; FUNCTION _ImgAdjGetContrastRGB (END)
+
+             ; FUNCTION _ImgAdjSetContrastRGB (BEGIN)
+                                           ; SOURCE LINE # 487
+0000 90000000    R     MOV     DPTR,#index
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+;---- Variable 'dat' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 488
+                                           ; SOURCE LINE # 489
+0006 AF05              MOV     R7,AR5
+;---- Variable 'val' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 490
+                                           ; SOURCE LINE # 491
+                                           ; SOURCE LINE # 492
+0008 110000      R     ACALL   L?0117
+                                           ; SOURCE LINE # 493
+000B AE07              MOV     R6,AR7
+000D E0                MOVX    A,@DPTR
+000E FF                MOV     R7,A
+000F 2481              ADD     A,#081H
+0011 FD                MOV     R5,A
+0012 E4                CLR     A
+0013 3402              ADDC    A,#02H
+0015 FC                MOV     R4,A
+0016 759300      E     MOV     DPX,#?C?XDATASEG
+0019 E500        E     MOV     A,regTW88+01H
+001B 2D                ADD     A,R5
+001C F582              MOV     DPL,A
+001E E500        E     MOV     A,regTW88
+0020 3C                ADDC    A,R4
+0021 F583              MOV     DPH,A
+0023 759300      E     MOV     DPX,#?C?XDATASEG
+0026 EE                MOV     A,R6
+0027 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 494
+0028 110000      R     ACALL   _ImgAdjGetContrastRGB
+                                           ; SOURCE LINE # 495
+002B         ?C0052:
+002B 22                RET     
+             ; FUNCTION _ImgAdjSetContrastRGB (END)
+
+             ; FUNCTION _ImgAdjChangeContrastRGB (BEGIN)
+                                           ; SOURCE LINE # 500
+;---- Variable 'index' assigned to Register 'R3' ----
+0000 AB07              MOV     R3,AR7
+                                           ; SOURCE LINE # 501
+                                           ; SOURCE LINE # 504
+0002 110000      R     ACALL   _ImgAdjGetContrastRGB
+0005 90000000    R     MOV     DPTR,#val
+0009 EF                MOV     A,R7
+000A F0                MOVX    @DPTR,A
+000B FD                MOV     R5,A
+                                           ; SOURCE LINE # 505
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 35  
+
+000C EB                MOV     A,R3
+000D 2402              ADD     A,#02H
+000F FF                MOV     R7,A
+0010 110000      E     ACALL   _SaveVideoDatatoEE
+                                           ; SOURCE LINE # 506
+0013 90000000    R     MOV     DPTR,#val
+0017 E0                MOVX    A,@DPTR
+0018 FF                MOV     R7,A
+                                           ; SOURCE LINE # 507
+0019         ?C0053:
+0019 22                RET     
+             ; FUNCTION _ImgAdjChangeContrastRGB (END)
+
+             ; FUNCTION GetRGBPosH (BEGIN)
+                                           ; SOURCE LINE # 592
+                                           ; SOURCE LINE # 593
+                                           ; SOURCE LINE # 594
+0000 110000      E     ACALL   InputGetHStart
+0003 90000000    E     MOV     DPTR,#RGB_hStart
+0007 A3                INC     DPTR
+0008 E0                MOVX    A,@DPTR
+0009 2432              ADD     A,#032H
+000B C3                CLR     C
+000C 9F                SUBB    A,R7
+000D FF                MOV     R7,A
+                                           ; SOURCE LINE # 595
+000E         ?C0054:
+000E 22                RET     
+             ; FUNCTION GetRGBPosH (END)
+
+             ; FUNCTION _SetRGBPosH (BEGIN)
+                                           ; SOURCE LINE # 600
+;---- Variable 'val' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 601
+                                           ; SOURCE LINE # 603
+0000 90000000    E     MOV     DPTR,#RGB_hStart+01H
+0004 E0                MOVX    A,@DPTR
+0005 2432              ADD     A,#032H
+0007 FD                MOV     R5,A
+0008 90000000    E     MOV     DPTR,#RGB_hStart
+000C E0                MOVX    A,@DPTR
+000D 3400              ADDC    A,#00H
+000F FC                MOV     R4,A
+0010 EF                MOV     A,R7
+0011 FB                MOV     R3,A
+0012 7A00              MOV     R2,#00H
+0014 D3                SETB    C
+0015 ED                MOV     A,R5
+0016 9B                SUBB    A,R3
+0017 EC                MOV     A,R4
+0018 9A                SUBB    A,R2
+0019 400F              JC      ?C0055
+                                           ; SOURCE LINE # 604
+001B ED                MOV     A,R5
+001C 9B                SUBB    A,R3
+001D FE                MOV     R6,A
+001E EC                MOV     A,R4
+001F 9A                SUBB    A,R2
+0020 90000000    R     MOV     DPTR,#hw_value
+0024 F0                MOVX    @DPTR,A
+0025 A3                INC     DPTR
+0026 CE                XCH     A,R6
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 36  
+
+0027 F0                MOVX    @DPTR,A
+0028 8009              SJMP    ?C0056
+002A         ?C0055:
+                                           ; SOURCE LINE # 606
+002A 90000000    R     MOV     DPTR,#hw_value
+002E E4                CLR     A
+002F F0                MOVX    @DPTR,A
+0030 A3                INC     DPTR
+0031 04                INC     A
+0032 F0                MOVX    @DPTR,A
+0033         ?C0056:
+                                           ; SOURCE LINE # 608
+0033 90000000    R     MOV     DPTR,#hw_value
+0037 E0                MOVX    A,@DPTR
+0038 FE                MOV     R6,A
+0039 A3                INC     DPTR
+003A E0                MOVX    A,@DPTR
+003B FF                MOV     R7,A
+003C 110000      E     ACALL   _InputSetHStart
+                                           ; SOURCE LINE # 609
+003F 110000      R     ACALL   GetRGBPosH
+                                           ; SOURCE LINE # 610
+0042         ?C0057:
+0042 22                RET     
+             ; FUNCTION _SetRGBPosH (END)
+
+             ; FUNCTION ChangeRGBPosH (BEGIN)
+                                           ; SOURCE LINE # 615
+                                           ; SOURCE LINE # 616
+                                           ; SOURCE LINE # 619
+0000 110000      R     ACALL   GetRGBPosH
+0003 90000000    R     MOV     DPTR,#value
+                                           ; SOURCE LINE # 620
+0007 110000      R     ACALL   L?0132
+000A 110000      E     ACALL   _SaveHActiveEE
+                                           ; SOURCE LINE # 621
+000D 90000000    R     MOV     DPTR,#value
+0011 E0                MOVX    A,@DPTR
+0012 FF                MOV     R7,A
+                                           ; SOURCE LINE # 622
+0013         ?C0058:
+0013 22                RET     
+             ; FUNCTION ChangeRGBPosH (END)
+
+             ; FUNCTION GetRGBPosV (BEGIN)
+                                           ; SOURCE LINE # 639
+                                           ; SOURCE LINE # 640
+                                           ; SOURCE LINE # 641
+0000 110000      E     ACALL   ScalerReadVDEReg
+0003 EF                MOV     A,R7
+0004 2432              ADD     A,#032H
+0006 FF                MOV     R7,A
+0007 90000000    E     MOV     DPTR,#RGB_vDE
+000B E0                MOVX    A,@DPTR
+000C FE                MOV     R6,A
+000D C3                CLR     C
+000E EF                MOV     A,R7
+000F 9E                SUBB    A,R6
+0010 FF                MOV     R7,A
+                                           ; SOURCE LINE # 642
+0011         ?C0059:
+0011 22                RET     
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 37  
+
+             ; FUNCTION GetRGBPosV (END)
+
+             ; FUNCTION _SetRGBPosV (BEGIN)
+                                           ; SOURCE LINE # 647
+;---- Variable 'val' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 648
+                                           ; SOURCE LINE # 650
+0000 EF                MOV     A,R7
+0001 FD                MOV     R5,A
+0002 90000000    E     MOV     DPTR,#RGB_vDE
+0006 E0                MOVX    A,@DPTR
+0007 2D                ADD     A,R5
+0008 FD                MOV     R5,A
+0009 E4                CLR     A
+000A 33                RLC     A
+000B FC                MOV     R4,A
+000C D3                SETB    C
+000D ED                MOV     A,R5
+000E 9432              SUBB    A,#032H
+0010 EC                MOV     A,R4
+0011 6480              XRL     A,#080H
+0013 9480              SUBB    A,#080H
+0015 4011              JC      ?C0060
+                                           ; SOURCE LINE # 651
+0017 ED                MOV     A,R5
+0018 9432              SUBB    A,#032H
+001A FE                MOV     R6,A
+001B EC                MOV     A,R4
+001C 9400              SUBB    A,#00H
+001E 90000000    R     MOV     DPTR,#hw_value
+0022 F0                MOVX    @DPTR,A
+0023 A3                INC     DPTR
+0024 CE                XCH     A,R6
+0025 F0                MOVX    @DPTR,A
+0026 8009              SJMP    ?C0061
+0028         ?C0060:
+                                           ; SOURCE LINE # 653
+0028 90000000    R     MOV     DPTR,#hw_value
+002C E4                CLR     A
+002D F0                MOVX    @DPTR,A
+002E A3                INC     DPTR
+002F 04                INC     A
+0030 F0                MOVX    @DPTR,A
+0031         ?C0061:
+                                           ; SOURCE LINE # 654
+0031 90000000    R     MOV     DPTR,#hw_value
+0035 E0                MOVX    A,@DPTR
+0036 FE                MOV     R6,A
+0037 A3                INC     DPTR
+0038 E0                MOVX    A,@DPTR
+0039 FF                MOV     R7,A
+003A 110000      E     ACALL   _ScalerWriteVDEReg
+                                           ; SOURCE LINE # 655
+003D 110000      R     ACALL   GetRGBPosV
+                                           ; SOURCE LINE # 656
+0040         ?C0062:
+0040 22                RET     
+             ; FUNCTION _SetRGBPosV (END)
+
+             ; FUNCTION ChangeRGBPosV (BEGIN)
+                                           ; SOURCE LINE # 661
+                                           ; SOURCE LINE # 662
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 38  
+
+                                           ; SOURCE LINE # 665
+0000 110000      R     ACALL   GetRGBPosV
+0003 90000000    R     MOV     DPTR,#value
+                                           ; SOURCE LINE # 666
+0007 110000      R     ACALL   L?0132
+000A 110000      E     ACALL   _SaveVBackPorchEE
+                                           ; SOURCE LINE # 667
+000D 90000000    R     MOV     DPTR,#value
+0011 E0                MOVX    A,@DPTR
+0012 FF                MOV     R7,A
+                                           ; SOURCE LINE # 668
+0013         ?C0063:
+0013 22                RET     
+             ; FUNCTION ChangeRGBPosV (END)
+
+             ; FUNCTION GetaRGB_Phase (BEGIN)
+                                           ; SOURCE LINE # 685
+                                           ; SOURCE LINE # 686
+                                           ; SOURCE LINE # 689
+0000 110000      E     ACALL   aRGB_GetPhase
+0003 7E00              MOV     R6,#00H
+;---- Variable 'value' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 690
+0005 7C00              MOV     R4,#00H
+0007 7D64              MOV     R5,#064H
+0009 110000      E     ACALL   ?C?IMUL
+                                           ; SOURCE LINE # 691
+000C 740F              MOV     A,#0FH
+000E 2F                ADD     A,R7
+000F FF                MOV     R7,A
+0010 E4                CLR     A
+0011 3E                ADDC    A,R6
+0012 FE                MOV     R6,A
+                                           ; SOURCE LINE # 692
+0013 7D1F              MOV     R5,#01FH
+0015 110000      E     ACALL   ?C?UIDIV
+                                           ; SOURCE LINE # 693
+                                           ; SOURCE LINE # 694
+0018         ?C0064:
+0018 22                RET     
+             ; FUNCTION GetaRGB_Phase (END)
+
+             ; FUNCTION _VaryaRGB_Phase (BEGIN)
+                                           ; SOURCE LINE # 703
+0000 90000000    R     MOV     DPTR,#val
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 704
+                                           ; SOURCE LINE # 707
+0006 110000      R     ACALL   GetaRGB_Phase
+0009 90000000    R     MOV     DPTR,#old
+000D EF                MOV     A,R7
+000E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 708
+000F 110000      E     ACALL   aRGB_GetPhase
+;---- Variable 'value' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 710
+0012 90000000    R     MOV     DPTR,#val
+0016 E0                MOVX    A,@DPTR
+0017 FE                MOV     R6,A
+0018 A3                INC     DPTR
+0019 E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 39  
+
+001A FD                MOV     R5,A
+001B C3                CLR     C
+001C 9E                SUBB    A,R6
+001D 5009              JNC     ?C0065
+                                           ; SOURCE LINE # 711
+001F EF                MOV     A,R7
+0020 C3                CLR     C
+0021 941F              SUBB    A,#01FH
+0023 500F              JNC     ?C0067
+                                           ; SOURCE LINE # 712
+0025 0F                INC     R7
+                                           ; SOURCE LINE # 713
+0026 800C              SJMP    ?C0067
+0028         ?C0065:
+                                           ; SOURCE LINE # 714
+0028 ED                MOV     A,R5
+0029 D3                SETB    C
+002A 9E                SUBB    A,R6
+002B 4007              JC      ?C0067
+                                           ; SOURCE LINE # 715
+002D EF                MOV     A,R7
+002E D3                SETB    C
+002F 9400              SUBB    A,#00H
+0031 4001              JC      ?C0067
+                                           ; SOURCE LINE # 716
+0033 1F                DEC     R7
+                                           ; SOURCE LINE # 717
+0034         ?C0067:
+                                           ; SOURCE LINE # 718
+0034 7D01              MOV     R5,#01H
+0036 110000      E     ACALL   _aRGB_SetPhase
+                                           ; SOURCE LINE # 720
+0039 110000      R     ACALL   GetaRGB_Phase
+                                           ; SOURCE LINE # 721
+003C         ?C0070:
+003C 22                RET     
+             ; FUNCTION _VaryaRGB_Phase (END)
+
+             ; FUNCTION _SetaRGB_Phase (BEGIN)
+                                           ; SOURCE LINE # 728
+;---- Variable 'val' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 729
+                                           ; SOURCE LINE # 731
+0000 EF                MOV     A,R7
+0001 75F01F            MOV     B,#01FH
+0004 A4                MUL     AB
+0005 AEF0              MOV     R6,B
+;---- Variable 'value' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 732
+0007 2432              ADD     A,#032H
+0009 FF                MOV     R7,A
+000A E4                CLR     A
+000B 3E                ADDC    A,R6
+000C FE                MOV     R6,A
+                                           ; SOURCE LINE # 733
+000D 7C00              MOV     R4,#00H
+000F 7D64              MOV     R5,#064H
+0011 110000      E     ACALL   ?C?UIDIV
+                                           ; SOURCE LINE # 736
+0014 7D01              MOV     R5,#01H
+0016 110000      E     ACALL   _aRGB_SetPhase
+                                           ; SOURCE LINE # 737
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 40  
+
+0019 110000      R     ACALL   GetaRGB_Phase
+                                           ; SOURCE LINE # 738
+001C         ?C0071:
+001C 22                RET     
+             ; FUNCTION _SetaRGB_Phase (END)
+
+             ; FUNCTION ChangeaRGB_Phase (BEGIN)
+                                           ; SOURCE LINE # 750
+                                           ; SOURCE LINE # 751
+                                           ; SOURCE LINE # 754
+0000 110000      E     ACALL   aRGB_GetPhase
+;---- Variable 'val' assigned to Register 'R6' ----
+0003 AE07              MOV     R6,AR7
+                                           ; SOURCE LINE # 756
+0005 110000      R     ACALL   L?0134
+0008 AD06              MOV     R5,AR6
+000A 110000      E     ACALL   _SavePhaseEE
+                                           ; SOURCE LINE # 758
+000D 110000      R     ACALL   GetaRGB_Phase
+                                           ; SOURCE LINE # 759
+                                           ; SOURCE LINE # 760
+0010         ?C0072:
+0010 22                RET     
+             ; FUNCTION ChangeaRGB_Phase (END)
+
+             ; FUNCTION GetaRGB_Clock (BEGIN)
+                                           ; SOURCE LINE # 779
+                                           ; SOURCE LINE # 780
+                                           ; SOURCE LINE # 785
+0000 90000000    E     MOV     DPTR,#Input_aRGBMode
+0004 E0                MOVX    A,@DPTR
+0005 7003              JNZ     ?C0073
+                                           ; SOURCE LINE # 786
+0007 7F32              MOV     R7,#032H
+0009 22                RET     
+000A         ?C0073:
+                                           ; SOURCE LINE # 790
+000A 110000      E     ACALL   aRGB_LLPLLGetDivider
+000D 90000000    R     MOV     DPTR,#wTemp
+0011 EE                MOV     A,R6
+0012 F0                MOVX    @DPTR,A
+0013 A3                INC     DPTR
+0014 EF                MOV     A,R7
+0015 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 791
+;---- Variable 'pVesaTimeTable' assigned to Register 'R1/R2/R3' ----
+                                           ; SOURCE LINE # 792
+0016 110000      R     ACALL   L?0128
+0019 FE                MOV     R6,A
+001A E5F0              MOV     A,B
+001C 9400              SUBB    A,#00H
+001E 90000000    R     MOV     DPTR,#PcBaseClock
+0022 F0                MOVX    @DPTR,A
+0023 A3                INC     DPTR
+0024 CE                XCH     A,R6
+0025 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 793
+0026 110000      E     ACALL   aRGB_LLPLLGetDivider
+0029 EF                MOV     A,R7
+002A 2432              ADD     A,#032H
+002C FF                MOV     R7,A
+002D 90000000    R     MOV     DPTR,#PcBaseClock
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 41  
+
+0031 A3                INC     DPTR
+0032 E0                MOVX    A,@DPTR
+0033 FE                MOV     R6,A
+0034 C3                CLR     C
+0035 EF                MOV     A,R7
+0036 9E                SUBB    A,R6
+0037 FF                MOV     R7,A
+;---- Variable 'bTemp' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 795
+                                           ; SOURCE LINE # 796
+0038         ?C0074:
+0038 22                RET     
+             ; FUNCTION GetaRGB_Clock (END)
+
+             ; FUNCTION _SetaRGB_Clock (BEGIN)
+                                           ; SOURCE LINE # 803
+0000 90000000    R     MOV     DPTR,#val
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 804
+                                           ; SOURCE LINE # 807
+0006 90000000    E     MOV     DPTR,#Input_aRGBMode
+000A E0                MOVX    A,@DPTR
+000B 7003              JNZ     ?C0075
+                                           ; SOURCE LINE # 808
+000D 7F32              MOV     R7,#032H
+000F 22                RET     
+0010         ?C0075:
+                                           ; SOURCE LINE # 810
+;---- Variable 'pVesaTimeTable' assigned to Register 'R1/R2/R3' ----
+                                           ; SOURCE LINE # 811
+0010 110000      R     ACALL   L?0128
+0013 FF                MOV     R7,A
+0014 E5F0              MOV     A,B
+0016 9400              SUBB    A,#00H
+0018 FE                MOV     R6,A
+0019 90000000    R     MOV     DPTR,#PcBaseClock
+001D F0                MOVX    @DPTR,A
+001E A3                INC     DPTR
+001F EF                MOV     A,R7
+0020 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 812
+0021 90000000    R     MOV     DPTR,#val
+0025 E0                MOVX    A,@DPTR
+0026 2F                ADD     A,R7
+0027 FF                MOV     R7,A
+0028 E4                CLR     A
+0029 3E                ADDC    A,R6
+002A CF                XCH     A,R7
+002B C3                CLR     C
+002C 9432              SUBB    A,#032H
+002E CF                XCH     A,R7
+002F 9400              SUBB    A,#00H
+0031 FE                MOV     R6,A
+;---- Variable 'clock' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 813
+0032 E4                CLR     A
+0033 FD                MOV     R5,A
+0034 110000      E     ACALL   _aRGB_LLPLLSetDivider
+                                           ; SOURCE LINE # 815
+0037 110000      R     ACALL   GetaRGB_Clock
+                                           ; SOURCE LINE # 816
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 42  
+
+003A         ?C0076:
+003A 22                RET     
+             ; FUNCTION _SetaRGB_Clock (END)
+
+             ; FUNCTION ChangeaRGB_Clock (BEGIN)
+                                           ; SOURCE LINE # 821
+                                           ; SOURCE LINE # 822
+                                           ; SOURCE LINE # 824
+0000 90000000    E     MOV     DPTR,#Input_aRGBMode
+0004 E0                MOVX    A,@DPTR
+0005 7003              JNZ     ?C0077
+                                           ; SOURCE LINE # 825
+0007 7F32              MOV     R7,#032H
+0009 22                RET     
+000A         ?C0077:
+                                           ; SOURCE LINE # 827
+000A 110000      R     ACALL   GetaRGB_Clock
+000D 90000000    R     MOV     DPTR,#u_val
+                                           ; SOURCE LINE # 828
+0011 110000      R     ACALL   L?0133
+0014 110000      E     ACALL   _SavePixelClkEE
+                                           ; SOURCE LINE # 829
+0017 90000000    R     MOV     DPTR,#u_val
+001B E0                MOVX    A,@DPTR
+001C FF                MOV     R7,A
+                                           ; SOURCE LINE # 830
+001D         ?C0078:
+001D 22                RET     
+             ; FUNCTION ChangeaRGB_Clock (END)
+
+             ; FUNCTION _SetImage (BEGIN)
+                                           ; SOURCE LINE # 847
+;---- Variable 'type' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 848
+                                           ; SOURCE LINE # 849
+0000 EF                MOV     A,R7
+0001 6004              JZ      ?C0080
+0003 6401              XRL     A,#01H
+0005 703D              JNZ     ?C0079
+0007         ?C0080:
+                                           ; SOURCE LINE # 852
+0007 759300      E     MOV     DPX,#?C?XDATASEG
+000A E500        E     MOV     A,regTW88+01H
+000C 2410              ADD     A,#010H
+000E 110000      R     ACALL   L?0126
+0011 E4                CLR     A
+                                           ; SOURCE LINE # 853
+0012 110000      R     ACALL   L?0125
+0015 2411              ADD     A,#011H
+0017 110000      R     ACALL   L?0126
+001A 745C              MOV     A,#05CH
+                                           ; SOURCE LINE # 854
+001C 110000      R     ACALL   L?0125
+001F 2412              ADD     A,#012H
+0021 110000      R     ACALL   L?0127
+0024 7411              MOV     A,#011H
+                                           ; SOURCE LINE # 855
+0026 110000      R     ACALL   L?0125
+0029 2413              ADD     A,#013H
+                                           ; SOURCE LINE # 856
+002B 110000      R     ACALL   L?0123
+002E 2414              ADD     A,#014H
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 43  
+
+                                           ; SOURCE LINE # 857
+0030 110000      R     ACALL   L?0123
+0033 2415              ADD     A,#015H
+0035 110000      R     ACALL   L?0127
+0038 E4                CLR     A
+                                           ; SOURCE LINE # 858
+0039 110000      R     ACALL   L?0125
+003C 2417              ADD     A,#017H
+003E 110000      R     ACALL   L?0127
+0041 7430              MOV     A,#030H
+0043 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 859
+0044         ?C0079:
+                                           ; SOURCE LINE # 861
+0044 EF                MOV     A,R7
+0045 6403              XRL     A,#03H
+0047 600F              JZ      ?C0082
+0049 EF                MOV     A,R7
+004A 6404              XRL     A,#04H
+004C 600A              JZ      ?C0082
+004E EF                MOV     A,R7
+004F 6405              XRL     A,#05H
+0051 6005              JZ      ?C0082
+0053 EF                MOV     A,R7
+0054 6408              XRL     A,#08H
+0056 7052              JNZ     ?C0081
+0058         ?C0082:
+                                           ; SOURCE LINE # 863
+                                           ; SOURCE LINE # 864
+                                           ; SOURCE LINE # 866
+0058 110000      R     ACALL   L?0131
+005B AD07              MOV     R5,AR7
+005D E4                CLR     A
+005E FF                MOV     R7,A
+005F 110000      R     ACALL   _ImgAdjSetContrastRGB
+                                           ; SOURCE LINE # 867
+0062 7F03              MOV     R7,#03H
+0064 110000      E     ACALL   _GetVideoDatafromEE
+0067 AD07              MOV     R5,AR7
+0069 7F01              MOV     R7,#01H
+006B 110000      R     ACALL   _ImgAdjSetContrastRGB
+                                           ; SOURCE LINE # 868
+006E 7F04              MOV     R7,#04H
+0070 110000      E     ACALL   _GetVideoDatafromEE
+0073 AD07              MOV     R5,AR7
+0075 7F02              MOV     R7,#02H
+0077 110000      R     ACALL   _ImgAdjSetContrastRGB
+                                           ; SOURCE LINE # 870
+007A 110000      R     ACALL   L?0130
+007D 110000      R     ACALL   L?0115
+0080 E0                MOVX    A,@DPTR
+0081 54C0              ANL     A,#0C0H
+0083 4420              ORL     A,#020H
+0085 FF                MOV     R7,A
+0086 110000      R     ACALL   L?0130
+0089 110000      R     ACALL   L?0115
+008C EF                MOV     A,R7
+                                           ; SOURCE LINE # 871
+008D 110000      R     ACALL   L?0125
+0090 2485              ADD     A,#085H
+0092 110000      R     ACALL   L?0115
+                                           ; SOURCE LINE # 872
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 44  
+
+0095 110000      R     ACALL   L?0124
+0098 2486              ADD     A,#086H
+                                           ; SOURCE LINE # 873
+                                           ; SOURCE LINE # 874
+                                           ; SOURCE LINE # 875
+009A 110000      R     ACALL   L?0114
+                                           ; SOURCE LINE # 876
+009D 110000      R     ACALL   L?0124
+00A0 248B              ADD     A,#08BH
+00A2 110000      R     ACALL   L?0115
+00A5 E0                MOVX    A,@DPTR
+00A6 54F0              ANL     A,#0F0H
+00A8 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 877
+00A9 22                RET     
+00AA         ?C0081:
+                                           ; SOURCE LINE # 878
+                                           ; SOURCE LINE # 880
+                                           ; SOURCE LINE # 881
+                                           ; SOURCE LINE # 882
+00AA 110000      R     ACALL   L?0131
+00AD 110000      R     ACALL   _ImgAdjSetSaturation
+                                           ; SOURCE LINE # 883
+00B0 7F03              MOV     R7,#03H
+00B2 110000      E     ACALL   _GetVideoDatafromEE
+00B5 110000      R     ACALL   _ImgAdjSetHUE
+                                           ; SOURCE LINE # 884
+00B8 7F04              MOV     R7,#04H
+00BA 110000      E     ACALL   _GetVideoDatafromEE
+00BD 110000      R     ACALL   _ImgAdjSetSharpness
+                                           ; SOURCE LINE # 886
+00C0 759300      E     MOV     DPX,#?C?XDATASEG
+00C3 E500        E     MOV     A,regTW88+01H
+00C5 2481              ADD     A,#081H
+00C7 110000      R     ACALL   L?0115
+                                           ; SOURCE LINE # 887
+00CA 110000      R     ACALL   L?0124
+00CD 2482              ADD     A,#082H
+00CF 110000      R     ACALL   L?0115
+                                           ; SOURCE LINE # 888
+00D2 110000      R     ACALL   L?0124
+00D5 2483              ADD     A,#083H
+                                           ; SOURCE LINE # 889
+                                           ; SOURCE LINE # 890
+                                           ; SOURCE LINE # 891
+00D7 110000      R     ACALL   L?0114
+00DA 7480              MOV     A,#080H
+00DC F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 892
+                                           ; SOURCE LINE # 893
+00DD         ?C0084:
+00DD 22                RET     
+00DE         L?0131:
+00DE E4                CLR     A
+00DF FF                MOV     R7,A
+00E0 110000      E     ACALL   _GetVideoDatafromEE
+00E3 110000      R     ACALL   _ImgAdjSetContrastY
+00E6 7F01              MOV     R7,#01H
+00E8 110000      E     ACALL   _GetVideoDatafromEE
+00EB 110000      R     ACALL   _ImgAdjSetBrightnessY
+00EE 7F02              MOV     R7,#02H
+00F0 110000      E     ACALL   _GetVideoDatafromEE
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 45  
+
+00F3 22                RET     
+             ; FUNCTION _SetImage (END)
+
+             ; FUNCTION _SetAspectHW (BEGIN)
+                                           ; SOURCE LINE # 898
+;---- Variable 'mode' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 899
+                                           ; SOURCE LINE # 910
+0000 90000000    R     MOV     DPTR,#bTemp
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 912
+0006 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 913
+0008         ?C0085:
+0008 22                RET     
+             ; FUNCTION _SetAspectHW (END)
+
+             ; FUNCTION OsdGetTime (BEGIN)
+                                           ; SOURCE LINE # 921
+                                           ; SOURCE LINE # 922
+                                           ; SOURCE LINE # 924
+0000 110000      R     ACALL   L?0142
+                                           ; SOURCE LINE # 925
+0003         ?C0086:
+0003 22                RET     
+             ; FUNCTION OsdGetTime (END)
+
+             ; FUNCTION _OsdVaryTime (BEGIN)
+                                           ; SOURCE LINE # 930
+;---- Variable 'dat' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 931
+                                           ; SOURCE LINE # 932
+0000 90000000    R     MOV     DPTR,#OsdTime
+0004 E0                MOVX    A,@DPTR
+0005 FE                MOV     R6,A
+0006 EF                MOV     A,R7
+0007 D3                SETB    C
+0008 9E                SUBB    A,R6
+0009 4019              JC      ?C0087
+                                           ; SOURCE LINE # 933
+000B EF                MOV     A,R7
+000C 940A              SUBB    A,#0AH
+000E 5005              JNC     ?C0088
+                                           ; SOURCE LINE # 934
+0010 740A              MOV     A,#0AH
+0012 F0                MOVX    @DPTR,A
+0013 8029              SJMP    ?C0091
+0015         ?C0088:
+                                           ; SOURCE LINE # 935
+0015 EF                MOV     A,R7
+0016 C3                CLR     C
+0017 9464              SUBB    A,#064H
+0019 5023              JNC     ?C0091
+                                           ; SOURCE LINE # 936
+001B 90000000    R     MOV     DPTR,#OsdTime
+001F E0                MOVX    A,@DPTR
+0020 04                INC     A
+0021 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 937
+0022 801A              SJMP    ?C0091
+0024         ?C0087:
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 46  
+
+                                           ; SOURCE LINE # 938
+0024 EF                MOV     A,R7
+0025 C3                CLR     C
+0026 9E                SUBB    A,R6
+0027 5015              JNC     ?C0091
+                                           ; SOURCE LINE # 939
+0029 EF                MOV     A,R7
+002A C3                CLR     C
+002B 940A              SUBB    A,#0AH
+002D 5008              JNC     ?C0093
+                                           ; SOURCE LINE # 940
+002F E4                CLR     A
+0030 90000000    R     MOV     DPTR,#OsdTime
+0034 F0                MOVX    @DPTR,A
+0035 8007              SJMP    ?C0091
+0037         ?C0093:
+                                           ; SOURCE LINE # 942
+0037 90000000    R     MOV     DPTR,#OsdTime
+003B E0                MOVX    A,@DPTR
+003C 14                DEC     A
+003D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 943
+003E         ?C0091:
+                                           ; SOURCE LINE # 946
+003E 110000      R     ACALL   L?0142
+                                           ; SOURCE LINE # 947
+0041         ?C0095:
+0041 22                RET     
+             ; FUNCTION _OsdVaryTime (END)
+
+             ; FUNCTION _OsdSetTime (BEGIN)
+                                           ; SOURCE LINE # 952
+;---- Variable 'dat' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 953
+                                           ; SOURCE LINE # 954
+0000 EF                MOV     A,R7
+0001 D3                SETB    C
+0002 9464              SUBB    A,#064H
+0004 5006              JNC     ?C0096
+                                           ; SOURCE LINE # 955
+0006 90000000    R     MOV     DPTR,#OsdTime
+000A EF                MOV     A,R7
+000B F0                MOVX    @DPTR,A
+000C         ?C0096:
+                                           ; SOURCE LINE # 956
+000C 90000000    R     MOV     DPTR,#OsdTime
+0010 E0                MOVX    A,@DPTR
+0011 C3                CLR     C
+0012 9405              SUBB    A,#05H
+0014 5002              JNC     ?C0097
+                                           ; SOURCE LINE # 957
+0016 E4                CLR     A
+0017 F0                MOVX    @DPTR,A
+0018         ?C0097:
+                                           ; SOURCE LINE # 960
+0018 110000      R     ACALL   L?0143
+                                           ; SOURCE LINE # 961
+001B         ?C0098:
+001B 22                RET     
+             ; FUNCTION _OsdSetTime (END)
+
+             ; FUNCTION OsdChangeTime (BEGIN)
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 47  
+
+                                           ; SOURCE LINE # 966
+                                           ; SOURCE LINE # 967
+                                           ; SOURCE LINE # 969
+0000 110000      R     ACALL   OsdGetTime
+0003 90000000    R     MOV     DPTR,#val
+0007 EF                MOV     A,R7
+0008 F0                MOVX    @DPTR,A
+0009 FD                MOV     R5,A
+                                           ; SOURCE LINE # 970
+000A 7FA2              MOV     R7,#0A2H
+000C 7E00              MOV     R6,#00H
+000E 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 971
+0011 90000000    R     MOV     DPTR,#val
+0015 E0                MOVX    A,@DPTR
+0016 FF                MOV     R7,A
+                                           ; SOURCE LINE # 972
+0017         ?C0099:
+0017 22                RET     
+             ; FUNCTION OsdChangeTime (END)
+
+             ; FUNCTION OsdGetTransparent (BEGIN)
+                                           ; SOURCE LINE # 979
+                                           ; SOURCE LINE # 980
+                                           ; SOURCE LINE # 981
+0000 110000      R     ACALL   L?0136
+                                           ; SOURCE LINE # 982
+0003         ?C0100:
+0003 22                RET     
+             ; FUNCTION OsdGetTransparent (END)
+
+             ; FUNCTION OsdGetTrans (BEGIN)
+                                           ; SOURCE LINE # 987
+                                           ; SOURCE LINE # 988
+                                           ; SOURCE LINE # 991
+0000 110000      R     ACALL   L?0136
+0003 7E00              MOV     R6,#00H
+;---- Variable 'val' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 992
+0005 7C00              MOV     R4,#00H
+0007 7D7F              MOV     R5,#07FH
+                                           ; SOURCE LINE # 993
+                                           ; SOURCE LINE # 994
+0009 110000      R     ACALL   L?0119
+                                           ; SOURCE LINE # 996
+                                           ; SOURCE LINE # 997
+000C         ?C0101:
+000C 22                RET     
+             ; FUNCTION OsdGetTrans (END)
+
+             ; FUNCTION _OsdSetTransparent (BEGIN)
+                                           ; SOURCE LINE # 1002
+;---- Variable 'dat' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 1003
+                                           ; SOURCE LINE # 1004
+0000 EF                MOV     A,R7
+0001 D3                SETB    C
+0002 9464              SUBB    A,#064H
+0004 5006              JNC     ?C0102
+                                           ; SOURCE LINE # 1005
+0006 90000000    R     MOV     DPTR,#OsdTransRate
+000A EF                MOV     A,R7
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 48  
+
+000B F0                MOVX    @DPTR,A
+000C         ?C0102:
+                                           ; SOURCE LINE # 1007
+000C 110000      R     ACALL   L?0137
+                                           ; SOURCE LINE # 1008
+000F         ?C0103:
+000F 22                RET     
+             ; FUNCTION _OsdSetTransparent (END)
+
+             ; FUNCTION OsdChangeTransparent (BEGIN)
+                                           ; SOURCE LINE # 1013
+                                           ; SOURCE LINE # 1014
+                                           ; SOURCE LINE # 1017
+0000 90000000    R     MOV     DPTR,#OsdTransRate
+0004 E0                MOVX    A,@DPTR
+0005 FD                MOV     R5,A
+0006 7FA1              MOV     R7,#0A1H
+0008 7E00              MOV     R6,#00H
+000A 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 1018
+000D 110000      R     ACALL   L?0137
+                                           ; SOURCE LINE # 1019
+0010         ?C0104:
+0010 22                RET     
+             ; FUNCTION OsdChangeTransparent (END)
+
+             ; FUNCTION BackLightGetRate (BEGIN)
+                                           ; SOURCE LINE # 1026
+                                           ; SOURCE LINE # 1027
+                                           ; SOURCE LINE # 1028
+0000 110000      R     ACALL   L?0138
+                                           ; SOURCE LINE # 1029
+0003         ?C0105:
+0003 22                RET     
+             ; FUNCTION BackLightGetRate (END)
+
+             ; FUNCTION BackLightGet (BEGIN)
+                                           ; SOURCE LINE # 1034
+                                           ; SOURCE LINE # 1035
+                                           ; SOURCE LINE # 1038
+0000 110000      R     ACALL   L?0138
+0003 7E00              MOV     R6,#00H
+;---- Variable 'val' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 1039
+0005 7C00              MOV     R4,#00H
+0007 7D7F              MOV     R5,#07FH
+                                           ; SOURCE LINE # 1040
+                                           ; SOURCE LINE # 1041
+0009 110000      R     ACALL   L?0119
+                                           ; SOURCE LINE # 1043
+                                           ; SOURCE LINE # 1044
+000C         ?C0106:
+000C 22                RET     
+             ; FUNCTION BackLightGet (END)
+
+             ; FUNCTION _BackLightSetRate (BEGIN)
+                                           ; SOURCE LINE # 1049
+;---- Variable 'dat' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 1050
+                                           ; SOURCE LINE # 1052
+0000 EF                MOV     A,R7
+0001 D3                SETB    C
+C51 COMPILER V9.56.0.0   IMAGECTRL                                                         07/18/2018 10:44:36 PAGE 49  
+
+0002 9464              SUBB    A,#064H
+0004 5006              JNC     ?C0107
+                                           ; SOURCE LINE # 1053
+0006 90000000    R     MOV     DPTR,#BackLightRate
+000A EF                MOV     A,R7
+000B F0                MOVX    @DPTR,A
+000C         ?C0107:
+                                           ; SOURCE LINE # 1055
+000C 110000      R     ACALL   BackLightGet
+;---- Variable 'val' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 1057
+000F 110000      R     ACALL   L?0135
+0012 E0                MOVX    A,@DPTR
+0013 5480              ANL     A,#080H
+0015 4F                ORL     A,R7
+0016 FF                MOV     R7,A
+0017 110000      R     ACALL   L?0135
+001A EF                MOV     A,R7
+001B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1059
+001C 110000      R     ACALL   L?0139
+                                           ; SOURCE LINE # 1060
+001F         ?C0108:
+001F 22                RET     
+             ; FUNCTION _BackLightSetRate (END)
+
+             ; FUNCTION BackLightChangeRate (BEGIN)
+                                           ; SOURCE LINE # 1099
+                                           ; SOURCE LINE # 1100
+                                           ; SOURCE LINE # 1101
+0000 90000000    R     MOV     DPTR,#BackLightRate
+0004 E0                MOVX    A,@DPTR
+0005 FD                MOV     R5,A
+0006 7FA4              MOV     R7,#0A4H
+0008 7E00              MOV     R6,#00H
+000A 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 1102
+000D 110000      R     ACALL   L?0139
+                                           ; SOURCE LINE # 1103
+0010         ?C0109:
+0010 22                RET     
+             ; FUNCTION BackLightChangeRate (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1932    ----
+   CONSTANT SIZE    =     16    ----
+   XDATA SIZE       =      9      23
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

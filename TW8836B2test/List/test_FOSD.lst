@@ -1,0 +1,3378 @@
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE TEST_FOSD
+OBJECT MODULE PLACED IN .\Output\test_FOSD.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source36\test_FOSD.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\O
+                    -utput\TW8836B_EVB11.ORC) BROWSE INCDIR(SiI-SW;SiI-SW\HAL;SiI-SW\DEBUG;SiI-SW\CEC;.\Source36\LIB) DEFINE(EVB_11,nullFn=//
+                    -) DEBUG CODE PRINT(.\List\test_FOSD.lst) TABS(2) OBJECT(.\Output\test_FOSD.obj)
+
+line level    source
+
+   1          /**
+   2           * @file
+   3           * Test_FOSD.c 
+   4           * @author Brian Kang
+   5           * @version 1.0
+   6           * @section LICENSE
+   7           *  Copyright (C) 2011~2012 Intersil Corporation
+   8           * @section DESCRIPTION
+   9           *  FontOSD Test routine
+  10          */
+  11          /*
+  12          Disclaimer: THIS INFORMATION IS PROVIDED 'AS-IS' FOR EVALUATION PURPOSES ONLY.  
+  13          INTERSIL CORPORATION AND ITS SUBSIDIARIES ('INTERSIL') DISCLAIM ALL WARRANTIES, 
+  14          INCLUDING WITHOUT LIMITATION FITNESS FOR A PARTICULAR PURPOSE AND MERCHANTABILITY.  
+  15          Intersil provides evaluation platforms to help our customers to develop products. 
+  16          However, factors beyond Intersil's control could significantly affect Intersil 
+  17          product performance. 
+  18          It remains the customers' responsibility to verify the actual system performance.
+  19          */
+  20          #include "config.h"
+  21          #include "reg.h"
+  22          #include "typedefs.h"
+  23          #include "TW8836.h"
+  24          
+  25          #include "Global.h"
+  26          
+  27          
+  28          #ifdef TEST_FOSD
+              
+              //description
+              //  test 512B OsdRam
+              //@param
+              //  fEnd: 0 - start from 0
+              //      else - use the end area
+              void TestOsdRam(BYTE fEnd)
+              {...}
+              
+              //description
+              //  if Panel is 800x480 and font is 12x16, 
+              //  the max coluum will be 66 = 800 / 12  
+              //  the max row will be 30 = 480 / 16
+              void TestDisplayRamWidth()
+              {}
+              
+              void TestSampleString()
+              { }
+              
+              
+              //description
+              //  the upper 256 char need a UP256, and Font Index on OsdRam has 9bit.
+              //void TestUpper256Char(BYTE columns, BYTE lines, BYET max, BYTE bpp2, BYTE bpp3, BYTE bpp4)
+              //{...}
+              
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 2   
+
+              
+              
+              
+              //000 - ascii
+              //
+              //128 - 2BPP
+              //
+              //256 - 3bpp
+              //
+              //384 - 4bpp
+              //
+              
+              
+              void MultiBppFontSet()
+              {}
+              
+              //description
+              //  Use diff LUT with same MultiBPP on diff FontOsdWin.
+              void MultiBppLut()
+              {}
+              
+              #endif
+  76          
+  77          //*****************************************************************************
+  78          //
+  79          //                test_FOSD.c
+  80          //
+  81          //*****************************************************************************
+  82          //
+  83          //
+  84          #include "config.h"
+  85          #include "typedefs.h"
+  86          #include "reg.h"
+  87          #include "printf.h"
+  88          #include "Util.h"
+  89          #include "I2C.h"
+  90          #include "CPU.h"
+  91          #include "TW8836.h"
+  92          #include "SOsd.h"
+  93          #include "FOsd.h"
+  94          
+  95          #include "spi.h"
+  96          #include "SpiFlashMap.h"
+  97          #include "SOsdMenu.h"
+  98          
+  99          
+ 100          
+ 101          #if 0
+              void FontOsdWinPuts2(struct menu_item_info_s *item_info, BYTE *str)
+              {...}
+              #endif
+ 105          
+ 106          struct fosd_menu_item_s temp_fosd_menu_item;
+ 107          
+ 108          //description
+ 109          //  draw 16x16 table with different foreground/background color.
+ 110          void DumpFontOsdPalette(void)
+ 111          {
+ 112   1      //  WORD OsdRamAddr;  
+ 113   1        struct fosd_menu_item_s *fosd;
+ 114   1        BYTE i,j;
+ 115   1      
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 3   
+
+ 116   1        fosd = &temp_fosd_menu_item;
+ 117   1        fosd->win = 0;
+ 118   1        //init DE
+ 119   1        FOsdSetDeValue();
+ 120   1      
+ 121   1        //disable all FontOsd/SpiOsd Windows
+ 122   1        InitFontRamByNum(FONT_NUM_DEF12X18, 0); //InitFontRam(0, &default_font,"def");
+ 123   1        //FOsdInitBpp3AlphaTable();
+ 124   1        for(i=0; i < 4; i++) {
+ 125   2          FOsdWinInit(i);
+ 126   2          FOsdWinSetOsdRamStartAddr(i, 0);
+ 127   2        }
+ 128   1      
+ 129   1        WaitVBlank(1);
+ 130   1        FOsdWinEnable(fosd->win,OFF); // disable
+ 131   1      
+ 132   1      
+ 133   1        FOsdWinScreenXY(fosd->win, 0x10,0x0D);    //sx,sy, n_char, fosd->h);
+ 134   1        FOsdWinScreenWH(fosd->win, 0x20, 0x10);   //sx,sy, n_char, fosd->h);
+ 135   1        FOsdWinZoom(fosd->win, 1, 0);         //fosd->zoom>>4, fosd->zoom & 0x0F);
+ 136   1      //  FOsdWinAlphaPixel(fosd->win, fosd->alpha_color_index,fosd->alpha_value);
+ 137   1      
+ 138   1        //--- Write Display RAM
+ 139   1        //DO NOT USE. TW8835FPGA have a BUG. it will reset the SpiOsd.
+ 140   1        //If the length of string is big(more then 8byte), we have to check HSync.
+ 141   1        //WriteTW88(REG300, 0x03 ); // bypass OSD/Font RAM
+ 142   1      
+ 143   1        //OsdRam Address
+ 144   1        //OsdRamAddr = 0;  //fosd->ram; // Addr. 00, 0x40, 0x80, 0xC0
+ 145   1        //OsdRamAddr <<= 1;       //make a word size.
+ 146   1      
+ 147   1        // set address & write the default attribute
+ 148   1        WriteTW88(REG304, 0x0c ); // Auto Inc. use under 256 char index
+ 149   1      
+ 150   1        for(i=0; i < 0x10; i++) {
+ 151   2          for(j=0; j < 0x10; j++) {
+ 152   3            FOsdRamSetAddrAttr((i*16+j) << 1, (i << 4) | j);  //Note:WORD size(BG|FG).
+ 153   3      
+ 154   3            if(i >= 10) WriteTW88(REG307, 0x41+i-10); //draw A to F
+ 155   3            else    WriteTW88(REG307, 0x30+i);  //draw 0 to 9
+ 156   3      
+ 157   3            if(j >= 10) WriteTW88(REG307, 0x41+j-10); //draw A to F
+ 158   3            else    WriteTW88(REG307, 0x30+j);  //draw 0 to 9
+ 159   3          }
+ 160   2        }
+ 161   1      
+ 162   1      
+ 163   1        //=================================
+ 164   1        WriteTW88(REG304, 0x0c );     // Display RAM Access Mode
+ 165   1      
+ 166   1        FOsdWinEnable(fosd->win,ON);  //win0 enable
+ 167   1      }
+ 168          
+ 169          //description
+ 170          //  the max font size is a 16x32.
+ 171          //  If we use 16x32x1x160, it will use whole FontRam size, 10240 Byte.
+ 172          //  110118. R350[6:0] is for char height and the value*2 is a char height.
+ 173          void Test16x32FontSet(void)
+ 174          {
+ 175   1      //  WORD OsdRamAddr;  
+ 176   1        struct fosd_menu_item_s *fosd;
+ 177   1        BYTE i,j;
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 4   
+
+ 178   1      //  BYTE value;
+ 179   1        WORD index;
+ 180   1      
+ 181   1        BYTE fgColor = 15;
+ 182   1        BYTE bgColor = 1;
+ 183   1        BYTE columns = 16;
+ 184   1        BYTE lines = 10;
+ 185   1        BYTE max = 160;
+ 186   1      
+ 187   1        fosd = &temp_fosd_menu_item;
+ 188   1        fosd->win = 0;
+ 189   1        //init DE
+ 190   1        FOsdSetDeValue();
+ 191   1      
+ 192   1        FOsdWinInit(fosd->win);
+ 193   1      
+ 194   1        WaitVBlank(1);
+ 195   1        FOsdWinEnable(fosd->win,OFF); // disable
+ 196   1      
+ 197   1      //remove BK120209
+ 198   1      //  InitFontRam(0, &test16x32xA0_A0_A0_A0,"test");
+ 199   1        //FOsdInitBpp3AlphaTable();
+ 200   1      
+ 201   1        FOsdWinSetOsdRamStartAddr(fosd->win, 0);
+ 202   1        FOsdWinAlphaPixel(fosd->win,bgColor,4);   //bgcolor 1 alpha 0
+ 203   1      
+ 204   1        FOsdWinScreenXY(fosd->win, 0,0);    //0x20, 0x10);    //max 512 = 32x16
+ 205   1        FOsdWinScreenWH(fosd->win, columns, lines);   //0x20, 0x10);    //max 512 = 32x16
+ 206   1        FOsdWinZoom(fosd->win, 1, 0);           //fosd->zoom>>4, fosd->zoom & 0x0F);
+ 207   1      
+ 208   1        //set OsdRam.
+ 209   1        WriteTW88(REG304, 0x0c ); // Auto Inc.
+ 210   1      
+ 211   1        FOsdRamSetAddrAttr(0, (bgColor << 4) | fgColor);
+ 212   1         
+ 213   1        for(i=0; i < lines; i++) {
+ 214   2          for(j=0; j < columns; j++) {
+ 215   3            index = i*columns+j;
+ 216   3      
+ 217   3            if(index >= max) break;
+ 218   3      
+ 219   3            if(index >= 256)
+ 220   3              WriteTW88(REG304, ReadTW88(REG304) | 0x20);  
+ 221   3            WriteTW88(REG307, (BYTE)index);
+ 222   3          }
+ 223   2        }
+ 224   1        
+ 225   1        WriteTW88(REG304, ReadTW88(REG304) & 0xDF);   //default: lower 256 char.    
+ 226   1        WriteTW88(REG304, ReadTW88(REG304) & 0xFE);   //OsdRam access mode
+ 227   1        
+ 228   1        FOsdWinEnable(fosd->win,ON);  //win0 enable     
+ 229   1      }
+ 230          
+ 231          //description
+ 232          //  test upper 256 char
+ 233          //  download the default font, 12x18x1x160 on address 0 and on address 0xa0 to 0x13F.
+ 234          //  and dump FontRam on 16x20 OsdRam memory
+ 235          //  it will include the 0x100~0x13F indexed font.
+ 236          void TestUpper256Char(void)
+ 237          {
+ 238   1      //  WORD OsdRamAddr;  
+ 239   1        struct fosd_menu_item_s *fosd;
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 5   
+
+ 240   1        BYTE i,j;
+ 241   1      //  BYTE value;
+ 242   1        WORD index;
+ 243   1      
+ 244   1        BYTE fgColor = 15;
+ 245   1        BYTE bgColor = 1;
+ 246   1        BYTE columns = 16;
+ 247   1        BYTE lines = 20;
+ 248   1        WORD max = 320;
+ 249   1      //  BYTE start_offset = 0xA0;
+ 250   1        BYTE start_offset = 0x00;
+ 251   1      
+ 252   1        fosd = &temp_fosd_menu_item;
+ 253   1        fosd->win = 0;
+ 254   1        //init DE
+ 255   1        FOsdSetDeValue();
+ 256   1      
+ 257   1        FOsdWinInit(fosd->win);
+ 258   1      
+ 259   1        WaitVBlank(1);
+ 260   1        FOsdWinEnable(fosd->win,OFF); // disable
+ 261   1      
+ 262   1        InitFontRamByNum(FONT_NUM_DEF12X18, 0); //InitFontRam(0, &default_font,"def");
+ 263   1          //DownloadExtFont(0xA0, default_font.loc, default_font.size, 320,320,320);  //now, we have 160+160 font
+             -s.
+ 264   1        //InitFontRam(0xA0, &default_font,"def");
+ 265   1        //FOsdInitBpp3AlphaTable();
+ 266   1        //FOsdInitBpp3AlphaTable();
+ 267   1        //FOsdWinAlphaPixel(winno,1,0);   //bgcolor 1 alpha 0
+ 268   1      #ifdef SUPPORT_UDFONT
+              FOsdDownloadUDFontBySerial();
+              #endif
+ 271   1      
+ 272   1        FOsdWinAlphaPixel(fosd->win,bgColor,4);   //bgcolor 1 alpha 0
+ 273   1      
+ 274   1        FOsdWinScreenXY(fosd->win, 0,0);    //0x20, 0x10);    //max 512 = 32x16
+ 275   1        FOsdWinScreenWH(fosd->win, columns, lines);   //0x20, 0x10);    //max 512 = 32x16
+ 276   1        FOsdWinZoom(fosd->win, 1, 0);           //fosd->zoom>>4, fosd->zoom & 0x0F);
+ 277   1      
+ 278   1        //set OsdRam.
+ 279   1        WriteTW88(REG304, 0x0c ); // Auto Inc.
+ 280   1      
+ 281   1        FOsdRamSetAddrAttr(0, (bgColor << 4) | fgColor);
+ 282   1      
+ 283   1        for(i=0; i < 0x10 /*lines */; i++) {
+ 284   2          for(j=0; j < columns; j++) {
+ 285   3            index = i*columns+j;
+ 286   3      
+ 287   3            WriteTW88(REG307, (BYTE)index);
+ 288   3          }
+ 289   2        }
+ 290   1        //RTL BUG: If auto inc from 0 to 0xFF, 0xFE and 0xFF position not working.
+ 291   1        //WaitVBlank(1);
+ 292   1        bgColor=4;  //red
+ 293   1        WriteTW88(REG304, 0x0c ); // Auto Inc.
+ 294   1        FOsdRamSetAddrAttr(0xFD, (bgColor << 4) | fgColor);
+ 295   1      
+ 296   1        //BKFYI. RTL had problem on 0xFE and 0xFF index. Now it is fixed.
+ 297   1        //     If use other index, it was OK.
+ 298   1        WriteTW88(REG307, 0xFD);
+ 299   1        WriteTW88(REG307, 0xFE);
+ 300   1        WriteTW88(REG307, 0xFF);
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 6   
+
+ 301   1      
+ 302   1        bgColor=2;  //lime
+ 303   1      
+ 304   1        //working 
+ 305   1        WriteTW88(REG304, ReadTW88(REG304) | 0x20); //set UP256 before update attr.
+ 306   1      
+ 307   1        FOsdRamSetAddrAttr(0x100, (bgColor << 4) | fgColor);
+ 308   1        for(i=0x10; i < lines; i++) {
+ 309   2          for(j=0; j < columns; j++) {
+ 310   3            index = i*columns+j + start_offset;
+ 311   3      
+ 312   3            //if(index >= (max+start_offset)) break;
+ 313   3            if(index >= max)
+ 314   3              break;
+ 315   3            //if(index >= 256)
+ 316   3            //  WriteTW88(REG304, ReadTW88(REG304) | 0x20);  
+ 317   3            WriteTW88(REG307, (BYTE)index);
+ 318   3          }
+ 319   2        }
+ 320   1      
+ 321   1      
+ 322   1        
+ 323   1        WriteTW88(REG304, ReadTW88(REG304) & 0xDF);   //default: lower 256 char.    
+ 324   1        WriteTW88(REG304, ReadTW88(REG304) & 0xFE);   //OsdRam access mode
+ 325   1        
+ 326   1        FOsdWinEnable(fosd->win,ON);  //win0 enable}
+ 327   1      }
+ 328          
+ 329          //description
+ 330          //  the max font size is a 16x32.
+ 331          //  If we use 16x32x1x160, it will use whole FontRam size, 10240 Byte.
+ 332          //  110118. R350[6:0] is for char height and the value*2 is a char height.
+ 333          code WORD test_16161616[16] = {
+ 334          0xFFFF,0xF800,0x8410,0x001F,0xC618,0x07E0,0x0000,0x0010,0xFFE0,0x0410,0x07FF,0x8010,0x8400,0x0400,0x8000,0
+             -xF81F
+ 335          };
+ 336          void TestMultiBPP4(void)
+ 337          {
+ 338   1      //  WORD OsdRamAddr;  
+ 339   1        struct fosd_menu_item_s *fosd;
+ 340   1        BYTE i,j;
+ 341   1      //  BYTE value;
+ 342   1        WORD index;
+ 343   1      
+ 344   1        BYTE fgColor = 15;
+ 345   1        BYTE bgColor = 1;
+ 346   1        BYTE columns = 16;
+ 347   1      //  BYTE lines = 10;
+ 348   1        BYTE lines = 4;
+ 349   1        BYTE max = 160;
+ 350   1      
+ 351   1        fosd = &temp_fosd_menu_item;
+ 352   1        fosd->win = 0;
+ 353   1        //init DE
+ 354   1        FOsdSetDeValue();
+ 355   1      
+ 356   1        FOsdWinInit(fosd->win);
+ 357   1      
+ 358   1        WaitVBlank(1);
+ 359   1        FOsdWinEnable(fosd->win,OFF); // disable
+ 360   1      
+ 361   1      //remove BK120209
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 7   
+
+ 362   1      //  InitFontRam(0, &test16x32xA0_20_20_20,"test");
+ 363   1        //FOsdInitBpp3AlphaTable();
+ 364   1      
+ 365   1      
+ 366   1        FOsdWinScreenXY(fosd->win, 0,0);    //0x20, 0x10);    //max 512 = 32x16
+ 367   1        FOsdWinScreenWH(fosd->win, columns, lines);   //0x20, 0x10);    //max 512 = 32x16
+ 368   1        FOsdWinZoom(fosd->win, 1, 0);           //fosd->zoom>>4, fosd->zoom & 0x0F);
+ 369   1        FOsdWinAlphaPixel(fosd->win,bgColor,4);         //bgcolor 1 alpha 0
+ 370   1      
+ 371   1        //set OsdRam.
+ 372   1      
+ 373   1        WriteTW88(REG304, 0x0c ); // Auto Inc.
+ 374   1      
+ 375   1        //---------------
+ 376   1        // 1BPP
+ 377   1        FOsdRamSetAddrAttr(0, (bgColor << 4) | fgColor);
+ 378   1        for(i=0; i < 2; i++) {
+ 379   2          for(j=0; j < columns; j++) {
+ 380   3            index = i*columns+j;
+ 381   3      
+ 382   3            WriteTW88(REG307, (BYTE)index);
+ 383   3          }
+ 384   2        }
+ 385   1        //---------------
+ 386   1        // 4BPP
+ 387   1        //I have to update LUT value
+ 388   1        FOsdSetPaletteColorArray(32, test_16161616, 16, 0);         //BUG_BANK
+ 389   1      
+ 390   1        FOsdRamSetAddrAttr(0x20, 32 >> 2);    // fgColor is used for LUT offset. I will use 32th
+ 391   1        //--------------------
+ 392   1        // assign the start loc of 4BPP char index.
+ 393   1        //--------------------
+ 394   1        for(i=0; i < 2; i++) {
+ 395   2          for(j=0; j < columns; j++) {
+ 396   3            index = i*columns+j;
+ 397   3            index *= 4;
+ 398   3            index += 0x20;
+ 399   3            WriteTW88(REG307, (BYTE)index);
+ 400   3          }
+ 401   2        }
+ 402   1        
+ 403   1        WriteTW88(REG304, ReadTW88(REG304) & 0xDF);   //default: lower 256 char.    
+ 404   1        WriteTW88(REG304, ReadTW88(REG304) & 0xFE);   //OsdRam access mode
+ 405   1        
+ 406   1        FOsdWinEnable(fosd->win,ON);  //win0 enable
+ 407   1      
+ 408   1        WriteTW88(REG310, ReadTW88(REG310) | 0x40 ); // temp - enable MultiBPP on Win1
+ 409   1              
+ 410   1      }
+ 411          
+ 412          //code FONT_SPI_INFO_t consolas16x26_606C90_test  = { 0x402000, 0x2080, 16, 26, 0x060, 0x06C, 0x090, 0x0A0
+             - };
+ 413          /* <NUMBER OF FONTS>=0xA0(160. MAX) */
+ 414          /* <FONT WIDTH>=16 */
+ 415          /* <FONT HEIGHT>=26 */
+ 416          /* <2bit COLOR START>=0x060 */
+ 417          /* <3bit COLOR START>=0x06C */
+ 418          /*       Digit = 0x6C       */
+ 419          /* <4bit COLOR START>=0x090 */
+ 420          /*       Penguin = 0x98     */
+ 421          
+ 422          code WORD consolas16x26_606C90_2BPP_test[4] = {
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 8   
+
+ 423            0xF7DE,0x0000,0x5AAB,0xC000
+ 424          }; 
+ 425          
+ 426          code WORD consolas16x26_606C90_3BPP[8] = {
+ 427            0xFFFF,0x0000,0xDEDB,0x9492,0x6B6D,0xB5B6,0x4A49,0x2124
+ 428          }; 
+ 429          code WORD consolas16x26_606C90_4BPP[16] = {
+ 430            0xD6BA,0x20E3,0xF79E,0x62E8,0xE104,0xA944,0x39A6,0x7BAC,
+ 431            0x51A6,0xC617,0x9CD1,0xB5B5,0x9BC9,0xDD85,0xF643,0xAC87
+ 432          };
+ 433          
+ 434          //BANK issue
+ 435          void FontOsdSetPaletteColorArray_TEST(BYTE index, WORD *array, BYTE size)
+ 436          {
+ 437   1        BYTE i;
+ 438   1        BYTE r30c;
+ 439   1      
+ 440   1        r30c = ReadTW88(REG30C) & 0xC0;
+ 441   1        //dPrintf("\n\rFontOsdSetPaletteColorArray index:%bd",index);
+ 442   1        for(i=0; i < size; i++) {
+ 443   2          WriteTW88(REG30C, (index+i) | r30c); //index 2 is for normal foreground    Now 6bit.(64).
+ 444   2          WriteTW88(REG30D, (BYTE)(array[i] >> 8));
+ 445   2          WriteTW88(REG30E, (BYTE)array[i]);
+ 446   2          //dPrintf(" 0x%02bx%02bx(%04x)",(BYTE)(array[i] >> 8),(BYTE)array[i],array[i]);
+ 447   2        }
+ 448   1      }
+ 449          
+ 450          
+ 451          #ifdef UNCALLED_SEGMENT_CODE
+              void TestNum1BPP3BPP_OLD(void)
+              {...}
+              #endif
+ 455          
+ 456          //void TestNumAlpha(void)
+ 457          //palette map
+ 458          //
+ 459          //   64
+ 460          //  +-------------
+ 461          //  |60
+ 462          //  |56
+ 463          //  |52
+ 464          //  |48   4BPP  original 16 palette
+ 465          //  +-------------
+ 466          //  |44
+ 467          //  |40   unused area
+ 468          //  +-------------
+ 469          //  |36
+ 470          //  |32   3BPP   original 8 palette
+ 471          //  +-------------
+ 472          //  |28
+ 473          //  |24   3BPP Lime with Alpha
+ 474          //  +-------------
+ 475          //  |20
+ 476          //  |16   3BPP Black with Alpha
+ 477          //  +-------------
+ 478          //  |1BPP Area.
+ 479          //  |15   White
+ 480          //  |14   Yellow          
+ 481          //  |13   Magenta         
+ 482          //  |12   Red         
+ 483          //  |11   Cyan          
+ 484          //  |10   Lime          
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 9   
+
+ 485          //  |9    Blue          
+ 486          //  |8    Silver          
+ 487          //  |7    Gray          
+ 488          //  |6    DK Yellow         
+ 489          //  |5    DK Magenta              
+ 490          //  |4    DK Red              
+ 491          //  |3    DK Cyan             
+ 492          //  |2    Green             
+ 493          //  |1    DK Blue
+ 494          //  |0    Black
+ 495          //  +-------------
+ 496          //  OsdRam
+ 497          //  0..9  0..9  with 3BPP
+ 498          //  4..5  penguin with 4BPP
+ 499          //  10..19
+ 500          //  20..29  0x10..0x19
+ 501          //  |25..29   1BPP  (9 << 4 | 10) bg:LTBlue fg:Lime
+ 502          //  |20..24   1BPP  (15<<4|0)   bg:white fg:black 
+ 503          //  30..39  0..9 with 3BPP. Black with Alpha
+ 504          //  40..49  0..9 with 3BPP. Lime with Alpha
+ 505          //
+ 506          void TestNum1BPP3BPP(void)
+ 507          {
+ 508   1        struct fosd_menu_item_s *fosd;
+ 509   1        BYTE i; //,j,k;
+ 510   1        BYTE palette;
+ 511   1        BYTE fgColor = 15; //color is reversed on consolas16x26_606C90
+ 512   1        BYTE bgColor = 0;
+ 513   1        BYTE columns = 10;
+ 514   1        BYTE lines = 5;
+ 515   1      
+ 516   1          //select window
+ 517   1        fosd = &temp_fosd_menu_item;
+ 518   1        fosd->win = 0;
+ 519   1      
+ 520   1        //init DE
+ 521   1        FOsdSetDeValue();
+ 522   1        //assign default
+ 523   1        FOsdWinInit(fosd->win);
+ 524   1      
+ 525   1        WaitVBlank(1);
+ 526   1        FOsdWinEnable(fosd->win,OFF); // disable
+ 527   1      
+ 528   1        //download FontSet
+ 529   1        InitFontRamByNum(FONT_NUM_CONGRAY16X28, 0); //InitFontRam_consolas(0);
+ 530   1      
+ 531   1        FOsdInitBpp3AlphaTable(1);
+ 532   1      
+ 533   1        FOsdWinScreenXY(fosd->win, 50,60);    //0x20, 0x10);    //max 512 = 32x16
+ 534   1        FOsdWinScreenWH(fosd->win, columns, lines);   //0x20, 0x10);    //max 512 = 32x16
+ 535   1        FOsdWinZoom(fosd->win, 3, 2);           //fosd->zoom>>4, fosd->zoom & 0x0F);
+ 536   1        //FOsdWinAlphaPixel(fosd->win,15 /*AlphaColor*/ ,8);        //bgcolor 1 alpha 0
+ 537   1      
+ 538   1        //set OsdRam.
+ 539   1      
+ 540   1        WriteTW88(REG304, 0x0c ); // Auto Inc.
+ 541   1      
+ 542   1      #if 0
+                //first line - 1BPP+4BPP
+                FOsdRamSetAddrAttr(0, (bgColor << 4) | fgColor);
+                for(i=0; i < 10; i++) {
+                  WriteTW88(REG307, i+0x10);
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 10  
+
+                }
+                palette = 48;
+                FOsdSetPaletteColorArray(palette, consolas16x26_606C90_4BPP, 16, 0);  //BUG_BANK
+                FOsdRamSetAddrAttr(4, palette >> 2);  //overwrite
+                WriteTW88(REG307, 0x7E);
+                WriteTW88(REG307, 0x82); 
+              
+                //second line - 3BPP with original BGR palette.
+                palette = 32;
+                FOsdSetPaletteColorArray(palette, consolas16x26_606C90_3BPP, 8, 0); //BUG_BANK
+                //FOsdWinAlphaPixel(fosd->win, palette+0,8); //NOTE:LUT32 do not support Alpha.
+                FOsdRamSetAddrAttr(10, palette >> 2);
+                for(i=0; i < 10; i++) {
+                    WriteTW88(REG307, i*3+BPP3DIGIT_START);
+                }
+              #endif
+ 563   1      
+ 564   1        //first line - 3BPP with original BGR palette. with 4BPP.
+ 565   1        palette = 32;
+ 566   1        FontOsdSetPaletteColorArray_TEST(palette, consolas16x26_606C90_3BPP, 8);
+ 567   1        //FOsdWinAlphaPixel(fosd->win, palette+0,8); //NOTE:LUT32 do not support Alpha.
+ 568   1        FOsdRamSetAddrAttr(0, palette >> 2);
+ 569   1        for(i=0; i < 10; i++) {
+ 570   2            WriteTW88(REG307, i*3+BPP3DIGIT_START);
+ 571   2        }
+ 572   1        palette = 48;
+ 573   1        FontOsdSetPaletteColorArray_TEST(palette, consolas16x26_606C90_4BPP, 16);
+ 574   1        FOsdRamSetAddrAttr(4, palette >> 2);  //overwrite
+ 575   1        WriteTW88(REG307, BPP4PENGUIN_START);
+ 576   1        WriteTW88(REG307, BPP4PENGUIN_START+4); 
+ 577   1      
+ 578   1      #if 0
+                //second line - 3BPP with original BGR palette & background alpha.
+                palette = 0;
+                //FontOsdSetPaletteColorArray(palette, consolas16x26_606C90_3BPP, 8);
+                FOsdSetPaletteColor(palette+0, 0xFFFF,1, 0);
+                FOsdSetPaletteColor(palette+1, 0x0000,1, 0);
+                FOsdSetPaletteColor(palette+2, 0x8410,1, 0); //or 0xC618(silver)
+                FOsdSetPaletteColor(palette+3, 0x8410,1, 0);
+                FOsdSetPaletteColor(palette+4, 0x8410,1, 0);
+                FOsdSetPaletteColor(palette+5, 0x8410,1, 0);
+                FOsdSetPaletteColor(palette+6, 0x8410,1, 0);
+                FOsdSetPaletteColor(palette+7, 0x0000,1, 0);
+                FOsdWinAlphaPixel(fosd->win, palette+0,8); //NOTE:LUT32 do not support Alpha.
+                FOsdRamSetAddrAttr(10, palette >> 2);
+                for(i=0; i < 10; i++) {
+                    WriteTW88(REG307, i*3+BPP3DIGIT_START);
+                }
+              #endif
+ 596   1        //Third Line
+ 597   1        //01234(1BPP white|black) 56789(1BPP LTBlue|Lime)
+ 598   1        //1BPP
+ 599   1        FOsdRamSetAddrAttr(20, 15 << 4 | 0);    //bg:white fg:black
+ 600   1        for(i=0; i < 5; i++) {
+ 601   2            WriteTW88(REG307, i+0x10);
+ 602   2        }
+ 603   1        FOsdRamSetAddrAttr(25, 9 << 4 | 10);    //bg:LTBlue fg:Lime
+ 604   1        for(i=0; i < 5; i++) {
+ 605   2            WriteTW88(REG307, i+0x10+5);
+ 606   2        }
+ 607   1        //forth line - 3BPP with Black & alpha.
+ 608   1        palette = FOSD_LUT_MAP_BPP3_START;
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 11  
+
+ 609   1        FOsdWinSetBpp3Alpha(fosd->win,palette); //use BPP3_alpha_lut_offset[].
+ 610   1        FOsdSetPaletteColor(palette, FOSD_COLOR_VALUE_BLACK, 8, 0); //all black   
+ 611   1        FOsdRamSetAddrAttr(30, palette >> 2);   //multi-bpp
+ 612   1        for(i=0; i < 10; i++) {
+ 613   2            WriteTW88(REG307, i*3+BPP3DIGIT_START);
+ 614   2        }
+ 615   1        //fifth line - 3BPP with Lime & alpha.
+ 616   1        palette = FOSD_LUT_MAP_BPP3_ALPHA_G_START;
+ 617   1        FOsdWinSetBpp3Alpha(fosd->win,palette); //use BPP3_alpha_lut_offset[].
+ 618   1        FOsdSetPaletteColor(palette, FOSD_COLOR_VALUE_LIME, 8, 0);    
+ 619   1        FOsdRamSetAddrAttr(40, palette >> 2);   //multi-bpp
+ 620   1        for(i=0; i < 10; i++) {
+ 621   2            WriteTW88(REG307, i*3+BPP3DIGIT_START);
+ 622   2        }
+ 623   1      
+ 624   1        //post fix
+ 625   1        WriteTW88(REG304, ReadTW88(REG304) & 0xDF);   //default: lower 256 char.    
+ 626   1        WriteTW88(REG304, ReadTW88(REG304) & 0xFE);   //OsdRam access mode
+ 627   1        
+ 628   1        FOsdWinEnable(fosd->win,ON);  //win0 enable
+ 629   1      
+ 630   1        WriteTW88(REG310, ReadTW88(REG310) | 0x40 ); // temp - enable MultiBPP on Win1
+ 631   1      }
+ 632          
+ 633          //draw default HW LUT & SW LUT
+ 634          //test method
+ 635          //  Boot with NoInit mode
+ 636          //  type  init core
+ 637          //      ee find
+ 638          //      init
+ 639          //      fosd test1  <-- low 8 is a HW
+ 640          //  Boot with NoInit mode
+ 641          //  type  init core
+ 642          //      ee find
+ 643          //      init
+ 644          //      fosd test2  <-- high 8 is a HW
+ 645          void FOsdTest_1(BYTE mode)
+ 646          {
+ 647   1        BYTE WIN0_OSDRAM = 0;
+ 648   1        BYTE WIN1_OSDRAM = 0x10;
+ 649   1        BYTE WIN2_OSDRAM = 0x20;
+ 650   1        BYTE i;
+ 651   1      
+ 652   1        //
+ 653   1        WORD temp_FOsdDefPaletteBpp1[16] = {
+ 654   1        /*0:Black*/     FOSD_COLOR_VALUE_BLACK,
+ 655   1        /*1:DarkBlue*/    FOSD_COLOR_VALUE_DBLUE,
+ 656   1        /*2:Green*/     FOSD_COLOR_VALUE_GREEN,
+ 657   1        /*3:DarkCyan*/    FOSD_COLOR_VALUE_DCYAN,
+ 658   1        /*4:DarkRed*/   FOSD_COLOR_VALUE_DRED,
+ 659   1        /*5:DarkMagenta*/ FOSD_COLOR_VALUE_DMAGENTA,
+ 660   1        /*6:DarkYellow*/  FOSD_COLOR_VALUE_DYELLOW,
+ 661   1        /*7:Gray*/      FOSD_COLOR_VALUE_GRAY,
+ 662   1      
+ 663   1        /*8:Silver*/    FOSD_COLOR_VALUE_SILVER,
+ 664   1        /*9:Blue*/      FOSD_COLOR_VALUE_BLUE,
+ 665   1        /*A:Lime*/      FOSD_COLOR_VALUE_LIME,
+ 666   1        /*B:Cyan*/      FOSD_COLOR_VALUE_CYAN,
+ 667   1        /*V:Red*/     FOSD_COLOR_VALUE_RED,
+ 668   1        /*D:Magenta*/   FOSD_COLOR_VALUE_MAGENTA,
+ 669   1        /*E:Yellow*/    FOSD_COLOR_VALUE_YELLOW,
+ 670   1        /*F:White*/     FOSD_COLOR_VALUE_WHITE 
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 12  
+
+ 671   1        };
+ 672   1      
+ 673   1        InitFontRamByNum(FONT_NUM_DEF12X18, 0); //InitFontRam(0, &default_font,"def");
+ 674   1      
+ 675   1      
+ 676   1        FOsdRamSetFifo(ON, 0);  //FontOsdSetOsdRamFifo(OFF);            //default
+ 677   1      
+ 678   1        //set OsdRam data&attr
+ 679   1        //FontOsdSetAutoIncMode(FOSD_AUTOINC_NORMAL);
+ 680   1        WriteTW88(REG304, 0x00);
+ 681   1        WriteTW88(REG305, 0x00);
+ 682   1        for(i=0; i < 8; i++) {
+ 683   2          WriteTW88(REG306, WIN0_OSDRAM+i);
+ 684   2          WriteTW88(REG307, FOSD_ASCII_BLANK);
+ 685   2          WriteTW88(REG306, WIN0_OSDRAM+i);
+ 686   2          WriteTW88(REG308, i << 4 );     //change BG color. LOW 8
+ 687   2          //if(i==7)
+ 688   2          //  delay1ms(1);
+ 689   2        }
+ 690   1        for(i=0; i < 8; i++) {
+ 691   2          WriteTW88(REG306, WIN1_OSDRAM+i);
+ 692   2          WriteTW88(REG307, FOSD_ASCII_BLANK);
+ 693   2          WriteTW88(REG306, WIN1_OSDRAM+i);
+ 694   2          WriteTW88(REG308, (i << 4) + 0x80); //change BG color. High 8
+ 695   2          //if(i==7)
+ 696   2          //  delay1ms(1);
+ 697   2        }
+ 698   1        for(i=0; i < 16; i++) {
+ 699   2          WriteTW88(REG306, WIN2_OSDRAM+i);
+ 700   2          WriteTW88(REG307, FOSD_ASCII_BLANK);
+ 701   2          WriteTW88(REG306, WIN2_OSDRAM+i);
+ 702   2          WriteTW88(REG308, (i << 4) );     //change BG color.
+ 703   2          if(i==7)
+ 704   2            delay1ms(1);
+ 705   2        }
+ 706   1      
+ 707   1        //test palette from 16 to 31
+ 708   1        if(mode==0) {
+ 709   2          for(i=8;i<16;i++) 
+ 710   2            FOsdSetPaletteColor(i, temp_FOsdDefPaletteBpp1[i-8],1, 0);
+ 711   2        }
+ 712   1        else {
+ 713   2          for(i=0;i<8;i++) 
+ 714   2            FOsdSetPaletteColor(i, temp_FOsdDefPaletteBpp1[i+8],1, 0);
+ 715   2        }
+ 716   1      
+ 717   1        //enable
+ 718   1        FOsdWinScreenXY(FOSD_WIN0,80,0);
+ 719   1        FOsdWinScreenWH(FOSD_WIN0,8,1);
+ 720   1        FOsdWinZoom(FOSD_WIN0, 2, 1);
+ 721   1        FOsdWinSetOsdRamStartAddr(FOSD_WIN0,WIN0_OSDRAM);
+ 722   1        FOsdWinEnable(FOSD_WIN0,ON);  
+ 723   1      
+ 724   1        FOsdWinScreenXY(FOSD_WIN1,80,37);
+ 725   1        FOsdWinScreenWH(FOSD_WIN1,8,1);
+ 726   1        FOsdWinZoom(FOSD_WIN1, 2, 1);
+ 727   1        FOsdWinSetOsdRamStartAddr(FOSD_WIN1,WIN1_OSDRAM);
+ 728   1        FOsdWinEnable(FOSD_WIN1,ON);
+ 729   1      
+ 730   1        FOsdWinScreenXY(FOSD_WIN2,80,37*2);
+ 731   1        FOsdWinScreenWH(FOSD_WIN2,16,1);
+ 732   1        FOsdWinZoom(FOSD_WIN2, 2, 1);
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 13  
+
+ 733   1        FOsdWinSetOsdRamStartAddr(FOSD_WIN2,WIN2_OSDRAM);
+ 734   1        FOsdWinEnable(FOSD_WIN2,ON);
+ 735   1      
+ 736   1        FOsdOnOff(ON, 0); //with vdelay 0 
+ 737   1      }
+ 738          //void FOsdTest_3(void)
+ 739          //{
+ 740          //}
+ 741          
+ 742          //test I2C index Auto increase off with FontRAM
+ 743          //code BYTE FOsdTest_5_data[] = 
+ 744          //{
+ 745          //    /*0x19( 25)*/ 0xF0,0xF0,0xE0,0x00,0x70,0x66,0x00,0x53,0x66,0x1F,0x00,0x66,0x11,0x00,0x66,0xF1,0x00,0
+             -x66,0x00,0x35,0x66,0x00,0x07,0x66,0x0F,0x0F,0x0E,
+ 746          //};
+ 747          
+ 748          code unsigned char FOsdTest_5_data_88h_27[] = {
+ 749              /*0x00(  0)*/ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x66,0x00,0x00,0x24,0x00,0x00,0x00,0x00,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 750              /*0x01(  1)*/ 0x00,0x00,0x00,0x00,0x60,0x00,0x00,0x06,0x00,0x00,0x60,0x00,0x00,0xF6,0x00,0x00,0xFF,0x0
+             -0,0x00,0xFF,0x00,0x00,0x06,0x00,0x00,0x00,0x00,
+ 751              /*0x02(  2)*/ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x66,0x00,0x00,0x46,0x00,0x00,0x00,0x00,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 752              /*0x03(  3)*/ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xFF,0xFF,0xFF,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 753              /*0x04(  4)*/ 0x00,0xF0,0x00,0x21,0x60,0x48,0x44,0x89,0x22,0x44,0x98,0x22,0x12,0x06,0x84,0x00,0x0F,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 754              /*0x05(  5)*/ 0x30,0xA0,0x20,0x34,0x23,0xA6,0x70,0x2A,0x22,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 755              /*0x06(  6)*/ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xF6,0x0
+             -0,0x00,0x6F,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 756              /*0x07(  7)*/ 0x00,0x00,0x00,0x00,0xF0,0x00,0x31,0x9F,0xC8,0x33,0x00,0x0C,0x33,0x00,0x00,0x33,0x00,0xC
+             -0,0x13,0xF9,0x8C,0x00,0x2F,0x00,0x00,0x61,0x00,
+ 757              /*0x08(  8)*/ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x60,0x60,0x10,0x9C,0x8C,0x63,0x63,0x00,0x36,0x36,0x0
+             -0,0x01,0xC9,0xC8,0x00,0x06,0x06,0x00,0x00,0x00,
+ 758              /*0x09(  9)*/ 0x00,0x00,0x00,0x00,0x00,0x00,0x60,0x60,0x00,0x13,0x93,0x80,0x00,0x6C,0x6C,0x00,0xC6,0xC
+             -6,0x31,0x39,0x08,0x06,0x06,0x00,0x00,0x00,0x00,
+ 759              /*0x0A( 10)*/ 0x00,0x00,0x00,0x00,0x63,0x00,0x00,0x44,0x00,0x00,0xC4,0x00,0x11,0x88,0x00,0x00,0x4C,0x0
+             -0,0x00,0x44,0x00,0x00,0x36,0x00,0x00,0x00,0x00,
+ 760              /*0x0B( 11)*/ 0x00,0x00,0x00,0x00,0x6C,0x00,0x00,0x22,0x00,0x00,0x32,0x00,0x00,0x11,0x88,0x00,0x23,0x0
+             -0,0x00,0x22,0x00,0x00,0xC6,0x00,0x00,0x00,0x00,
+ 761              /*0x0C( 12)*/ 0x00,0x00,0x00,0x00,0x60,0x00,0x10,0x9F,0x80,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 762              /*0x0D( 13)*/ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x77,0xFF,0xEE,0x00,0x00,0x00,
+ 763              /*0x0E( 14)*/ 0x00,0x00,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x0
+             -0,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x00,0x00,
+ 764              /*0x0F( 15)*/ 0x00,0x00,0x00,0x10,0x9F,0x80,0x11,0x99,0x88,0x11,0xFF,0x00,0x11,0x99,0x88,0x11,0x99,0x8
+             -8,0x11,0x8F,0x00,0x03,0x08,0x00,0x00,0x00,0x00,
+ 765              /*0x10( 16)*/ 0x00,0x00,0x00,0x33,0xF0,0xCC,0x11,0x09,0x88,0x11,0x90,0x88,0x33,0x0F,0xCC,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 766              /*0x11( 17)*/ 0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x0
+             -0,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,
+ 767              /*0x12( 18)*/ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xF0,0x00,0x31,0x9F,0xC8,0x33,0x63,0xC
+             -C,0x33,0x9C,0xCC,0x01,0xFF,0x08,0x00,0x00,0x00,
+ 768              /*0x13( 19)*/ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x77,0xFF,0x00,0x66,0x0
+             -0,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,
+ 769              /*0x14( 20)*/ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xFF,0xEE,0x00,0x00,0x66,0x0
+             -0,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,
+ 770              /*0x15( 21)*/ 0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x77,0xFF,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 771              /*0x16( 22)*/ 0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0xFF,0xEE,0x00,0x00,0x00,0x0
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 14  
+
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 772              /*0x17( 23)*/ 0x00,0x00,0x00,0x77,0xFF,0xEE,0x77,0xFF,0xEE,0x77,0xFF,0xEE,0x77,0xFF,0xEE,0x77,0xFF,0xE
+             -E,0x77,0xFF,0xEE,0x77,0xFF,0xEE,0x00,0x00,0x00,
+ 773              /*0x18( 24)*/ 0x70,0xF0,0xF0,0x66,0xE0,0x00,0x66,0xAC,0x00,0x66,0x00,0x8F,0x66,0x00,0x88,0x66,0x00,0xF
+             -8,0x66,0xCA,0x00,0x66,0x0E,0x00,0x07,0x0F,0x0F,
+ 774              /*0x19( 25)*/ 0xF0,0xF0,0xE0,0x00,0x70,0x66,0x00,0x53,0x66,0x1F,0x00,0x66,0x11,0x00,0x66,0xF1,0x00,0x6
+             -6,0x00,0x35,0x66,0x00,0x07,0x66,0x0F,0x0F,0x0E,
+ 775              /*0x1A( 26)*/ 0x30,0xF0,0xF0,0x66,0x00,0x00,0x66,0x10,0xF0,0x66,0x11,0x70,0x66,0x11,0x70,0x66,0x11,0xF
+             -0,0x66,0x00,0x00,0x66,0x00,0x00,0x03,0x0F,0x0F,
+ 776              /*0x1B( 27)*/ 0xF0,0xF0,0xC0,0x00,0x00,0x66,0xF0,0x80,0x66,0xE0,0x88,0x66,0xE0,0x88,0x66,0xF0,0x88,0x6
+             -6,0x00,0x00,0x66,0x00,0x00,0x66,0x0F,0x0F,0x0C,
+ 777              /*0x1C( 28)*/ 0x30,0xF0,0xF0,0x66,0xF0,0xD1,0x66,0xF0,0xD1,0x76,0xF0,0xF1,0x66,0x00,0x00,0x66,0x00,0x0
+             -0,0x66,0x00,0x00,0x66,0x00,0x00,0x03,0x0F,0x0F,
+ 778              /*0x1D( 29)*/ 0xF0,0xF0,0xC0,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x6
+             -6,0x00,0x00,0x66,0x00,0x00,0x66,0x0F,0x0F,0x0C,
+ 779              /*0x1E( 30)*/ 0x30,0xF0,0xF0,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x67,0x0F,0x1
+             -F,0x66,0x0F,0x1D,0x66,0x0F,0x1D,0x03,0x0F,0x0F,
+ 780              /*0x1F( 31)*/ 0x30,0xF0,0xF0,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x0
+             -0,0x66,0x00,0x00,0x66,0x00,0x00,0x03,0x0F,0x0F,
+ 781              /*0x20( 32)*/ 0xF0,0xF0,0xC0,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x66,0x8F,0x0F,0x6
+             -E,0x8B,0x0F,0x66,0x8B,0x0F,0x66,0x0F,0x0F,0x0C,
+ 782              /*0x21( 33)*/ 0xF0,0xF0,0xC0,0xB8,0xF0,0x66,0xB8,0xF0,0x66,0xF8,0xF0,0xE6,0x00,0x00,0x66,0x00,0x00,0x6
+             -6,0x00,0x00,0x66,0x00,0x00,0x66,0x0F,0x0F,0x0C,
+ 783              /*0x22( 34)*/ 0x00,0x00,0x00,0x07,0x6E,0x66,0x00,0x66,0x76,0x10,0x8C,0x66,0x07,0x00,0x66,0x00,0x00,0x0
+             -0,0x33,0x00,0x00,0x33,0xF0,0xE0,0x00,0x00,0x00,
+ 784              /*0x23( 35)*/ 0x00,0x00,0x00,0x03,0x0F,0x6E,0x00,0x00,0x66,0x00,0x00,0x06,0x07,0x6F,0x0F,0x30,0xF6,0xE
+             -0,0x00,0x00,0x66,0x00,0x00,0x46,0x00,0x00,0x00,
+ 785              /*0x24( 36)*/ 0x00,0x00,0x00,0x70,0xE0,0x66,0x00,0x66,0x66,0x00,0x46,0x66,0x00,0x8C,0x66,0x31,0x08,0x6
+             -6,0x06,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x00,
+ 786              /*0x25( 37)*/ 0x00,0x00,0x00,0x03,0x0F,0xCC,0x00,0x00,0xCC,0x00,0x00,0x0C,0x17,0x9F,0x8E,0x11,0x99,0x8
+             -8,0x31,0x09,0x08,0x33,0xF0,0xC0,0x00,0x00,0x00,
+ 787              /*0x26( 38)*/ 0x00,0x00,0x00,0x07,0x6E,0x66,0x00,0x46,0x76,0x10,0x8C,0x66,0x07,0x00,0x66,0x30,0xF0,0xE
+             -0,0x33,0x00,0x66,0x33,0xF0,0xE6,0x00,0x00,0x00,
+ 788              /*0x27( 39)*/ 0x00,0x00,0x00,0x07,0xCF,0x66,0x00,0xCC,0x66,0x31,0x3E,0x66,0x46,0x01,0xEE,0x30,0xF0,0xE
+             -0,0x33,0x00,0x66,0x33,0xF0,0xE6,0x00,0x00,0x00,
+ 789              /*0x28( 40)*/ 0x00,0x00,0x00,0x07,0x6E,0x66,0x00,0xC6,0x6E,0x10,0x8C,0x6E,0x07,0x00,0x06,0x00,0x63,0xC
+             -8,0x00,0xCC,0x66,0x00,0x36,0x8C,0x00,0x00,0x00,
+ 790              /*0x29( 41)*/ 0x00,0x00,0x00,0x03,0x0F,0xCC,0x00,0x00,0xCC,0x00,0x00,0xCC,0x00,0xC0,0xCC,0x00,0xCC,0x0
+             -0,0x70,0xFC,0xE0,0x00,0x00,0x00,0x00,0x00,0x00,
+ 791              /*0x2A( 42)*/ 0x00,0x00,0x00,0x30,0x00,0x66,0x33,0x00,0x66,0x33,0x00,0x76,0x33,0x00,0x66,0x03,0x0F,0x6
+             -6,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x00,
+ 792              /*0x2B( 43)*/ 0x00,0x00,0x00,0x11,0x88,0x00,0x11,0x88,0x00,0x01,0x0F,0x0C,0x70,0xF6,0xE0,0x10,0xF0,0xC
+             -0,0x00,0x00,0xCC,0x00,0x00,0x8C,0x00,0x00,0x00,
+ 793              /*0x2C( 44)*/ 0x00,0x00,0x00,0x33,0x00,0x00,0x33,0x00,0x00,0x03,0x0F,0x0C,0xF0,0xF6,0xE0,0x10,0xF0,0x8
+             -0,0x33,0x00,0xCC,0x13,0xF0,0x8C,0x00,0x00,0x00,
+ 794              /*0x2D( 45)*/ 0x00,0x00,0x00,0x66,0x00,0x66,0x66,0x01,0x6E,0x76,0xF0,0x66,0x30,0xF0,0xE0,0x30,0xF0,0xE
+             -6,0x33,0x00,0x00,0x33,0xF0,0xE0,0x00,0x00,0x00,
+ 795              /*0x2E( 46)*/ 0x00,0x00,0x00,0x33,0x00,0x00,0x33,0x00,0x00,0x03,0x0F,0x0C,0x07,0x0F,0x0E,0x10,0xF0,0x8
+             -0,0x33,0x09,0xCC,0x13,0xF9,0x8C,0x00,0x00,0x00,
+ 796              /*0x2F( 47)*/ 0x00,0x00,0x00,0x33,0x00,0x00,0x33,0x00,0x00,0x03,0x0F,0x0C,0x0F,0x0F,0x0F,0x30,0x00,0x0
+             -0,0x33,0x00,0x00,0x33,0xF0,0xC0,0x00,0x00,0x00,
+ 797              /*0x30( 48)*/ 0x00,0x00,0x00,0x17,0xBF,0x66,0x11,0xBB,0x66,0x11,0xBB,0x6E,0x31,0x6B,0x66,0x63,0xC6,0x6
+             -6,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x00,
+ 798              /*0x31( 49)*/ 0x00,0x00,0x00,0x07,0x6E,0x66,0x00,0xC6,0xE6,0x10,0x8C,0x66,0x63,0x00,0x66,0x30,0xF0,0xE
+             -0,0x33,0x00,0x66,0x33,0xF0,0xE6,0x00,0x00,0x00,
+ 799              /*0x32( 50)*/ 0x00,0x00,0x00,0x67,0x0E,0xCC,0x66,0x00,0xCC,0x66,0x00,0xFC,0x66,0x00,0xCC,0x07,0x0E,0xC
+             -C,0x00,0x00,0xCC,0x00,0x00,0xCC,0x00,0x00,0x00,
+ 800              /*0x33( 51)*/ 0x00,0x00,0x00,0x33,0x0F,0x0C,0x33,0x00,0x00,0x33,0x00,0x00,0x33,0xF0,0xC0,0x00,0x60,0x0
+             -0,0xF0,0xF6,0xF0,0x00,0x00,0x00,0x00,0x00,0x00,
+ 801              /*0x34( 52)*/ 0x00,0x00,0x00,0x33,0x0F,0x0C,0x33,0x00,0x00,0x33,0x00,0x00,0x33,0xF0,0xC0,0x00,0x00,0x0
+             -0,0x70,0xF0,0xE0,0x00,0x00,0x00,0x00,0x00,0x00,
+ 802              /*0x35( 53)*/ 0x00,0x00,0x00,0x33,0x0F,0x08,0x33,0x00,0x00,0x03,0x6F,0x08,0x0F,0x0F,0x0E,0x10,0x9F,0x8
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 15  
+
+             -0,0x33,0x00,0xCC,0x01,0xF9,0x08,0x00,0x00,0x00,
+ 803              /*0x36( 54)*/ 0x00,0x00,0x00,0x07,0x6E,0x66,0x70,0xE6,0x6E,0x66,0x00,0x6E,0x07,0x0F,0x06,0x00,0xF0,0xE
+             -0,0x00,0x00,0x66,0x00,0x00,0x46,0x00,0x00,0x00,
+ 804              /*0x37( 55)*/ 0x00,0x00,0x00,0x07,0x6E,0xCC,0x70,0xE6,0xCF,0x66,0x00,0xFC,0x07,0x0E,0x0C,0x10,0x9F,0x8
+             -0,0x33,0x00,0xCC,0x01,0xF9,0x08,0x00,0x00,0x00,
+ 805              /*0x38( 56)*/ 0x00,0x00,0x00,0x03,0x0F,0xCC,0x33,0x0F,0x0C,0x03,0x0F,0x0C,0x07,0x0F,0x0E,0x03,0x0F,0xC
+             -C,0x33,0x0F,0x0C,0x33,0xF0,0xE0,0x00,0x00,0x00,
+ 806              /*0x39( 57)*/ 0x00,0x00,0x00,0x67,0x6E,0x66,0x66,0x66,0x6E,0x66,0x66,0x6E,0x07,0x0E,0x06,0x00,0xC7,0xC
+             -8,0x11,0x88,0x66,0x00,0x7C,0x8C,0x00,0x00,0x00,
+ 807              /*0x3A( 58)*/ 0x00,0x00,0x00,0x33,0x0F,0xCC,0x33,0x00,0xCC,0x33,0x00,0xCC,0x33,0xF0,0xCC,0x00,0x60,0x0
+             -0,0x70,0xF6,0xE0,0x00,0x00,0x00,0x00,0x00,0x00,
+ 808              /*0x3B( 59)*/ 0x00,0x00,0x00,0x67,0x6E,0x66,0x66,0x66,0x6E,0x66,0x66,0xE6,0x76,0xE6,0x66,0x00,0x00,0x0
+             -6,0x00,0xCC,0x00,0x00,0xFC,0xE0,0x00,0x00,0x00,
+ 809              /*0x3C( 60)*/ 0x00,0x00,0x00,0x67,0x3F,0x66,0x66,0x33,0x66,0x66,0x33,0x66,0x76,0xF3,0x66,0x00,0x00,0x6
+             -6,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x00,
+ 810              /*0x3D( 61)*/ 0x00,0x00,0x00,0x67,0x6E,0x66,0x66,0x66,0x66,0x76,0xE6,0x66,0x00,0x00,0x06,0x03,0x0F,0x6
+             -E,0x33,0x0F,0x0E,0x33,0xF0,0xE0,0x00,0x00,0x00,
+ 811              /*0x3E( 62)*/ 0x00,0x00,0x00,0x66,0x66,0x66,0x76,0xF6,0xE6,0x66,0x66,0x66,0x76,0xE6,0x66,0x00,0x00,0x0
+             -0,0x33,0x00,0x00,0x33,0xF0,0xE0,0x00,0x00,0x00,
+ 812              /*0x3F( 63)*/ 0x00,0x00,0x00,0x66,0x66,0x66,0x76,0xE7,0x6E,0x66,0x76,0xE6,0x76,0xE6,0x66,0x00,0x00,0x0
+             -0,0x33,0x00,0x00,0x33,0xF0,0xE0,0x00,0x00,0x00,
+ 813              /*0x40( 64)*/ 0x00,0x00,0x00,0x66,0x66,0xCC,0x67,0x6E,0xEC,0x66,0x66,0xCC,0x07,0x0E,0x0C,0x17,0x8B,0xC
+             -C,0x67,0x08,0xCC,0x76,0x80,0x8C,0x00,0x00,0x00,
+ 814              /*0x41( 65)*/ 0x00,0x00,0x00,0x66,0x66,0x66,0x76,0xE6,0x66,0x66,0x66,0x66,0x76,0xE6,0x66,0x00,0x00,0x6
+             -6,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x00,
+ 815              /*0x42( 66)*/ 0x00,0x00,0x00,0x11,0x88,0x66,0x31,0xC8,0x66,0x63,0x6C,0x66,0xCE,0x37,0x66,0x00,0x00,0x6
+             -6,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x00,
+ 816              /*0x43( 67)*/ 0x00,0x00,0x00,0x11,0x88,0x66,0x33,0xCC,0x66,0x66,0x66,0x66,0x0C,0x03,0x06,0x10,0x80,0x0
+             -0,0x11,0x88,0x00,0x11,0xF8,0xE0,0x00,0x00,0x00,
+ 817              /*0x44( 68)*/ 0x00,0x00,0x00,0x11,0x88,0x66,0x33,0xCD,0x6E,0x66,0x66,0x66,0x04,0x02,0x06,0x10,0xF0,0xE
+             -0,0x10,0xF0,0xE6,0x11,0xF8,0xE0,0x00,0x00,0x00,
+ 818              /*0x45( 69)*/ 0x00,0x00,0x00,0x00,0x66,0x00,0x00,0xF6,0x00,0x31,0x09,0xC8,0x06,0x00,0x06,0x07,0x6F,0x0
+             -E,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x00,0x00,
+ 819              /*0x46( 70)*/ 0x00,0x00,0x00,0x11,0x88,0x66,0x31,0xD8,0xE6,0x63,0x6C,0x66,0x46,0x26,0x66,0x00,0x00,0x0
+             -6,0x33,0x00,0x00,0x33,0xF0,0xE0,0x00,0x00,0x00,
+ 820              /*0x47( 71)*/ 0x00,0x00,0x00,0x10,0x80,0x66,0x11,0x88,0x66,0x11,0x88,0x76,0x33,0xCC,0x66,0xC6,0x36,0x6
+             -6,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x00,
+ 821              /*0x48( 72)*/ 0x00,0x00,0x00,0x00,0xCC,0x66,0x11,0xEE,0x76,0x33,0x33,0xE6,0x06,0x01,0x0E,0x00,0xC7,0xC
+             -8,0x11,0x88,0x66,0x00,0x7C,0x8C,0x00,0x00,0x00,
+ 822              /*0x49( 73)*/ 0x00,0x00,0x00,0x10,0x91,0xBB,0x11,0x99,0xBB,0x11,0x9F,0xBB,0x31,0xD9,0xBB,0xC6,0x37,0xB
+             -B,0x00,0x11,0xBB,0x00,0x11,0xBB,0x00,0x00,0x00,
+ 823              /*0x4A( 74)*/ 0x00,0x00,0x00,0x11,0x99,0xBB,0x31,0xD9,0xFB,0x63,0x7D,0xBB,0x04,0x03,0x0B,0x00,0x0F,0x3
+             -F,0x00,0x00,0x33,0x00,0x00,0x23,0x00,0x00,0x00,
+ 824              /*0x4B( 75)*/ 0x00,0x00,0x00,0x00,0xCC,0x66,0x11,0xEE,0x76,0x33,0x33,0xE6,0x06,0x01,0x0E,0x00,0xC7,0xC
+             -8,0x11,0x88,0x66,0x00,0x7C,0x8C,0x00,0x00,0x00,
+ 825              /*0x4C( 76)*/ 0x00,0x00,0x00,0x31,0xEC,0x66,0x66,0x33,0x76,0x36,0x63,0x66,0x01,0x0C,0x06,0x30,0x10,0xE
+             -C,0x33,0x10,0x2C,0x33,0xC1,0xCE,0x00,0x00,0x00,
+ 826              /*0x4D( 77)*/ 0x00,0x00,0x00,0x10,0xC0,0x66,0x63,0x36,0x66,0x66,0x33,0x66,0x13,0xC6,0x66,0x00,0x00,0x6
+             -6,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x00,
+ 827              /*0x4E( 78)*/ 0x00,0x00,0x00,0x31,0xC8,0x66,0x66,0x66,0x66,0x36,0xC6,0x66,0x01,0x08,0x00,0x00,0xCC,0x6
+             -6,0x00,0xCF,0x6E,0x00,0xFC,0xE6,0x00,0x00,0x00,
+ 828              /*0x4F( 79)*/ 0x00,0x00,0x00,0x31,0x6C,0x66,0x66,0x33,0x76,0x36,0x63,0x66,0x01,0x0C,0x06,0x10,0xF0,0xE
+             -0,0x11,0x88,0x66,0x11,0xF8,0xE6,0x00,0x00,0x00,
+ 829              /*0x50( 80)*/ 0x00,0x00,0x00,0x31,0x6C,0x66,0x66,0x33,0x66,0x36,0x63,0x66,0x01,0x0C,0x66,0x00,0xC0,0x0
+             -6,0x00,0xCC,0x00,0x00,0xFC,0xE0,0x00,0x00,0x00,
+ 830              /*0x51( 81)*/ 0x00,0x00,0x00,0x10,0x9F,0x80,0x33,0x00,0xCC,0x01,0xF9,0x08,0x10,0x90,0x80,0x07,0x0F,0x0
+             -E,0x31,0x0F,0xC8,0x13,0xF0,0x8C,0x00,0x00,0x00,
+ 831              /*0x52( 82)*/ 0x00,0x00,0x00,0x10,0x9F,0x80,0x33,0x00,0xCC,0x13,0x10,0x8C,0x00,0x0F,0x00,0x10,0x90,0x8
+             -0,0x71,0xF9,0xE8,0x00,0x00,0x00,0x00,0x00,0x00,
+ 832              /*0x53( 83)*/ 0x00,0x00,0x00,0x10,0x9F,0x80,0x33,0x00,0xCC,0x01,0xF9,0x08,0x70,0xF0,0xE0,0x30,0xF0,0xC
+             -0,0x33,0x00,0xCC,0x33,0xF0,0xCC,0x00,0x00,0x00,
+ 833              /*0x54( 84)*/ 0x00,0x00,0x00,0x31,0x6C,0x66,0x66,0x33,0x66,0x36,0x63,0x66,0x01,0x0C,0x66,0x17,0x8F,0x6
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 16  
+
+             -E,0x11,0x88,0x66,0x11,0x08,0x66,0x00,0x00,0x00,
+ 834              /*0x55( 85)*/ 0x00,0x00,0x00,0x31,0x1F,0x80,0x66,0x00,0xCC,0x13,0xF1,0x08,0x00,0x60,0x00,0x0F,0x0F,0x0
+             -E,0x66,0x00,0x00,0x76,0xF0,0xC0,0x00,0x00,0x00,
+ 835              /*0x56( 86)*/ 0x00,0x00,0x00,0x10,0x80,0x66,0x63,0x6C,0x66,0x66,0x67,0x6E,0x36,0xC6,0x66,0x01,0x08,0x6
+             -6,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x00,
+ 836              /*0x57( 87)*/ 0x00,0x00,0x00,0x31,0xC8,0x66,0x66,0x66,0xE6,0x36,0xC6,0x66,0x01,0x08,0x06,0x00,0xC0,0x0
+             -0,0x00,0xCC,0x00,0x00,0xFC,0xE0,0x00,0x00,0x00,
+ 837              /*0x58( 88)*/ 0x00,0x00,0x00,0x31,0xC8,0x66,0x66,0x76,0xE6,0x36,0xC6,0x66,0x01,0x08,0x06,0x10,0xF0,0xE
+             -0,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x00,
+ 838              /*0x59( 89)*/ 0x00,0x00,0x00,0x21,0x2C,0x66,0x66,0x33,0x66,0x12,0xC2,0x66,0x70,0xF0,0x66,0x00,0xDC,0xE
+             -6,0x30,0x0C,0x06,0x33,0xF0,0xE0,0x00,0x00,0x00,
+ 839              /*0x5A( 90)*/ 0x00,0x00,0x00,0x10,0x9F,0x80,0x33,0x00,0xCC,0x01,0xF9,0x08,0x70,0xF0,0xE0,0x00,0x66,0x0
+             -0,0x33,0x0F,0xCC,0x33,0xF0,0xCC,0x00,0x00,0x00,
+ 840              /*0x5B( 91)*/ 0x00,0x00,0x00,0xF0,0xF0,0xCC,0x11,0x88,0xCC,0x33,0xCC,0xFC,0x66,0x66,0xCC,0x0C,0x03,0xC
+             -C,0x00,0x00,0xCC,0x00,0x00,0xCC,0x00,0x00,0x00,
+ 841              /*0x5C( 92)*/ 0x00,0x00,0x00,0x07,0xCF,0x66,0x00,0xCC,0xE6,0x31,0x3E,0x66,0x06,0x01,0x0E,0x01,0x0F,0x6
+             -E,0x00,0x00,0x66,0x00,0x00,0x46,0x00,0x00,0x00,
+ 842              /*0x5D( 93)*/ 0x00,0x00,0x00,0xF1,0xF9,0xBB,0x11,0x99,0xBB,0x33,0xDD,0xFB,0x66,0x77,0xBB,0x0C,0x13,0xB
+             -B,0x00,0x11,0xBB,0x00,0x01,0x3B,0x00,0x00,0x00,
+ 843              /*0x5E( 94)*/ 0x00,0x00,0x00,0x70,0xF0,0xE6,0x00,0xCC,0x66,0x00,0xCD,0x6E,0x31,0x3E,0x66,0x06,0x01,0x6
+             -E,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x00,
+ 844              /*0x5F( 95)*/ 0x00,0x00,0x00,0x70,0xF0,0xE0,0x00,0x66,0x00,0x10,0x9F,0x80,0x63,0x00,0x6C,0x00,0x66,0x0
+             -0,0xF0,0xF6,0xF0,0x00,0x00,0x00,0x00,0x00,0x00,
+ 845              /*0x60( 96)*/ 0x00,0x00,0x00,0x07,0xCF,0x66,0x00,0xCC,0xE6,0x31,0x3E,0x66,0x06,0x01,0x0E,0x00,0x63,0xC
+             -8,0x00,0xCC,0x66,0x00,0x36,0x8C,0x00,0x00,0x00,
+ 846              /*0x61( 97)*/ 0x00,0x00,0x00,0x03,0x6F,0x0C,0x10,0x9F,0x80,0x03,0x00,0x0C,0x07,0x6F,0x0E,0x10,0xF6,0x8
+             -0,0x33,0x09,0xCC,0x13,0xF9,0x8C,0x00,0x00,0x00,
+ 847              /*0x62( 98)*/ 0x00,0x00,0x00,0x07,0xCF,0x66,0x00,0xCC,0x66,0x11,0xEE,0x66,0x33,0x33,0x66,0x06,0x01,0x6
+             -E,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x00,
+ 848              /*0x63( 99)*/ 0x00,0x00,0x00,0x07,0xCF,0x66,0x00,0xCC,0x66,0x31,0x3E,0x66,0x06,0x01,0x0E,0x00,0x0F,0x6
+             -E,0x00,0x00,0x66,0x00,0x00,0x46,0x00,0x00,0x00,
+ 849              /*0x64(100)*/ 0x00,0x00,0x00,0x70,0xFC,0x66,0x00,0xCC,0xE6,0x31,0x3E,0x66,0x06,0x01,0x0E,0x00,0x63,0xC
+             -8,0x00,0xCC,0x66,0x00,0x36,0x8C,0x00,0x00,0x00,
+ 850              /*0x65(101)*/ 0x00,0x00,0x00,0x00,0xCC,0x66,0x07,0xCF,0x6E,0x00,0xCC,0x66,0x11,0xEE,0x66,0x33,0x33,0x6
+             -6,0x06,0x01,0x6E,0x00,0x00,0x66,0x00,0x00,0x00,
+ 851              /*0x66(102)*/ 0x00,0x00,0x00,0x00,0x66,0x00,0x07,0x6F,0x0E,0x10,0x9F,0x80,0x63,0x00,0x6C,0x00,0x66,0x0
+             -0,0xF0,0xF6,0xF0,0x00,0x00,0x00,0x00,0x00,0x00,
+ 852              /*0x67(103)*/ 0x00,0x00,0x00,0x67,0x1D,0xBB,0x76,0xD1,0xFB,0x66,0x11,0xBB,0x07,0x0D,0x0B,0x00,0xF0,0xF
+             -0,0x00,0x00,0x33,0x00,0x00,0x23,0x00,0x00,0x00,
+ 853              /*0x68(104)*/ 0x00,0x00,0x00,0x37,0x6F,0x66,0x33,0x66,0x6E,0x33,0x66,0x6E,0x07,0x0F,0x06,0x00,0x63,0xC
+             -8,0x00,0xCC,0x66,0x00,0x36,0x8C,0x00,0x00,0x00,
+ 854              /*0x69(105)*/ 0x00,0x00,0x00,0x71,0xFC,0x66,0x10,0xC0,0x66,0x63,0x36,0x66,0x36,0x63,0x66,0x01,0x0C,0x6
+             -6,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x00,
+ 855              /*0x6A(106)*/ 0x00,0x00,0x00,0x71,0xFC,0x66,0x10,0xC0,0x66,0x63,0x36,0x76,0x36,0x63,0x66,0x01,0x0C,0x0
+             -6,0x33,0x00,0x00,0x33,0xF0,0xE0,0x00,0x00,0x00,
+ 856              /*0x6B(107)*/ 0x00,0x00,0x00,0x71,0xFC,0x66,0x10,0xC0,0x66,0x63,0x36,0x76,0x36,0x63,0x66,0x01,0x0C,0x6
+             -6,0x00,0x00,0x66,0x00,0x00,0x66,0x00,0x00,0x00,
+ 857              /*0x6C(108)*/ 0x00,0x00,0x00,0x71,0xFC,0x66,0x31,0x6C,0x66,0x36,0x63,0x67,0x11,0xCC,0x66,0x07,0x0F,0x0
+             -E,0x01,0x0F,0x6E,0x00,0x00,0x66,0x00,0x00,0x04,
+ 858              /*0x6D(109)*/ 0x00,0x00,0x00,0x71,0xFC,0x66,0x10,0xC0,0x66,0x63,0x36,0x76,0x36,0x63,0x66,0x01,0x0C,0x6
+             -6,0x00,0xCC,0x66,0x07,0x0F,0x6E,0x00,0x00,0x00,
+ 859              /*0x6E(110)*/ 0x00,0x00,0x00,0x30,0xF6,0xC0,0x00,0xF0,0x00,0x31,0x09,0xC8,0x13,0x90,0x8C,0x00,0x0F,0x0
+             -0,0x00,0x66,0x00,0x07,0x0F,0x0E,0x00,0x00,0x00,
+ 860              /*0x6F(111)*/ 0x00,0x00,0x00,0x71,0xFC,0x66,0x10,0xC0,0xE6,0x63,0x36,0xE6,0x36,0x63,0x66,0x01,0x0C,0x0
+             -6,0x10,0x8F,0x6C,0x01,0xF8,0xC6,0x00,0x00,0x00,
+ 861              /*0x70(112)*/ 0x00,0x00,0x00,0x71,0xFC,0x66,0x63,0x36,0x67,0x36,0x63,0x67,0x01,0x0C,0x46,0x00,0xC7,0xC
+             -8,0x11,0x88,0x66,0x00,0x7C,0x8C,0x00,0x00,0x00,
+ 862              /*0x71(113)*/ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 863              /*0x72(114)*/ 0x00,0x10,0xFF,0x00,0x33,0x08,0x00,0x33,0x00,0x00,0x33,0x00,0x00,0x73,0xF0,0x00,0xFF,0xC
+             -F,0x00,0xFF,0xC8,0x00,0xFF,0xFC,0x00,0xFF,0xFF,
+ 864              /*0x73(115)*/ 0xEC,0x00,0x00,0x37,0x00,0x00,0x33,0x00,0x00,0x33,0x00,0x00,0xF3,0x80,0x00,0xFF,0xCC,0x0
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 17  
+
+             -0,0xF7,0xCC,0x00,0xFF,0xCC,0x00,0xFF,0xCC,0x00,
+ 865              /*0x74(116)*/ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x70,0xF0,0x00,0xFF,0xC
+             -F,0x00,0xFF,0xC8,0x00,0xFF,0xFC,0x00,0xFF,0xFF,
+ 866              /*0x75(117)*/ 0x10,0xFF,0xEC,0x33,0x08,0x37,0x33,0x00,0x33,0x33,0x00,0x03,0xF3,0x80,0x00,0xFF,0xCC,0x0
+             -0,0xF7,0xCC,0x00,0xFF,0xCC,0x00,0xFF,0xCC,0x00,
+ 867              /*0x76(118)*/ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x10,
+ 868              /*0x77(119)*/ 0x00,0x00,0x73,0x00,0x00,0xE7,0x00,0x11,0xCC,0x00,0x33,0x88,0x00,0xE7,0x00,0x10,0xCE,0x0
+             -0,0x33,0x88,0x00,0xE7,0x00,0x00,0xCE,0x00,0x00,
+ 869              /*0x78(120)*/ 0x00,0x00,0x33,0x00,0x00,0xE7,0x00,0x10,0xCE,0x00,0x33,0x88,0x00,0xE7,0x00,0x10,0xCE,0x0
+             -0,0x33,0x88,0x00,0x77,0x00,0x00,0xCE,0x00,0x00,
+ 870              /*0x79(121)*/ 0x08,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 871              /*0x7A(122)*/ 0xEC,0x00,0x00,0x77,0x00,0x00,0x33,0x88,0x00,0x01,0xEC,0x00,0x00,0x7E,0x00,0x00,0x33,0x8
+             -8,0x00,0x01,0xEC,0x00,0x00,0x7E,0x00,0x00,0x33,
+ 872              /*0x7B(123)*/ 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x80,0x00,0x00,
+ 873              /*0x7C(124)*/ 0x00,0x00,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 874              /*0x7D(125)*/ 0xCC,0x00,0x00,0x7E,0x00,0x00,0x37,0x80,0x00,0x11,0xCC,0x00,0x00,0x7E,0x00,0x00,0x37,0x8
+             -0,0x00,0x11,0xCC,0x00,0x00,0xEE,0x00,0x00,0x37,
+ 875              /*0x7E(126)*/ 0xFF,0xFF,0xFF,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 876              /*0x7F(127)*/ 0x77,0xFF,0xFF,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 877              /*0x80(128)*/ 0x00,0x77,0xFF,0x00,0xC6,0x00,0x00,0xCC,0x00,0x11,0x88,0x00,0x31,0x08,0x00,0x33,0x00,0x0
+             -0,0x66,0x00,0x00,0xC6,0x00,0x00,0xCC,0x00,0x00,
+ 878              /*0x81(129)*/ 0xFF,0xEE,0x00,0x00,0x36,0x00,0x00,0x33,0x00,0x00,0x11,0x88,0x00,0x01,0xC8,0x00,0x00,0xC
+             -C,0x00,0x00,0x66,0x00,0x00,0x36,0x00,0x00,0x33,
+ 879              /*0x82(130)*/ 0x00,0x00,0x11,0x00,0x00,0x31,0x00,0x00,0x33,0x00,0x00,0x66,0x00,0x00,0xC6,0x00,0x00,0xC
+             -C,0x00,0x11,0x88,0x00,0x31,0x08,0x00,0x33,0x00,
+ 880              /*0x83(131)*/ 0x00,0x66,0x00,0x00,0xC6,0x00,0x00,0xCC,0x00,0x11,0x88,0x00,0x31,0x08,0x00,0x33,0x00,0x0
+             -0,0x66,0x00,0x00,0xC6,0x00,0x00,0xCC,0x00,0x00,
+ 881              /*0x84(132)*/ 0x88,0x00,0x00,0x08,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 882              /*0x85(133)*/ 0x88,0x00,0x00,0xC8,0x00,0x00,0xCC,0x00,0x00,0x66,0x00,0x00,0x36,0x00,0x00,0x33,0x00,0x0
+             -0,0x11,0x88,0x00,0x01,0xC8,0x00,0x00,0xCC,0x00,
+ 883              /*0x86(134)*/ 0x00,0x66,0x00,0x00,0x36,0x00,0x00,0x33,0x00,0x00,0x11,0x88,0x00,0x01,0xC8,0x00,0x00,0xC
+             -C,0x00,0x00,0x66,0x00,0x00,0x36,0x00,0x00,0x33,
+ 884              /*0x87(135)*/ 0x00,0x00,0x11,0x00,0x00,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x0
+             -0,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+ 885          
+ 886          };
+ 887          
+ 888          void Print_Used_Clock(DWORD _UsedClock)
+ 889          {
+ 890   1        DWORD UsedClock;
+ 891   1        BYTE hour,min,sec,ms;
+ 892   1      
+ 893   1        UsedClock = _UsedClock;
+ 894   1        ms = (BYTE)(UsedClock%100);
+ 895   1        UsedClock = UsedClock/100;
+ 896   1        if(UsedClock==0) {
+ 897   2          sec = 0;
+ 898   2          min = 0;
+ 899   2          hour = 0;
+ 900   2        }
+ 901   1        else {
+ 902   2          sec = (BYTE)(UsedClock % 60);
+ 903   2          UsedClock = UsedClock / 60;
+ 904   2          if(UsedClock==0) {
+ 905   3            min = 0;
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 18  
+
+ 906   3            hour = 0;
+ 907   3          }
+ 908   2          else {
+ 909   3            min = (BYTE)(UsedClock%60);
+ 910   3            hour = UsedClock / 60;
+ 911   3          }
+ 912   2        }
+ 913   1        Printf("\n\rUsedClock %bd:%02bd:%02bd.%02bd", hour,min,sec ,ms);
+ 914   1      }
+ 915          
+ 916          //note: I2C function shall be block SFR_EA, you can not use SystemClock.
+ 917          //to test,
+ 918          //  access 0
+ 919          //  fosd dnfont 0
+ 920          //  fsod fontd
+ 921          //  fosd test5
+ 922          #if defined(SUPPORT_I2C_MASTER)
+ 923          void FOsdTest_5(BYTE start)
+ 924          {
+ 925   1        DWORD StartClock, UsedClock;
+ 926   1        BYTE bTemp;
+ 927   1        WORD i;
+ 928   1      
+ 929   1      
+ 930   1      
+ 931   1        //disable AINC
+ 932   1        WriteI2CByte(0x8A, 0xFF, 0);
+ 933   1        bTemp = ReadI2CByte(0x8A, 0x06);
+ 934   1        WriteI2CByte(0x8A, 0x06, bTemp | 0x20);
+ 935   1      
+ 936   1        //select FontRAM
+ 937   1        WriteI2CByte(0x8A, 0xFF, 3);
+ 938   1        bTemp = ReadI2CByte(0x8A, 0x04);    
+ 939   1        WriteI2CByte(0x8A, 0x04, bTemp | 0x01);
+ 940   1      
+ 941   1        //set FontRAM address as 0
+ 942   1        bTemp = ReadI2CByte(0x8A, 0x04);    
+ 943   1        WriteI2CByte(0x8A, 0x04, bTemp & ~0x20);
+ 944   1        WriteI2CByte(0x8A, 0x09, start);
+ 945   1      
+ 946   1        SFRB_ET0 = 0;
+ 947   1        StartClock = SystemClock;
+ 948   1        SFRB_ET0 = 1;
+ 949   1      
+ 950   1        //write data
+ 951   1        WriteI2CS(0x8A,0x0A, FOsdTest_5_data_88h_27 ,0x88*27); 
+ 952   1        
+ 953   1      
+ 954   1        SFRB_ET0 = 0;
+ 955   1        UsedClock = SystemClock;
+ 956   1        SFRB_ET0 = 1;
+ 957   1        UsedClock -= StartClock;
+ 958   1        Print_Used_Clock(StartClock);
+ 959   1        Print_Used_Clock(UsedClock);
+ 960   1        
+ 961   1        //set FontRAM address as 0
+ 962   1        bTemp = ReadI2CByte(0x8A, 0x04);    
+ 963   1        WriteI2CByte(0x8A, 0x04, bTemp & ~0x20);
+ 964   1        WriteI2CByte(0x8A, 0x09, start+1);
+ 965   1      
+ 966   1        SFRB_ET0 = 0;
+ 967   1        StartClock = SystemClock;
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 19  
+
+ 968   1        SFRB_ET0 = 1;
+ 969   1      
+ 970   1        //write data
+ 971   1        for(i=0; i < 0x88*27; i++)
+ 972   1          WriteI2CByte(0x8A, 0x0A, FOsdTest_5_data_88h_27[i]); 
+ 973   1                   
+ 974   1        SFRB_ET0=0;
+ 975   1        UsedClock = SystemClock;
+ 976   1        SFRB_ET0=1;
+ 977   1        UsedClock -= StartClock;
+ 978   1        Print_Used_Clock(StartClock);
+ 979   1        Print_Used_Clock(UsedClock);
+ 980   1      
+ 981   1      
+ 982   1        //restore RAM access mode
+ 983   1        bTemp = ReadI2CByte(0x8A, 0x04);    
+ 984   1        WriteI2CByte(0x8A, 0x04, bTemp & ~0x01);
+ 985   1      
+ 986   1        //restore AINC
+ 987   1        WriteI2CByte(0x8A, 0xFF, 0);
+ 988   1        bTemp = ReadI2CByte(0x8A, 0x06);
+ 989   1        WriteI2CByte(0x8A, 0x06, bTemp & ~0x20);
+ 990   1      }
+ 991          #endif  
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 20  
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com0068 (BEGIN)
+0000         L?0105:
+0000 FF                MOV     R7,A
+0001         L?0106:
+0001 E0                MOVX    A,@DPTR
+0002 2F                ADD     A,R7
+0003 FE                MOV     R6,A
+0004 759300      E     MOV     DPX,#?C?XDATASEG
+0007 E500        E     MOV     A,regTW88+01H
+0009 2406              ADD     A,#06H
+000B F582              MOV     DPL,A
+000D E500        E     MOV     A,regTW88
+000F 3403              ADDC    A,#03H
+0011 F583              MOV     DPH,A
+0013 759300      E     MOV     DPX,#?C?XDATASEG
+0016 EE                MOV     A,R6
+0017         L?0107:
+0017 F0                MOVX    @DPTR,A
+0018         L?0108:
+0018 759300      E     MOV     DPX,#?C?XDATASEG
+001B E500        E     MOV     A,regTW88+01H
+001D 2407              ADD     A,#07H
+001F         L?0109:
+001F F582              MOV     DPL,A
+0021 E500        E     MOV     A,regTW88
+0023 3403              ADDC    A,#03H
+0025 F583              MOV     DPH,A
+0027 759300      E     MOV     DPX,#?C?XDATASEG
+002A 22                RET     
+002B         L?0110:
+002B 90000000    R     MOV     DPTR,#palette
+002F F0                MOVX    @DPTR,A
+0030         L?0111:
+0030 90000000    R     MOV     DPTR,#fosd
+0034         L?0112:
+0034 E0                MOVX    A,@DPTR
+0035 FB                MOV     R3,A
+0036 A3                INC     DPTR
+0037 E0                MOVX    A,@DPTR
+0038 FA                MOV     R2,A
+0039 A3                INC     DPTR
+003A E0                MOVX    A,@DPTR
+003B 2406              ADD     A,#06H
+003D F9                MOV     R1,A
+003E E4                CLR     A
+003F 3A                ADDC    A,R2
+0040 FA                MOV     R2,A
+0041 110000      E     ACALL   ?C?CLDPTR
+0044 FF                MOV     R7,A
+0045 22                RET     
+0046         L?0113:
+0046 C2A9              CLR     SFRB_ET0
+0048 AF00        E     MOV     R7,SystemClock+03H
+004A AE00        E     MOV     R6,SystemClock+02H
+004C AD00        E     MOV     R5,SystemClock+01H
+004E AC00        E     MOV     R4,SystemClock
+0050 90000000    R     MOV     DPTR,#UsedClock
+0054 110000      E     ACALL   ?C?LSTXDATA
+0057 D2A9              SETB    SFRB_ET0
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 21  
+
+0059 90000000    R     MOV     DPTR,#UsedClock
+005D E0                MOVX    A,@DPTR
+005E FC                MOV     R4,A
+005F A3                INC     DPTR
+0060 E0                MOVX    A,@DPTR
+0061 FD                MOV     R5,A
+0062 A3                INC     DPTR
+0063 E0                MOVX    A,@DPTR
+0064 FE                MOV     R6,A
+0065 A3                INC     DPTR
+0066 E0                MOVX    A,@DPTR
+0067 FF                MOV     R7,A
+0068 90000000    R     MOV     DPTR,#StartClock
+006C E0                MOVX    A,@DPTR
+006D F8                MOV     R0,A
+006E A3                INC     DPTR
+006F E0                MOVX    A,@DPTR
+0070 F9                MOV     R1,A
+0071 A3                INC     DPTR
+0072 E0                MOVX    A,@DPTR
+0073 FA                MOV     R2,A
+0074 A3                INC     DPTR
+0075 E0                MOVX    A,@DPTR
+0076 FB                MOV     R3,A
+0077 C3                CLR     C
+0078 EF                MOV     A,R7
+0079 9B                SUBB    A,R3
+007A FF                MOV     R7,A
+007B EE                MOV     A,R6
+007C 9A                SUBB    A,R2
+007D FE                MOV     R6,A
+007E ED                MOV     A,R5
+007F 99                SUBB    A,R1
+0080 FD                MOV     R5,A
+0081 EC                MOV     A,R4
+0082 98                SUBB    A,R0
+0083 FC                MOV     R4,A
+0084 A3                INC     DPTR
+0085 110000      E     ACALL   ?C?LSTXDATA
+0088 90000000    R     MOV     DPTR,#StartClock
+008C         L?0114:
+008C E0                MOVX    A,@DPTR
+008D FC                MOV     R4,A
+008E A3                INC     DPTR
+008F E0                MOVX    A,@DPTR
+0090 FD                MOV     R5,A
+0091 A3                INC     DPTR
+0092 E0                MOVX    A,@DPTR
+0093 FE                MOV     R6,A
+0094 A3                INC     DPTR
+0095 E0                MOVX    A,@DPTR
+0096 FF                MOV     R7,A
+0097 22                RET     
+0098         L?0115:
+0098         L?0116:
+0098 E0                MOVX    A,@DPTR
+0099 54DF              ANL     A,#0DFH
+009B F0                MOVX    @DPTR,A
+009C         L?0117:
+009C 759300      E     MOV     DPX,#?C?XDATASEG
+009F E500        E     MOV     A,regTW88+01H
+00A1 2404              ADD     A,#04H
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 22  
+
+00A3 22                RET     
+00A4         L?0119:
+00A4 7B00        R     MOV     R3,#MBYTE temp_fosd_menu_item
+00A6 7A00        R     MOV     R2,#HIGH temp_fosd_menu_item
+00A8 7900        R     MOV     R1,#LOW temp_fosd_menu_item
+00AA EB                MOV     A,R3
+00AB F0                MOVX    @DPTR,A
+00AC A3                INC     DPTR
+00AD EA                MOV     A,R2
+00AE F0                MOVX    @DPTR,A
+00AF A3                INC     DPTR
+00B0 E9                MOV     A,R1
+00B1 F0                MOVX    @DPTR,A
+00B2         L?0120:
+00B2 2406              ADD     A,#06H
+00B4 F9                MOV     R1,A
+00B5 E4                CLR     A
+00B6 3A                ADDC    A,R2
+00B7 FA                MOV     R2,A
+00B8 E4                CLR     A
+00B9 010000      E     AJMP    ?C?CSTPTR
+00BC         L?0122:
+00BC 740C              MOV     A,#0CH
+00BE         L?0123:
+00BE F0                MOVX    @DPTR,A
+00BF 90000000    R     MOV     DPTR,#bgColor
+00C3 E0                MOVX    A,@DPTR
+00C4 90000000    R     MOV     DPTR,#fgColor
+00C8         L?0124:
+00C8 C4                SWAP    A
+00C9 54F0              ANL     A,#0F0H
+00CB FF                MOV     R7,A
+00CC E0                MOVX    A,@DPTR
+00CD 4F                ORL     A,R7
+00CE FD                MOV     R5,A
+00CF 22                RET     
+00D0         L?0126:
+00D0 E4                CLR     A
+00D1 FA                MOV     R2,A
+00D2 F9                MOV     R1,A
+00D3 F8                MOV     R0,A
+00D4 110000      E     ACALL   ?C?ULDIV
+00D7 90000000    R     MOV     DPTR,#UsedClock
+00DB 110000      E     ACALL   ?C?LSTXDATA
+00DE E4                CLR     A
+00DF FF                MOV     R7,A
+00E0 FE                MOV     R6,A
+00E1 FD                MOV     R5,A
+00E2 FC                MOV     R4,A
+00E3 90000000    R     MOV     DPTR,#UsedClock
+00E7 E0                MOVX    A,@DPTR
+00E8 F8                MOV     R0,A
+00E9 A3                INC     DPTR
+00EA E0                MOVX    A,@DPTR
+00EB F9                MOV     R1,A
+00EC A3                INC     DPTR
+00ED E0                MOVX    A,@DPTR
+00EE FA                MOV     R2,A
+00EF A3                INC     DPTR
+00F0 E0                MOVX    A,@DPTR
+00F1 FB                MOV     R3,A
+00F2 C3                CLR     C
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 23  
+
+00F3 010000      E     AJMP    ?C?ULCMP
+00F6         L?0127:
+00F6         L?0128:
+00F6 ED                MOV     A,R5
+00F7 8FF0              MOV     B,R7
+00F9 A4                MUL     AB
+00FA FF                MOV     R7,A
+00FB EC                MOV     A,R4
+00FC         L?0129:
+00FC 7A00              MOV     R2,#00H
+00FE 2F                ADD     A,R7
+00FF FF                MOV     R7,A
+0100 EA                MOV     A,R2
+0101 35F0              ADDC    A,B
+0103 22                RET     
+0104         L?0132:
+0104         L?0133:
+0104 740F              MOV     A,#0FH
+0106 F0                MOVX    @DPTR,A
+0107 A3                INC     DPTR
+0108 7401              MOV     A,#01H
+010A         L?0134:
+010A F0                MOVX    @DPTR,A
+010B A3                INC     DPTR
+010C 7410              MOV     A,#010H
+010E F0                MOVX    @DPTR,A
+010F A3                INC     DPTR
+0110 22                RET     
+0111         L?0135:
+0111 EE                MOV     A,R6
+0112 F0                MOVX    @DPTR,A
+0113 EF                MOV     A,R7
+0114 C4                SWAP    A
+0115 54F0              ANL     A,#0F0H
+0117         L?0136:
+0117 FF                MOV     R7,A
+0118 759300      E     MOV     DPX,#?C?XDATASEG
+011B E500        E     MOV     A,regTW88+01H
+011D 22                RET     
+011E         L?0137:
+011E         L?0138:
+011E 7B3C              MOV     R3,#03CH
+0120         L?0139:
+0120 E4                CLR     A
+0121 FA                MOV     R2,A
+0122 F9                MOV     R1,A
+0123 F8                MOV     R0,A
+0124 90000000    R     MOV     DPTR,#UsedClock
+0128 22                RET     
+0129         L?0140:
+0129         L?0141:
+0129 7400        R     MOV     A,#MBYTE temp_fosd_menu_item
+012B F0                MOVX    @DPTR,A
+012C A3                INC     DPTR
+012D 7400        R     MOV     A,#HIGH temp_fosd_menu_item
+012F F0                MOVX    @DPTR,A
+0130 A3                INC     DPTR
+0131 7400        R     MOV     A,#LOW temp_fosd_menu_item
+0133 F0                MOVX    @DPTR,A
+0134 22                RET     
+0135         L?0142:
+0135         L?0143:
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 24  
+
+0135 E0                MOVX    A,@DPTR
+0136 FB                MOV     R3,A
+0137 A3                INC     DPTR
+0138 E0                MOVX    A,@DPTR
+0139 FA                MOV     R2,A
+013A A3                INC     DPTR
+013B E0                MOVX    A,@DPTR
+013C 22                RET     
+013D         L?0144:
+013D         L?0145:
+013D E4                CLR     A
+013E F0                MOVX    @DPTR,A
+013F 759300      E     MOV     DPX,#?C?XDATASEG
+0142 E500        E     MOV     A,regTW88+01H
+0144 22                RET     
+0145         L?0149:
+0145 90000000    R     MOV     DPTR,#columns
+0149 E0                MOVX    A,@DPTR
+014A FF                MOV     R7,A
+014B 90000000    R     MOV     DPTR,#j
+014F E0                MOVX    A,@DPTR
+0150 FC                MOV     R4,A
+0151 C3                CLR     C
+0152 9F                SUBB    A,R7
+0153 22                RET     
+0154         L?0150:
+0154 90000000    R     MOV     DPTR,#columns
+0158 E0                MOVX    A,@DPTR
+0159 FF                MOV     R7,A
+015A 90000000    R     MOV     DPTR,#j
+015E E0                MOVX    A,@DPTR
+015F FC                MOV     R4,A
+0160 C3                CLR     C
+0161 9F                SUBB    A,R7
+0162 22                RET     
+0163         L?0152:
+0163         L?0153:
+0163 EF                MOV     A,R7
+0164 75F003            MOV     B,#03H
+0167 A4                MUL     AB
+0168 2480              ADD     A,#080H
+016A FE                MOV     R6,A
+016B 22                RET     
+016C         L?0154:
+016C EF                MOV     A,R7
+016D F0                MOVX    @DPTR,A
+016E         L?0155:
+016E 90000000    R     MOV     DPTR,#i
+0172 E0                MOVX    A,@DPTR
+0173 04                INC     A
+0174 F0                MOVX    @DPTR,A
+0175 22                RET     
+0176         L?0159:
+0176         L?0160:
+0176 90000000    R     MOV     DPTR,#i
+017A E0                MOVX    A,@DPTR
+017B FF                MOV     R7,A
+017C 22                RET     
+017D         L?0161:
+017D EF                MOV     A,R7
+017E F0                MOVX    @DPTR,A
+017F 90000000    R     MOV     DPTR,#j
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 25  
+
+0183 E0                MOVX    A,@DPTR
+0184 04                INC     A
+0185 F0                MOVX    @DPTR,A
+0186 22                RET     
+0187         L?0162:
+0187 EF                MOV     A,R7
+0188 F0                MOVX    @DPTR,A
+0189 90000000    R     MOV     DPTR,#j
+018D E0                MOVX    A,@DPTR
+018E 04                INC     A
+018F F0                MOVX    @DPTR,A
+0190 22                RET     
+0191         L?0163:
+0191         L?0164:
+0191 E4                CLR     A
+0192 90000000    R     MOV     DPTR,#i
+0196 F0                MOVX    @DPTR,A
+0197 22                RET     
+0198         L?0165:
+0198 90000000    R     MOV     DPTR,#i
+019C E0                MOVX    A,@DPTR
+019D FF                MOV     R7,A
+019E C3                CLR     C
+019F 9408              SUBB    A,#08H
+01A1 22                RET     
+             ; FUNCTION Com0068 (END)
+
+             ; FUNCTION DumpFontOsdPalette (BEGIN)
+                                           ; SOURCE LINE # 110
+                                           ; SOURCE LINE # 111
+                                           ; SOURCE LINE # 116
+0000 90000000    R     MOV     DPTR,#fosd
+                                           ; SOURCE LINE # 117
+0004 110000      R     ACALL   L?0119
+                                           ; SOURCE LINE # 119
+0007 110000      E     ACALL   FOsdSetDeValue
+                                           ; SOURCE LINE # 122
+000A E4                CLR     A
+000B FD                MOV     R5,A
+000C FC                MOV     R4,A
+000D FF                MOV     R7,A
+000E 110000      E     ACALL   _InitFontRamByNum
+                                           ; SOURCE LINE # 124
+0011 E4                CLR     A
+0012 90000000    R     MOV     DPTR,#i
+0016 F0                MOVX    @DPTR,A
+0017         ?C0001:
+0017 110000      R     ACALL   L?0159
+001A C3                CLR     C
+001B 9404              SUBB    A,#04H
+001D 5015              JNC     ?C0002
+                                           ; SOURCE LINE # 125
+001F 110000      E     ACALL   _FOsdWinInit
+                                           ; SOURCE LINE # 126
+0022 110000      R     ACALL   L?0159
+0025 E4                CLR     A
+0026 FD                MOV     R5,A
+0027 FC                MOV     R4,A
+0028 110000      E     ACALL   _FOsdWinSetOsdRamStartAddr
+                                           ; SOURCE LINE # 127
+002B 90000000    R     MOV     DPTR,#i
+002F E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 26  
+
+0030 04                INC     A
+0031 F0                MOVX    @DPTR,A
+0032 80E3              SJMP    ?C0001
+0034         ?C0002:
+                                           ; SOURCE LINE # 129
+0034 7F01              MOV     R7,#01H
+0036 110000      E     ACALL   _WaitVBlank
+                                           ; SOURCE LINE # 130
+0039 90000000    R     MOV     DPTR,#fosd
+003D 110000      R     ACALL   L?0112
+0040 E4                CLR     A
+0041 FD                MOV     R5,A
+0042 110000      E     ACALL   _FOsdWinEnable
+                                           ; SOURCE LINE # 133
+0045 90000000    R     MOV     DPTR,#fosd
+0049 110000      R     ACALL   L?0112
+004C 7B0D              MOV     R3,#0DH
+004E 7A00              MOV     R2,#00H
+0050 7D10              MOV     R5,#010H
+0052 7C00              MOV     R4,#00H
+0054 110000      E     ACALL   _FOsdWinScreenXY
+                                           ; SOURCE LINE # 134
+0057 90000000    R     MOV     DPTR,#fosd
+005B 110000      R     ACALL   L?0112
+005E 7B10              MOV     R3,#010H
+0060 7D20              MOV     R5,#020H
+0062 110000      E     ACALL   _FOsdWinScreenWH
+                                           ; SOURCE LINE # 135
+0065 90000000    R     MOV     DPTR,#fosd
+0069 110000      R     ACALL   L?0112
+006C E4                CLR     A
+006D FB                MOV     R3,A
+006E 7D01              MOV     R5,#01H
+0070 110000      E     ACALL   _FOsdWinZoom
+                                           ; SOURCE LINE # 148
+0073 110000      R     ACALL   L?0117
+0076 110000      R     ACALL   L?0109
+0079 740C              MOV     A,#0CH
+007B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 150
+007C E4                CLR     A
+007D 90000000    R     MOV     DPTR,#i
+0081 F0                MOVX    @DPTR,A
+0082         ?C0004:
+                                           ; SOURCE LINE # 151
+0082 E4                CLR     A
+0083 90000000    R     MOV     DPTR,#j
+0087 F0                MOVX    @DPTR,A
+0088         ?C0007:
+0088 90000000    R     MOV     DPTR,#j
+008C E0                MOVX    A,@DPTR
+008D FD                MOV     R5,A
+008E C3                CLR     C
+008F 9410              SUBB    A,#010H
+0091 5062              JNC     ?C0006
+                                           ; SOURCE LINE # 152
+0093 90000000    R     MOV     DPTR,#i
+0097 E0                MOVX    A,@DPTR
+0098 FC                MOV     R4,A
+0099 75F010            MOV     B,#010H
+009C A4                MUL     AB
+009D FF                MOV     R7,A
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 27  
+
+009E ED                MOV     A,R5
+009F 110000      R     ACALL   L?0129
+00A2 FE                MOV     R6,A
+00A3 EF                MOV     A,R7
+00A4 25E0              ADD     A,ACC
+00A6 FF                MOV     R7,A
+00A7 EE                MOV     A,R6
+00A8 33                RLC     A
+00A9 FE                MOV     R6,A
+00AA EC                MOV     A,R4
+00AB C4                SWAP    A
+00AC 54F0              ANL     A,#0F0H
+00AE FC                MOV     R4,A
+00AF ED                MOV     A,R5
+00B0 4C                ORL     A,R4
+00B1 FD                MOV     R5,A
+00B2 110000      E     ACALL   _FOsdRamSetAddrAttr
+                                           ; SOURCE LINE # 154
+00B5 110000      R     ACALL   L?0160
+00B8 C3                CLR     C
+00B9 940A              SUBB    A,#0AH
+00BB 4005              JC      ?C0010
+00BD EF                MOV     A,R7
+00BE 2437              ADD     A,#037H
+00C0 8007              SJMP    ?C0101
+00C2         ?C0010:
+                                           ; SOURCE LINE # 155
+00C2 90000000    R     MOV     DPTR,#i
+00C6 E0                MOVX    A,@DPTR
+00C7 2430              ADD     A,#030H
+00C9         ?C0101:
+00C9 FF                MOV     R7,A
+00CA 110000      R     ACALL   L?0108
+00CD EF                MOV     A,R7
+00CE F0                MOVX    @DPTR,A
+00CF         ?C0011:
+                                           ; SOURCE LINE # 157
+00CF 90000000    R     MOV     DPTR,#j
+00D3 E0                MOVX    A,@DPTR
+00D4 FF                MOV     R7,A
+00D5 C3                CLR     C
+00D6 940A              SUBB    A,#0AH
+00D8 4005              JC      ?C0012
+00DA EF                MOV     A,R7
+00DB 2437              ADD     A,#037H
+00DD 8007              SJMP    ?C0102
+00DF         ?C0012:
+                                           ; SOURCE LINE # 158
+00DF 90000000    R     MOV     DPTR,#j
+00E3 E0                MOVX    A,@DPTR
+00E4 2430              ADD     A,#030H
+00E6         ?C0102:
+00E6 FF                MOV     R7,A
+00E7 110000      R     ACALL   L?0108
+00EA EF                MOV     A,R7
+00EB F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 159
+00EC         ?C0009:
+00EC 90000000    R     MOV     DPTR,#j
+00F0 E0                MOVX    A,@DPTR
+00F1 04                INC     A
+00F2 F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 28  
+
+00F3 8093              SJMP    ?C0007
+                                           ; SOURCE LINE # 160
+00F5         ?C0006:
+00F5 90000000    R     MOV     DPTR,#i
+00F9 E0                MOVX    A,@DPTR
+00FA 04                INC     A
+00FB F0                MOVX    @DPTR,A
+00FC E0                MOVX    A,@DPTR
+00FD C3                CLR     C
+00FE 9410              SUBB    A,#010H
+0100 4080              JC      ?C0004
+0102         ?C0005:
+                                           ; SOURCE LINE # 164
+0102 110000      R     ACALL   L?0117
+0105 110000      R     ACALL   L?0109
+0108 740C              MOV     A,#0CH
+010A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 166
+010B 90000000    R     MOV     DPTR,#fosd
+010F 110000      R     ACALL   L?0112
+0112 7D01              MOV     R5,#01H
+0114 010000      E     AJMP    _FOsdWinEnable
+             ; FUNCTION DumpFontOsdPalette (END)
+
+             ; FUNCTION Test16x32FontSet (BEGIN)
+                                           ; SOURCE LINE # 173
+                                           ; SOURCE LINE # 174
+                                           ; SOURCE LINE # 181
+0000 90000000    R     MOV     DPTR,#fgColor
+                                           ; SOURCE LINE # 182
+                                           ; SOURCE LINE # 183
+                                           ; SOURCE LINE # 184
+0004 110000      R     ACALL   L?0132
+0007 740A              MOV     A,#0AH
+0009 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 185
+000A A3                INC     DPTR
+000B 74A0              MOV     A,#0A0H
+000D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 187
+000E 90000000    R     MOV     DPTR,#fosd
+0012 110000      R     ACALL   L?0140
+                                           ; SOURCE LINE # 188
+0015 90000000    R     MOV     DPTR,#fosd
+0019 110000      R     ACALL   L?0142
+001C 110000      R     ACALL   L?0120
+                                           ; SOURCE LINE # 190
+001F 110000      E     ACALL   FOsdSetDeValue
+                                           ; SOURCE LINE # 192
+0022 90000000    R     MOV     DPTR,#fosd
+0026 110000      R     ACALL   L?0112
+0029 110000      E     ACALL   _FOsdWinInit
+                                           ; SOURCE LINE # 194
+002C 7F01              MOV     R7,#01H
+002E 110000      E     ACALL   _WaitVBlank
+                                           ; SOURCE LINE # 195
+0031 90000000    R     MOV     DPTR,#fosd
+0035 110000      R     ACALL   L?0112
+0038 E4                CLR     A
+0039 FD                MOV     R5,A
+003A 110000      E     ACALL   _FOsdWinEnable
+                                           ; SOURCE LINE # 201
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 29  
+
+003D 90000000    R     MOV     DPTR,#fosd
+0041 110000      R     ACALL   L?0112
+0044 E4                CLR     A
+0045 FD                MOV     R5,A
+0046 FC                MOV     R4,A
+0047 110000      E     ACALL   _FOsdWinSetOsdRamStartAddr
+                                           ; SOURCE LINE # 202
+004A 90000000    R     MOV     DPTR,#fosd
+004E 110000      R     ACALL   L?0112
+0051 90000000    R     MOV     DPTR,#bgColor
+0055 E0                MOVX    A,@DPTR
+0056 FD                MOV     R5,A
+0057 7B04              MOV     R3,#04H
+0059 110000      E     ACALL   _FOsdWinAlphaPixel
+                                           ; SOURCE LINE # 204
+005C 90000000    R     MOV     DPTR,#fosd
+0060 110000      R     ACALL   L?0112
+0063 E4                CLR     A
+0064 FB                MOV     R3,A
+0065 FA                MOV     R2,A
+0066 FD                MOV     R5,A
+0067 FC                MOV     R4,A
+0068 110000      E     ACALL   _FOsdWinScreenXY
+                                           ; SOURCE LINE # 205
+006B 90000000    R     MOV     DPTR,#fosd
+006F 110000      R     ACALL   L?0112
+0072 90000000    R     MOV     DPTR,#columns
+0076 E0                MOVX    A,@DPTR
+0077 FD                MOV     R5,A
+0078 A3                INC     DPTR
+0079 E0                MOVX    A,@DPTR
+007A FB                MOV     R3,A
+007B 110000      E     ACALL   _FOsdWinScreenWH
+                                           ; SOURCE LINE # 206
+007E 90000000    R     MOV     DPTR,#fosd
+0082 110000      R     ACALL   L?0112
+0085 E4                CLR     A
+0086 FB                MOV     R3,A
+0087 7D01              MOV     R5,#01H
+0089 110000      E     ACALL   _FOsdWinZoom
+                                           ; SOURCE LINE # 209
+008C 110000      R     ACALL   L?0117
+008F 110000      R     ACALL   L?0109
+0092 740C              MOV     A,#0CH
+0094 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 211
+0095 90000000    R     MOV     DPTR,#bgColor
+0099 E0                MOVX    A,@DPTR
+009A 90000000    R     MOV     DPTR,#fgColor
+009E 110000      R     ACALL   L?0124
+00A1 E4                CLR     A
+00A2 FF                MOV     R7,A
+00A3 FE                MOV     R6,A
+00A4 110000      E     ACALL   _FOsdRamSetAddrAttr
+                                           ; SOURCE LINE # 213
+;---- Variable 'i' assigned to Register 'R5' ----
+00A7 E4                CLR     A
+00A8 FD                MOV     R5,A
+00A9         ?C0015:
+00A9 90000000    R     MOV     DPTR,#lines
+00AD E0                MOVX    A,@DPTR
+00AE FF                MOV     R7,A
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 30  
+
+00AF ED                MOV     A,R5
+00B0 C3                CLR     C
+00B1 9F                SUBB    A,R7
+00B2 504A              JNC     ?C0016
+                                           ; SOURCE LINE # 214
+;---- Variable 'j' assigned to Register 'R4' ----
+00B4 E4                CLR     A
+00B5 FC                MOV     R4,A
+00B6         ?C0018:
+00B6 90000000    R     MOV     DPTR,#columns
+00BA E0                MOVX    A,@DPTR
+00BB FF                MOV     R7,A
+00BC EC                MOV     A,R4
+00BD C3                CLR     C
+00BE 9F                SUBB    A,R7
+00BF 503A              JNC     ?C0017
+                                           ; SOURCE LINE # 215
+00C1 110000      R     ACALL   L?0127
+00C4 FE                MOV     R6,A
+00C5 90000000    R     MOV     DPTR,#index
+00C9 F0                MOVX    @DPTR,A
+00CA A3                INC     DPTR
+00CB EF                MOV     A,R7
+00CC F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 217
+00CD 90000000    R     MOV     DPTR,#max
+00D1 E0                MOVX    A,@DPTR
+00D2 FB                MOV     R3,A
+00D3 C3                CLR     C
+00D4 EF                MOV     A,R7
+00D5 9B                SUBB    A,R3
+00D6 EE                MOV     A,R6
+00D7 9A                SUBB    A,R2
+00D8 5021              JNC     ?C0017
+00DA         ?C0021:
+                                           ; SOURCE LINE # 219
+00DA 90000000    R     MOV     DPTR,#index
+00DE E0                MOVX    A,@DPTR
+00DF FE                MOV     R6,A
+00E0 A3                INC     DPTR
+00E1 E0                MOVX    A,@DPTR
+00E2 FF                MOV     R7,A
+00E3 C3                CLR     C
+00E4 EE                MOV     A,R6
+00E5 9401              SUBB    A,#01H
+00E7 400A              JC      ?C0022
+                                           ; SOURCE LINE # 220
+00E9 110000      R     ACALL   L?0117
+00EC 110000      R     ACALL   L?0109
+00EF E0                MOVX    A,@DPTR
+00F0 4420              ORL     A,#020H
+00F2 F0                MOVX    @DPTR,A
+00F3         ?C0022:
+                                           ; SOURCE LINE # 221
+00F3 110000      R     ACALL   L?0108
+00F6 EF                MOV     A,R7
+00F7 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 222
+00F8 0C                INC     R4
+00F9 80BB              SJMP    ?C0018
+                                           ; SOURCE LINE # 223
+00FB         ?C0017:
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 31  
+
+00FB 0D                INC     R5
+00FC 80AB              SJMP    ?C0015
+00FE         ?C0016:
+                                           ; SOURCE LINE # 225
+00FE 110000      R     ACALL   L?0117
+0101 110000      R     ACALL   L?0109
+                                           ; SOURCE LINE # 226
+0104 110000      R     ACALL   L?0115
+0107 110000      R     ACALL   L?0109
+010A E0                MOVX    A,@DPTR
+010B 54FE              ANL     A,#0FEH
+010D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 228
+010E 90000000    R     MOV     DPTR,#fosd
+0112 110000      R     ACALL   L?0112
+0115 7D01              MOV     R5,#01H
+0117 010000      E     AJMP    _FOsdWinEnable
+             ; FUNCTION Test16x32FontSet (END)
+
+             ; FUNCTION TestUpper256Char (BEGIN)
+                                           ; SOURCE LINE # 236
+                                           ; SOURCE LINE # 237
+                                           ; SOURCE LINE # 244
+0000 90000000    R     MOV     DPTR,#fgColor
+                                           ; SOURCE LINE # 245
+                                           ; SOURCE LINE # 246
+                                           ; SOURCE LINE # 247
+0004 110000      R     ACALL   L?0132
+0007 7414              MOV     A,#014H
+0009 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 248
+000A A3                INC     DPTR
+000B 7401              MOV     A,#01H
+000D F0                MOVX    @DPTR,A
+000E A3                INC     DPTR
+000F 7440              MOV     A,#040H
+0011 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 250
+0012 E4                CLR     A
+0013 A3                INC     DPTR
+0014 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 252
+0015 90000000    R     MOV     DPTR,#fosd
+0019 110000      R     ACALL   L?0140
+                                           ; SOURCE LINE # 253
+001C 90000000    R     MOV     DPTR,#fosd
+0020 110000      R     ACALL   L?0142
+0023 110000      R     ACALL   L?0120
+                                           ; SOURCE LINE # 255
+0026 110000      E     ACALL   FOsdSetDeValue
+                                           ; SOURCE LINE # 257
+0029 90000000    R     MOV     DPTR,#fosd
+002D 110000      R     ACALL   L?0112
+0030 110000      E     ACALL   _FOsdWinInit
+                                           ; SOURCE LINE # 259
+0033 7F01              MOV     R7,#01H
+0035 110000      E     ACALL   _WaitVBlank
+                                           ; SOURCE LINE # 260
+0038 90000000    R     MOV     DPTR,#fosd
+003C 110000      R     ACALL   L?0112
+003F E4                CLR     A
+0040 FD                MOV     R5,A
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 32  
+
+0041 110000      E     ACALL   _FOsdWinEnable
+                                           ; SOURCE LINE # 262
+0044 E4                CLR     A
+0045 FD                MOV     R5,A
+0046 FC                MOV     R4,A
+0047 FF                MOV     R7,A
+0048 110000      E     ACALL   _InitFontRamByNum
+                                           ; SOURCE LINE # 272
+004B 90000000    R     MOV     DPTR,#fosd
+004F 110000      R     ACALL   L?0112
+0052 90000000    R     MOV     DPTR,#bgColor
+0056 E0                MOVX    A,@DPTR
+0057 FD                MOV     R5,A
+0058 7B04              MOV     R3,#04H
+005A 110000      E     ACALL   _FOsdWinAlphaPixel
+                                           ; SOURCE LINE # 274
+005D 90000000    R     MOV     DPTR,#fosd
+0061 110000      R     ACALL   L?0112
+0064 E4                CLR     A
+0065 FB                MOV     R3,A
+0066 FA                MOV     R2,A
+0067 FD                MOV     R5,A
+0068 FC                MOV     R4,A
+0069 110000      E     ACALL   _FOsdWinScreenXY
+                                           ; SOURCE LINE # 275
+006C 90000000    R     MOV     DPTR,#fosd
+0070 110000      R     ACALL   L?0112
+0073 90000000    R     MOV     DPTR,#columns
+0077 E0                MOVX    A,@DPTR
+0078 FD                MOV     R5,A
+0079 A3                INC     DPTR
+007A E0                MOVX    A,@DPTR
+007B FB                MOV     R3,A
+007C 110000      E     ACALL   _FOsdWinScreenWH
+                                           ; SOURCE LINE # 276
+007F 90000000    R     MOV     DPTR,#fosd
+0083 110000      R     ACALL   L?0112
+0086 E4                CLR     A
+0087 FB                MOV     R3,A
+0088 7D01              MOV     R5,#01H
+008A 110000      E     ACALL   _FOsdWinZoom
+                                           ; SOURCE LINE # 279
+008D 110000      R     ACALL   L?0117
+0090 110000      R     ACALL   L?0109
+                                           ; SOURCE LINE # 281
+0093 110000      R     ACALL   L?0122
+0096 E4                CLR     A
+0097 FF                MOV     R7,A
+0098 FE                MOV     R6,A
+0099 110000      E     ACALL   _FOsdRamSetAddrAttr
+                                           ; SOURCE LINE # 283
+;---- Variable 'i' assigned to Register 'R5' ----
+009C E4                CLR     A
+009D FD                MOV     R5,A
+009E         ?C0024:
+                                           ; SOURCE LINE # 284
+009E E4                CLR     A
+009F 90000000    R     MOV     DPTR,#j
+00A3 F0                MOVX    @DPTR,A
+00A4         ?C0027:
+00A4 110000      R     ACALL   L?0149
+00A7 5010              JNC     ?C0026
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 33  
+
+                                           ; SOURCE LINE # 285
+00A9 110000      R     ACALL   L?0127
+00AC A3                INC     DPTR
+00AD F0                MOVX    @DPTR,A
+00AE A3                INC     DPTR
+00AF EF                MOV     A,R7
+00B0 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 287
+00B1 110000      R     ACALL   L?0108
+                                           ; SOURCE LINE # 288
+00B4 110000      R     ACALL   L?0161
+00B7 80EB              SJMP    ?C0027
+                                           ; SOURCE LINE # 289
+00B9         ?C0026:
+00B9 0D                INC     R5
+00BA ED                MOV     A,R5
+00BB B410E0            CJNE    A,#010H,?C0024
+00BE         ?C0025:
+                                           ; SOURCE LINE # 292
+00BE 90000000    R     MOV     DPTR,#bgColor
+00C2 7404              MOV     A,#04H
+00C4 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 293
+00C5 759300      E     MOV     DPX,#?C?XDATASEG
+00C8 2500        E     ADD     A,regTW88+01H
+00CA 110000      R     ACALL   L?0109
+                                           ; SOURCE LINE # 294
+00CD 110000      R     ACALL   L?0122
+00D0 7FFD              MOV     R7,#0FDH
+00D2 7E00              MOV     R6,#00H
+00D4 110000      E     ACALL   _FOsdRamSetAddrAttr
+                                           ; SOURCE LINE # 298
+00D7 110000      R     ACALL   L?0108
+00DA 74FD              MOV     A,#0FDH
+                                           ; SOURCE LINE # 299
+00DC 110000      R     ACALL   L?0107
+00DF 74FE              MOV     A,#0FEH
+                                           ; SOURCE LINE # 300
+00E1 110000      R     ACALL   L?0107
+00E4 74FF              MOV     A,#0FFH
+00E6 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 302
+00E7 90000000    R     MOV     DPTR,#bgColor
+00EB 7402              MOV     A,#02H
+00ED F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 305
+00EE 110000      R     ACALL   L?0117
+00F1 110000      R     ACALL   L?0109
+00F4 E0                MOVX    A,@DPTR
+00F5 4420              ORL     A,#020H
+                                           ; SOURCE LINE # 307
+00F7 110000      R     ACALL   L?0123
+00FA 7F00              MOV     R7,#00H
+00FC 7E01              MOV     R6,#01H
+00FE 110000      E     ACALL   _FOsdRamSetAddrAttr
+                                           ; SOURCE LINE # 308
+0101 7D10              MOV     R5,#010H
+0103         ?C0030:
+0103 90000000    R     MOV     DPTR,#lines
+0107 E0                MOVX    A,@DPTR
+0108 FF                MOV     R7,A
+0109 ED                MOV     A,R5
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 34  
+
+010A C3                CLR     C
+010B 9F                SUBB    A,R7
+010C 5042              JNC     ?C0031
+                                           ; SOURCE LINE # 309
+010E E4                CLR     A
+010F 90000000    R     MOV     DPTR,#j
+0113 F0                MOVX    @DPTR,A
+0114         ?C0033:
+0114 110000      R     ACALL   L?0149
+0117 5034              JNC     ?C0032
+                                           ; SOURCE LINE # 310
+0119 110000      R     ACALL   L?0128
+011C FE                MOV     R6,A
+011D 90000000    R     MOV     DPTR,#start_offset
+0121 E0                MOVX    A,@DPTR
+0122 2F                ADD     A,R7
+0123 FF                MOV     R7,A
+0124 EA                MOV     A,R2
+0125 3E                ADDC    A,R6
+0126 FE                MOV     R6,A
+0127 90000000    R     MOV     DPTR,#index
+012B F0                MOVX    @DPTR,A
+012C A3                INC     DPTR
+012D EF                MOV     A,R7
+012E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 313
+012F D3                SETB    C
+0130 90000000    R     MOV     DPTR,#max+01H
+0134 E0                MOVX    A,@DPTR
+0135 9F                SUBB    A,R7
+0136 90000000    R     MOV     DPTR,#max
+013A E0                MOVX    A,@DPTR
+013B 9E                SUBB    A,R6
+013C 400F              JC      ?C0032
+                                           ; SOURCE LINE # 314
+013E         ?C0036:
+                                           ; SOURCE LINE # 317
+013E 90000000    R     MOV     DPTR,#index
+0142 A3                INC     DPTR
+0143 E0                MOVX    A,@DPTR
+0144 FF                MOV     R7,A
+0145 110000      R     ACALL   L?0108
+                                           ; SOURCE LINE # 318
+0148 110000      R     ACALL   L?0161
+014B 80C7              SJMP    ?C0033
+                                           ; SOURCE LINE # 319
+014D         ?C0032:
+014D 0D                INC     R5
+014E 80B3              SJMP    ?C0030
+0150         ?C0031:
+                                           ; SOURCE LINE # 323
+0150 110000      R     ACALL   L?0117
+0153 110000      R     ACALL   L?0109
+                                           ; SOURCE LINE # 324
+0156 110000      R     ACALL   L?0115
+0159 110000      R     ACALL   L?0109
+015C E0                MOVX    A,@DPTR
+015D 54FE              ANL     A,#0FEH
+015F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 326
+0160 90000000    R     MOV     DPTR,#fosd
+0164 110000      R     ACALL   L?0112
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 35  
+
+0167 7D01              MOV     R5,#01H
+0169 010000      E     AJMP    _FOsdWinEnable
+             ; FUNCTION TestUpper256Char (END)
+
+             ; FUNCTION TestMultiBPP4 (BEGIN)
+                                           ; SOURCE LINE # 336
+                                           ; SOURCE LINE # 337
+                                           ; SOURCE LINE # 344
+0000 90000000    R     MOV     DPTR,#fgColor
+                                           ; SOURCE LINE # 345
+                                           ; SOURCE LINE # 346
+                                           ; SOURCE LINE # 348
+0004 110000      R     ACALL   L?0133
+0007 7404              MOV     A,#04H
+0009 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 349
+000A A3                INC     DPTR
+000B 74A0              MOV     A,#0A0H
+000D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 351
+000E 90000000    R     MOV     DPTR,#fosd
+0012 110000      R     ACALL   L?0141
+                                           ; SOURCE LINE # 352
+0015 90000000    R     MOV     DPTR,#fosd
+0019 110000      R     ACALL   L?0143
+001C 110000      R     ACALL   L?0120
+                                           ; SOURCE LINE # 354
+001F 110000      E     ACALL   FOsdSetDeValue
+                                           ; SOURCE LINE # 356
+0022 90000000    R     MOV     DPTR,#fosd
+0026 110000      R     ACALL   L?0112
+0029 110000      E     ACALL   _FOsdWinInit
+                                           ; SOURCE LINE # 358
+002C 7F01              MOV     R7,#01H
+002E 110000      E     ACALL   _WaitVBlank
+                                           ; SOURCE LINE # 359
+0031 90000000    R     MOV     DPTR,#fosd
+0035 110000      R     ACALL   L?0112
+0038 E4                CLR     A
+0039 FD                MOV     R5,A
+003A 110000      E     ACALL   _FOsdWinEnable
+                                           ; SOURCE LINE # 366
+003D 90000000    R     MOV     DPTR,#fosd
+0041 110000      R     ACALL   L?0112
+0044 E4                CLR     A
+0045 FB                MOV     R3,A
+0046 FA                MOV     R2,A
+0047 FD                MOV     R5,A
+0048 FC                MOV     R4,A
+0049 110000      E     ACALL   _FOsdWinScreenXY
+                                           ; SOURCE LINE # 367
+004C 90000000    R     MOV     DPTR,#fosd
+0050 110000      R     ACALL   L?0112
+0053 90000000    R     MOV     DPTR,#columns
+0057 E0                MOVX    A,@DPTR
+0058 FD                MOV     R5,A
+0059 A3                INC     DPTR
+005A E0                MOVX    A,@DPTR
+005B FB                MOV     R3,A
+005C 110000      E     ACALL   _FOsdWinScreenWH
+                                           ; SOURCE LINE # 368
+005F 90000000    R     MOV     DPTR,#fosd
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 36  
+
+0063 110000      R     ACALL   L?0112
+0066 E4                CLR     A
+0067 FB                MOV     R3,A
+0068 7D01              MOV     R5,#01H
+006A 110000      E     ACALL   _FOsdWinZoom
+                                           ; SOURCE LINE # 369
+006D 90000000    R     MOV     DPTR,#fosd
+0071 110000      R     ACALL   L?0112
+0074 90000000    R     MOV     DPTR,#bgColor
+0078 E0                MOVX    A,@DPTR
+0079 FD                MOV     R5,A
+007A 7B04              MOV     R3,#04H
+007C 110000      E     ACALL   _FOsdWinAlphaPixel
+                                           ; SOURCE LINE # 373
+007F 110000      R     ACALL   L?0117
+0082 110000      R     ACALL   L?0109
+0085 740C              MOV     A,#0CH
+0087 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 377
+0088 90000000    R     MOV     DPTR,#bgColor
+008C E0                MOVX    A,@DPTR
+008D C4                SWAP    A
+008E 54F0              ANL     A,#0F0H
+0090 FF                MOV     R7,A
+0091 90000000    R     MOV     DPTR,#fgColor
+0095 E0                MOVX    A,@DPTR
+0096 4F                ORL     A,R7
+0097 FD                MOV     R5,A
+0098 E4                CLR     A
+0099 FF                MOV     R7,A
+009A FE                MOV     R6,A
+009B 110000      E     ACALL   _FOsdRamSetAddrAttr
+                                           ; SOURCE LINE # 378
+;---- Variable 'i' assigned to Register 'R5' ----
+009E E4                CLR     A
+009F FD                MOV     R5,A
+00A0         ?C0038:
+                                           ; SOURCE LINE # 379
+00A0 E4                CLR     A
+00A1 90000000    R     MOV     DPTR,#j
+00A5 F0                MOVX    @DPTR,A
+00A6         ?C0041:
+00A6 110000      R     ACALL   L?0150
+00A9 5010              JNC     ?C0040
+                                           ; SOURCE LINE # 380
+00AB 110000      R     ACALL   L?0128
+00AE A3                INC     DPTR
+00AF F0                MOVX    @DPTR,A
+00B0 A3                INC     DPTR
+00B1 EF                MOV     A,R7
+00B2 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 382
+00B3 110000      R     ACALL   L?0108
+                                           ; SOURCE LINE # 383
+00B6 110000      R     ACALL   L?0162
+00B9 80EB              SJMP    ?C0041
+                                           ; SOURCE LINE # 384
+00BB         ?C0040:
+00BB 0D                INC     R5
+00BC ED                MOV     A,R5
+00BD B402E0            CJNE    A,#02H,?C0038
+00C0         ?C0039:
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 37  
+
+                                           ; SOURCE LINE # 388
+00C0 7B00        R     MOV     R3,#MBYTE test_16161616
+00C2 7A00        R     MOV     R2,#HIGH test_16161616
+00C4 7900        R     MOV     R1,#LOW test_16161616
+00C6 90000000    E     MOV     DPTR,#?_FOsdSetPaletteColorArray?BYTE+04H
+00CA 7410              MOV     A,#010H
+00CC F0                MOVX    @DPTR,A
+00CD E4                CLR     A
+00CE A3                INC     DPTR
+00CF F0                MOVX    @DPTR,A
+00D0 7F20              MOV     R7,#020H
+00D2 110000      E     ACALL   _FOsdSetPaletteColorArray
+                                           ; SOURCE LINE # 390
+00D5 7D08              MOV     R5,#08H
+00D7 7F20              MOV     R7,#020H
+00D9 7E00              MOV     R6,#00H
+00DB 110000      E     ACALL   _FOsdRamSetAddrAttr
+                                           ; SOURCE LINE # 394
+00DE E4                CLR     A
+00DF FD                MOV     R5,A
+00E0         ?C0044:
+                                           ; SOURCE LINE # 395
+00E0 E4                CLR     A
+00E1 90000000    R     MOV     DPTR,#j
+00E5 F0                MOVX    @DPTR,A
+00E6         ?C0047:
+00E6 110000      R     ACALL   L?0150
+00E9 5042              JNC     ?C0046
+                                           ; SOURCE LINE # 396
+00EB ED                MOV     A,R5
+00EC 8FF0              MOV     B,R7
+00EE A4                MUL     AB
+00EF FF                MOV     R7,A
+00F0 EC                MOV     A,R4
+00F1 7A00              MOV     R2,#00H
+00F3 2F                ADD     A,R7
+00F4 FE                MOV     R6,A
+00F5 EA                MOV     A,R2
+00F6 35F0              ADDC    A,B
+00F8 A3                INC     DPTR
+00F9 F0                MOVX    @DPTR,A
+00FA A3                INC     DPTR
+00FB CE                XCH     A,R6
+00FC F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 397
+00FD 90000000    R     MOV     DPTR,#index
+0101 E0                MOVX    A,@DPTR
+0102 FE                MOV     R6,A
+0103 A3                INC     DPTR
+0104 E0                MOVX    A,@DPTR
+0105 7802              MOV     R0,#02H
+0107         ?C0099:
+0107 C3                CLR     C
+0108 33                RLC     A
+0109 CE                XCH     A,R6
+010A 33                RLC     A
+010B CE                XCH     A,R6
+010C D8F9              DJNZ    R0,?C0099
+010E F0                MOVX    @DPTR,A
+010F EE                MOV     A,R6
+0110 90000000    R     MOV     DPTR,#index
+0114 F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 38  
+
+                                           ; SOURCE LINE # 398
+0115 A3                INC     DPTR
+0116 E0                MOVX    A,@DPTR
+0117 2420              ADD     A,#020H
+0119 F0                MOVX    @DPTR,A
+011A 90000000    R     MOV     DPTR,#index
+011E E0                MOVX    A,@DPTR
+011F 3400              ADDC    A,#00H
+0121 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 399
+0122 A3                INC     DPTR
+0123 E0                MOVX    A,@DPTR
+0124 FF                MOV     R7,A
+0125 110000      R     ACALL   L?0108
+                                           ; SOURCE LINE # 400
+0128 110000      R     ACALL   L?0162
+012B 80B9              SJMP    ?C0047
+                                           ; SOURCE LINE # 401
+012D         ?C0046:
+012D 0D                INC     R5
+012E ED                MOV     A,R5
+012F B402AE            CJNE    A,#02H,?C0044
+0132         ?C0045:
+                                           ; SOURCE LINE # 403
+0132 110000      R     ACALL   L?0117
+0135 110000      R     ACALL   L?0109
+                                           ; SOURCE LINE # 404
+0138 110000      R     ACALL   L?0116
+013B 110000      R     ACALL   L?0109
+013E E0                MOVX    A,@DPTR
+013F 54FE              ANL     A,#0FEH
+0141 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 406
+0142 90000000    R     MOV     DPTR,#fosd
+0146 110000      R     ACALL   L?0112
+0149 7D01              MOV     R5,#01H
+014B 110000      E     ACALL   _FOsdWinEnable
+                                           ; SOURCE LINE # 408
+014E 759300      E     MOV     DPX,#?C?XDATASEG
+0151 E500        E     MOV     A,regTW88+01H
+0153 2410              ADD     A,#010H
+0155 110000      R     ACALL   L?0109
+0158 E0                MOVX    A,@DPTR
+0159 4440              ORL     A,#040H
+015B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 410
+015C 22                RET     
+             ; FUNCTION TestMultiBPP4 (END)
+
+             ; FUNCTION _FontOsdSetPaletteColorArray_TEST (BEGIN)
+                                           ; SOURCE LINE # 435
+0000 90000000    R     MOV     DPTR,#index
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 EB                MOV     A,R3
+0008 F0                MOVX    @DPTR,A
+0009 A3                INC     DPTR
+000A EA                MOV     A,R2
+000B F0                MOVX    @DPTR,A
+000C A3                INC     DPTR
+000D E9                MOV     A,R1
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 39  
+
+000E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 436
+                                           ; SOURCE LINE # 440
+000F 759300      E     MOV     DPX,#?C?XDATASEG
+0012 E500        E     MOV     A,regTW88+01H
+0014 240C              ADD     A,#0CH
+0016 110000      R     ACALL   L?0109
+0019 E0                MOVX    A,@DPTR
+001A 54C0              ANL     A,#0C0H
+001C 90000000    R     MOV     DPTR,#r30c
+0020 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 442
+0021 E4                CLR     A
+0022 90000000    R     MOV     DPTR,#i
+0026 F0                MOVX    @DPTR,A
+0027         ?C0051:
+0027 90000000    R     MOV     DPTR,#size
+002B E0                MOVX    A,@DPTR
+002C FF                MOV     R7,A
+002D A3                INC     DPTR
+002E E0                MOVX    A,@DPTR
+002F FE                MOV     R6,A
+0030 C3                CLR     C
+0031 9F                SUBB    A,R7
+0032 5057              JNC     ?C0054
+                                           ; SOURCE LINE # 443
+0034 90000000    R     MOV     DPTR,#index
+0038 E0                MOVX    A,@DPTR
+0039 2E                ADD     A,R6
+003A FF                MOV     R7,A
+003B 90000000    R     MOV     DPTR,#r30c
+003F E0                MOVX    A,@DPTR
+0040 4F                ORL     A,R7
+0041 110000      R     ACALL   L?0136
+0044 240C              ADD     A,#0CH
+0046 110000      R     ACALL   L?0109
+0049 EF                MOV     A,R7
+004A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 444
+004B 90000000    R     MOV     DPTR,#array
+004F 110000      R     ACALL   L?0143
+0052 F9                MOV     R1,A
+0053 90000000    R     MOV     DPTR,#i
+0057 E0                MOVX    A,@DPTR
+0058 75F002            MOV     B,#02H
+005B A4                MUL     AB
+005C F582              MOV     DPL,A
+005E E9                MOV     A,R1
+005F 2582              ADD     A,DPL
+0061 F9                MOV     R1,A
+0062 EA                MOV     A,R2
+0063 35F0              ADDC    A,B
+0065 FA                MOV     R2,A
+0066 110000      E     ACALL   ?C?ILDPTR
+0069 E5F0              MOV     A,B
+006B 110000      R     ACALL   L?0136
+006E 240D              ADD     A,#0DH
+0070 110000      R     ACALL   L?0109
+0073 EF                MOV     A,R7
+0074 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 445
+0075 110000      E     ACALL   ?C?ILDPTR
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 40  
+
+0078 110000      R     ACALL   L?0136
+007B 240E              ADD     A,#0EH
+007D 110000      R     ACALL   L?0109
+0080 EF                MOV     A,R7
+0081 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 447
+0082 90000000    R     MOV     DPTR,#i
+0086 E0                MOVX    A,@DPTR
+0087 04                INC     A
+0088 F0                MOVX    @DPTR,A
+0089 809C              SJMP    ?C0051
+                                           ; SOURCE LINE # 448
+008B         ?C0054:
+008B 22                RET     
+             ; FUNCTION _FontOsdSetPaletteColorArray_TEST (END)
+
+             ; FUNCTION TestNum1BPP3BPP (BEGIN)
+                                           ; SOURCE LINE # 506
+                                           ; SOURCE LINE # 507
+                                           ; SOURCE LINE # 511
+0000 90000000    R     MOV     DPTR,#fgColor
+0004 740F              MOV     A,#0FH
+0006 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 512
+0007 E4                CLR     A
+0008 A3                INC     DPTR
+0009 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 513
+000A A3                INC     DPTR
+000B 740A              MOV     A,#0AH
+000D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 514
+000E A3                INC     DPTR
+000F 7405              MOV     A,#05H
+0011 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 517
+0012 90000000    R     MOV     DPTR,#fosd
+                                           ; SOURCE LINE # 518
+0016 110000      R     ACALL   L?0119
+                                           ; SOURCE LINE # 521
+0019 110000      E     ACALL   FOsdSetDeValue
+                                           ; SOURCE LINE # 523
+001C 110000      R     ACALL   L?0111
+001F 110000      E     ACALL   _FOsdWinInit
+                                           ; SOURCE LINE # 525
+0022 7F01              MOV     R7,#01H
+0024 110000      E     ACALL   _WaitVBlank
+                                           ; SOURCE LINE # 526
+0027 110000      R     ACALL   L?0111
+002A E4                CLR     A
+002B FD                MOV     R5,A
+002C 110000      E     ACALL   _FOsdWinEnable
+                                           ; SOURCE LINE # 529
+002F E4                CLR     A
+0030 FD                MOV     R5,A
+0031 FC                MOV     R4,A
+0032 7F03              MOV     R7,#03H
+0034 110000      E     ACALL   _InitFontRamByNum
+                                           ; SOURCE LINE # 531
+0037 7F01              MOV     R7,#01H
+0039 110000      E     ACALL   _FOsdInitBpp3AlphaTable
+                                           ; SOURCE LINE # 533
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 41  
+
+003C 110000      R     ACALL   L?0111
+003F 7B3C              MOV     R3,#03CH
+0041 7A00              MOV     R2,#00H
+0043 7D32              MOV     R5,#032H
+0045 7C00              MOV     R4,#00H
+0047 110000      E     ACALL   _FOsdWinScreenXY
+                                           ; SOURCE LINE # 534
+004A 110000      R     ACALL   L?0111
+004D 90000000    R     MOV     DPTR,#columns
+0051 E0                MOVX    A,@DPTR
+0052 FD                MOV     R5,A
+0053 A3                INC     DPTR
+0054 E0                MOVX    A,@DPTR
+0055 FB                MOV     R3,A
+0056 110000      E     ACALL   _FOsdWinScreenWH
+                                           ; SOURCE LINE # 535
+0059 110000      R     ACALL   L?0111
+005C 7B02              MOV     R3,#02H
+005E 7D03              MOV     R5,#03H
+0060 110000      E     ACALL   _FOsdWinZoom
+                                           ; SOURCE LINE # 540
+0063 110000      R     ACALL   L?0117
+0066 110000      R     ACALL   L?0109
+0069 740C              MOV     A,#0CH
+006B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 565
+006C 90000000    R     MOV     DPTR,#palette
+0070 7420              MOV     A,#020H
+0072 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 566
+0073 7B00        R     MOV     R3,#MBYTE consolas16x26_606C90_3BPP
+0075 7A00        R     MOV     R2,#HIGH consolas16x26_606C90_3BPP
+0077 7900        R     MOV     R1,#LOW consolas16x26_606C90_3BPP
+0079 90000000    R     MOV     DPTR,#?_FontOsdSetPaletteColorArray_TEST?BYTE+04H
+007D 7408              MOV     A,#08H
+007F F0                MOVX    @DPTR,A
+0080 7F20              MOV     R7,#020H
+                                           ; SOURCE LINE # 568
+0082 110000      R     ACALL   L?0156
+0085 E4                CLR     A
+0086 FF                MOV     R7,A
+0087 FE                MOV     R6,A
+0088 110000      E     ACALL   _FOsdRamSetAddrAttr
+                                           ; SOURCE LINE # 569
+;---- Variable 'i' assigned to Register 'R7' ----
+008B E4                CLR     A
+008C FF                MOV     R7,A
+008D         ?C0055:
+                                           ; SOURCE LINE # 570
+008D 110000      R     ACALL   L?0152
+0090 110000      R     ACALL   L?0108
+0093 EE                MOV     A,R6
+0094 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 571
+0095 0F                INC     R7
+0096 EF                MOV     A,R7
+0097 B40AF3            CJNE    A,#0AH,?C0055
+009A         ?C0056:
+                                           ; SOURCE LINE # 572
+009A 90000000    R     MOV     DPTR,#palette
+009E 7430              MOV     A,#030H
+00A0 F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 42  
+
+                                           ; SOURCE LINE # 573
+00A1 7B00        R     MOV     R3,#MBYTE consolas16x26_606C90_4BPP
+00A3 7A00        R     MOV     R2,#HIGH consolas16x26_606C90_4BPP
+00A5 7900        R     MOV     R1,#LOW consolas16x26_606C90_4BPP
+00A7 90000000    R     MOV     DPTR,#?_FontOsdSetPaletteColorArray_TEST?BYTE+04H
+00AB 7410              MOV     A,#010H
+00AD F0                MOVX    @DPTR,A
+00AE 7F30              MOV     R7,#030H
+                                           ; SOURCE LINE # 574
+00B0 110000      R     ACALL   L?0156
+00B3 7F04              MOV     R7,#04H
+00B5 7E00              MOV     R6,#00H
+00B7 110000      E     ACALL   _FOsdRamSetAddrAttr
+                                           ; SOURCE LINE # 575
+00BA 110000      R     ACALL   L?0108
+00BD 7498              MOV     A,#098H
+                                           ; SOURCE LINE # 576
+00BF 110000      R     ACALL   L?0107
+00C2 749C              MOV     A,#09CH
+00C4 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 599
+00C5 7DF0              MOV     R5,#0F0H
+00C7 7F14              MOV     R7,#014H
+                                           ; SOURCE LINE # 600
+00C9 110000      R     ACALL   L?0146
+00CC         ?C0058:
+                                           ; SOURCE LINE # 601
+00CC EF                MOV     A,R7
+00CD 2410              ADD     A,#010H
+00CF FE                MOV     R6,A
+00D0 110000      R     ACALL   L?0108
+00D3 EE                MOV     A,R6
+00D4 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 602
+00D5 0F                INC     R7
+00D6 EF                MOV     A,R7
+00D7 B405F2            CJNE    A,#05H,?C0058
+00DA         ?C0059:
+                                           ; SOURCE LINE # 603
+00DA 7D9A              MOV     R5,#09AH
+00DC 7F19              MOV     R7,#019H
+                                           ; SOURCE LINE # 604
+00DE 110000      R     ACALL   L?0146
+00E1         ?C0061:
+                                           ; SOURCE LINE # 605
+00E1 EF                MOV     A,R7
+00E2 2410              ADD     A,#010H
+00E4 2405              ADD     A,#05H
+00E6 FE                MOV     R6,A
+00E7 110000      R     ACALL   L?0108
+00EA EE                MOV     A,R6
+00EB F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 606
+00EC 0F                INC     R7
+00ED EF                MOV     A,R7
+00EE B405F0            CJNE    A,#05H,?C0061
+00F1         ?C0062:
+                                           ; SOURCE LINE # 608
+00F1 7428              MOV     A,#028H
+                                           ; SOURCE LINE # 609
+00F3 110000      R     ACALL   L?0110
+00F6 7D28              MOV     R5,#028H
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 43  
+
+                                           ; SOURCE LINE # 610
+00F8 110000      R     ACALL   L?0147
+00FB FD                MOV     R5,A
+00FC FC                MOV     R4,A
+                                           ; SOURCE LINE # 611
+00FD 110000      R     ACALL   L?0130
+0100 7F1E              MOV     R7,#01EH
+0102 7E00              MOV     R6,#00H
+0104 110000      E     ACALL   _FOsdRamSetAddrAttr
+                                           ; SOURCE LINE # 612
+0107 E4                CLR     A
+0108 FF                MOV     R7,A
+0109         ?C0064:
+                                           ; SOURCE LINE # 613
+0109 110000      R     ACALL   L?0152
+010C 110000      R     ACALL   L?0108
+010F EE                MOV     A,R6
+0110 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 614
+0111 0F                INC     R7
+0112 EF                MOV     A,R7
+0113 B40AF3            CJNE    A,#0AH,?C0064
+0116         ?C0065:
+                                           ; SOURCE LINE # 616
+0116 7418              MOV     A,#018H
+                                           ; SOURCE LINE # 617
+0118 110000      R     ACALL   L?0110
+011B 7D18              MOV     R5,#018H
+                                           ; SOURCE LINE # 618
+011D 110000      R     ACALL   L?0147
+0120 7DE0              MOV     R5,#0E0H
+0122 7C07              MOV     R4,#07H
+                                           ; SOURCE LINE # 619
+0124 110000      R     ACALL   L?0130
+0127 7F28              MOV     R7,#028H
+0129 7E00              MOV     R6,#00H
+012B 110000      E     ACALL   _FOsdRamSetAddrAttr
+                                           ; SOURCE LINE # 620
+012E E4                CLR     A
+012F FF                MOV     R7,A
+0130         ?C0067:
+                                           ; SOURCE LINE # 621
+0130 110000      R     ACALL   L?0153
+0133 110000      R     ACALL   L?0108
+0136 EE                MOV     A,R6
+0137 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 622
+0138 0F                INC     R7
+0139 EF                MOV     A,R7
+013A B40AF3            CJNE    A,#0AH,?C0067
+013D         ?C0068:
+                                           ; SOURCE LINE # 625
+013D 110000      R     ACALL   L?0117
+0140 110000      R     ACALL   L?0109
+                                           ; SOURCE LINE # 626
+0143 110000      R     ACALL   L?0116
+0146 110000      R     ACALL   L?0109
+0149 E0                MOVX    A,@DPTR
+014A 54FE              ANL     A,#0FEH
+014C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 628
+014D 110000      R     ACALL   L?0111
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 44  
+
+0150 7D01              MOV     R5,#01H
+0152 110000      E     ACALL   _FOsdWinEnable
+                                           ; SOURCE LINE # 630
+0155 759300      E     MOV     DPX,#?C?XDATASEG
+0158 E500        E     MOV     A,regTW88+01H
+015A 2410              ADD     A,#010H
+015C 110000      R     ACALL   L?0109
+015F E0                MOVX    A,@DPTR
+0160 4440              ORL     A,#040H
+0162 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 631
+0163 22                RET     
+0164         L?0130:
+0164 7B08              MOV     R3,#08H
+0166 110000      E     ACALL   _FOsdSetPaletteColor
+0169 90000000    R     MOV     DPTR,#palette
+016D E0                MOVX    A,@DPTR
+016E 13                RRC     A
+016F 13                RRC     A
+0170 543F              ANL     A,#03FH
+0172 FD                MOV     R5,A
+0173 22                RET     
+0174         L?0146:
+0174 7E00              MOV     R6,#00H
+0176 110000      E     ACALL   _FOsdRamSetAddrAttr
+0179 E4                CLR     A
+017A FF                MOV     R7,A
+017B 22                RET     
+017C         L?0147:
+017C 110000      E     ACALL   _FOsdWinSetBpp3Alpha
+017F 90000000    R     MOV     DPTR,#palette
+0183 E0                MOVX    A,@DPTR
+0184 FF                MOV     R7,A
+0185 E4                CLR     A
+0186 90000000    E     MOV     DPTR,#?_FOsdSetPaletteColor?BYTE+04H
+018A F0                MOVX    @DPTR,A
+018B 22                RET     
+018C         L?0156:
+018C 110000      R     ACALL   _FontOsdSetPaletteColorArray_TEST
+018F 90000000    R     MOV     DPTR,#palette
+0193 E0                MOVX    A,@DPTR
+0194 13                RRC     A
+0195 13                RRC     A
+0196 543F              ANL     A,#03FH
+0198 FD                MOV     R5,A
+0199 22                RET     
+             ; FUNCTION TestNum1BPP3BPP (END)
+
+             ; FUNCTION _FOsdTest_1 (BEGIN)
+                                           ; SOURCE LINE # 645
+0000 90000000    R     MOV     DPTR,#mode
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 646
+                                           ; SOURCE LINE # 647
+0006 E4                CLR     A
+0007 A3                INC     DPTR
+                                           ; SOURCE LINE # 648
+                                           ; SOURCE LINE # 649
+0008 110000      R     ACALL   L?0134
+000B 7420              MOV     A,#020H
+000D F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 45  
+
+                                           ; SOURCE LINE # 653
+000E 7800        R     MOV     R0,#LOW temp_FOsdDefPaletteBpp1
+0010 7C00        R     MOV     R4,#HIGH temp_FOsdDefPaletteBpp1
+0012 7D00        R     MOV     R5,#MBYTE temp_FOsdDefPaletteBpp1
+0014 7B00        R     MOV     R3,#MBYTE _?ix1000
+0016 7A00        R     MOV     R2,#HIGH _?ix1000
+0018 7900        R     MOV     R1,#LOW _?ix1000
+001A 7E00              MOV     R6,#00H
+001C FF                MOV     R7,A
+001D 110000      E     ACALL   ?C?COPY
+                                           ; SOURCE LINE # 673
+0020 E4                CLR     A
+0021 FD                MOV     R5,A
+0022 FC                MOV     R4,A
+0023 FF                MOV     R7,A
+0024 110000      E     ACALL   _InitFontRamByNum
+                                           ; SOURCE LINE # 676
+0027 E4                CLR     A
+0028 FD                MOV     R5,A
+0029 7F01              MOV     R7,#01H
+002B 110000      E     ACALL   _FOsdRamSetFifo
+                                           ; SOURCE LINE # 680
+002E 110000      R     ACALL   L?0117
+0031 110000      R     ACALL   L?0109
+                                           ; SOURCE LINE # 681
+0034 110000      R     ACALL   L?0144
+0037 2405              ADD     A,#05H
+0039 110000      R     ACALL   L?0109
+003C E4                CLR     A
+003D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 682
+003E 90000000    R     MOV     DPTR,#i
+0042 F0                MOVX    @DPTR,A
+0043         ?C0071:
+                                           ; SOURCE LINE # 683
+0043 90000000    R     MOV     DPTR,#i
+0047 E0                MOVX    A,@DPTR
+0048 90000000    R     MOV     DPTR,#WIN0_OSDRAM
+                                           ; SOURCE LINE # 684
+004C 110000      R     ACALL   L?0105
+                                           ; SOURCE LINE # 685
+004F 110000      R     ACALL   L?0144
+0052 2406              ADD     A,#06H
+0054 110000      R     ACALL   L?0109
+                                           ; SOURCE LINE # 686
+0057 110000      R     ACALL   L?0135
+005A 2408              ADD     A,#08H
+005C 110000      R     ACALL   L?0109
+                                           ; SOURCE LINE # 689
+005F 110000      R     ACALL   L?0154
+0062 E0                MOVX    A,@DPTR
+0063 B408DD            CJNE    A,#08H,?C0071
+0066         ?C0072:
+                                           ; SOURCE LINE # 690
+0066 110000      R     ACALL   L?0163
+0069         ?C0074:
+                                           ; SOURCE LINE # 691
+0069 90000000    R     MOV     DPTR,#i
+006D E0                MOVX    A,@DPTR
+006E 90000000    R     MOV     DPTR,#WIN1_OSDRAM
+                                           ; SOURCE LINE # 692
+0072 110000      R     ACALL   L?0105
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 46  
+
+                                           ; SOURCE LINE # 693
+0075 110000      R     ACALL   L?0145
+0078 2406              ADD     A,#06H
+007A 110000      R     ACALL   L?0109
+007D EE                MOV     A,R6
+007E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 694
+007F EF                MOV     A,R7
+0080 C4                SWAP    A
+0081 54F0              ANL     A,#0F0H
+0083 2480              ADD     A,#080H
+0085 110000      R     ACALL   L?0136
+0088 2408              ADD     A,#08H
+008A 110000      R     ACALL   L?0109
+                                           ; SOURCE LINE # 697
+008D 110000      R     ACALL   L?0154
+0090 E0                MOVX    A,@DPTR
+0091 B408D5            CJNE    A,#08H,?C0074
+0094         ?C0075:
+                                           ; SOURCE LINE # 698
+0094 110000      R     ACALL   L?0163
+0097         ?C0077:
+0097 90000000    R     MOV     DPTR,#i
+009B E0                MOVX    A,@DPTR
+009C F9                MOV     R1,A
+009D C3                CLR     C
+009E 9410              SUBB    A,#010H
+00A0 502B              JNC     ?C0078
+                                           ; SOURCE LINE # 699
+00A2 E0                MOVX    A,@DPTR
+00A3 FF                MOV     R7,A
+00A4 90000000    R     MOV     DPTR,#WIN2_OSDRAM
+                                           ; SOURCE LINE # 700
+00A8 110000      R     ACALL   L?0106
+                                           ; SOURCE LINE # 701
+00AB 110000      R     ACALL   L?0145
+00AE 2406              ADD     A,#06H
+00B0 110000      R     ACALL   L?0109
+                                           ; SOURCE LINE # 702
+00B3 110000      R     ACALL   L?0135
+00B6 2408              ADD     A,#08H
+00B8 110000      R     ACALL   L?0109
+00BB EF                MOV     A,R7
+00BC F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 703
+00BD E9                MOV     A,R1
+00BE B40707            CJNE    A,#07H,?C0079
+                                           ; SOURCE LINE # 704
+00C1 7F01              MOV     R7,#01H
+00C3 7E00              MOV     R6,#00H
+00C5 110000      E     ACALL   _delay1ms
+                                           ; SOURCE LINE # 705
+00C8         ?C0079:
+00C8 110000      R     ACALL   L?0155
+00CB 80CA              SJMP    ?C0077
+00CD         ?C0078:
+                                           ; SOURCE LINE # 708
+00CD 90000000    R     MOV     DPTR,#mode
+00D1 E0                MOVX    A,@DPTR
+00D2 701E              JNZ     ?C0081
+                                           ; SOURCE LINE # 709
+00D4 90000000    R     MOV     DPTR,#i
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 47  
+
+00D8 7408              MOV     A,#08H
+00DA F0                MOVX    @DPTR,A
+00DB         ?C0082:
+                                           ; SOURCE LINE # 710
+00DB 110000      R     ACALL   L?0165
+00DE 25E0              ADD     A,ACC
+00E0 2400        R     ADD     A,#LOW temp_FOsdDefPaletteBpp1
+00E2 F582              MOV     DPL,A
+00E4 E4                CLR     A
+00E5 3400        R     ADDC    A,#HIGH temp_FOsdDefPaletteBpp1
+00E7 110000      R     ACALL   L?0125
+00EA E0                MOVX    A,@DPTR
+00EB C3                CLR     C
+00EC 9410              SUBB    A,#010H
+00EE 40EB              JC      ?C0082
+00F0 8017              SJMP    ?C0085
+                                           ; SOURCE LINE # 711
+00F2         ?C0081:
+                                           ; SOURCE LINE # 712
+                                           ; SOURCE LINE # 713
+00F2 110000      R     ACALL   L?0164
+00F5         ?C0086:
+00F5 110000      R     ACALL   L?0165
+00F8 500F              JNC     ?C0085
+                                           ; SOURCE LINE # 714
+00FA EF                MOV     A,R7
+00FB 25E0              ADD     A,ACC
+00FD 2400        R     ADD     A,#LOW temp_FOsdDefPaletteBpp1+010H
+00FF F582              MOV     DPL,A
+0101 E4                CLR     A
+0102 3400        R     ADDC    A,#HIGH temp_FOsdDefPaletteBpp1+010H
+0104 110000      R     ACALL   L?0125
+0107 80EC              SJMP    ?C0086
+                                           ; SOURCE LINE # 715
+0109         ?C0085:
+                                           ; SOURCE LINE # 718
+0109 E4                CLR     A
+010A FB                MOV     R3,A
+010B FA                MOV     R2,A
+010C 7D50              MOV     R5,#050H
+010E FC                MOV     R4,A
+010F FF                MOV     R7,A
+0110 110000      E     ACALL   _FOsdWinScreenXY
+                                           ; SOURCE LINE # 719
+0113 7B01              MOV     R3,#01H
+0115 7D08              MOV     R5,#08H
+0117 E4                CLR     A
+0118 FF                MOV     R7,A
+                                           ; SOURCE LINE # 720
+0119 110000      R     ACALL   L?0158
+011C E4                CLR     A
+011D FF                MOV     R7,A
+011E 110000      E     ACALL   _FOsdWinZoom
+                                           ; SOURCE LINE # 721
+0121 90000000    R     MOV     DPTR,#WIN0_OSDRAM
+0125 E0                MOVX    A,@DPTR
+0126 FD                MOV     R5,A
+0127 7C00              MOV     R4,#00H
+0129 E4                CLR     A
+012A FF                MOV     R7,A
+012B 110000      E     ACALL   _FOsdWinSetOsdRamStartAddr
+                                           ; SOURCE LINE # 722
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 48  
+
+012E 7D01              MOV     R5,#01H
+0130 E4                CLR     A
+0131 FF                MOV     R7,A
+0132 110000      E     ACALL   _FOsdWinEnable
+                                           ; SOURCE LINE # 724
+0135 7B25              MOV     R3,#025H
+0137 7F01              MOV     R7,#01H
+                                           ; SOURCE LINE # 725
+0139 110000      R     ACALL   L?0148
+013C 7D08              MOV     R5,#08H
+013E 7F01              MOV     R7,#01H
+                                           ; SOURCE LINE # 726
+0140 110000      R     ACALL   L?0158
+0143 7F01              MOV     R7,#01H
+0145 110000      E     ACALL   _FOsdWinZoom
+                                           ; SOURCE LINE # 727
+0148 90000000    R     MOV     DPTR,#WIN1_OSDRAM
+014C 7F01              MOV     R7,#01H
+                                           ; SOURCE LINE # 728
+014E 110000      R     ACALL   L?0166
+0151 7F01              MOV     R7,#01H
+0153 110000      E     ACALL   _FOsdWinEnable
+                                           ; SOURCE LINE # 730
+0156 7B4A              MOV     R3,#04AH
+0158 7F02              MOV     R7,#02H
+                                           ; SOURCE LINE # 731
+015A 110000      R     ACALL   L?0148
+015D 7D10              MOV     R5,#010H
+015F 7F02              MOV     R7,#02H
+0161 110000      E     ACALL   _FOsdWinScreenWH
+                                           ; SOURCE LINE # 732
+0164 7B01              MOV     R3,#01H
+0166 7D02              MOV     R5,#02H
+0168 7F02              MOV     R7,#02H
+016A 110000      E     ACALL   _FOsdWinZoom
+                                           ; SOURCE LINE # 733
+016D 90000000    R     MOV     DPTR,#WIN2_OSDRAM
+0171 7F02              MOV     R7,#02H
+                                           ; SOURCE LINE # 734
+0173 110000      R     ACALL   L?0166
+0176 7F02              MOV     R7,#02H
+0178 110000      E     ACALL   _FOsdWinEnable
+                                           ; SOURCE LINE # 736
+017B E4                CLR     A
+017C FD                MOV     R5,A
+017D 7F01              MOV     R7,#01H
+017F 010000      E     AJMP    _FOsdOnOff
+                                           ; SOURCE LINE # 737
+0182         L?0125:
+0182 F583              MOV     DPH,A
+0184 759300      E     MOV     DPX,#?C?XDATASEG
+0187 E0                MOVX    A,@DPTR
+0188 FC                MOV     R4,A
+0189 A3                INC     DPTR
+018A E0                MOVX    A,@DPTR
+018B FD                MOV     R5,A
+018C E4                CLR     A
+018D 90000000    E     MOV     DPTR,#?_FOsdSetPaletteColor?BYTE+04H
+0191 F0                MOVX    @DPTR,A
+0192 7B01              MOV     R3,#01H
+0194 110000      E     ACALL   _FOsdSetPaletteColor
+0197 90000000    R     MOV     DPTR,#i
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 49  
+
+019B E0                MOVX    A,@DPTR
+019C 04                INC     A
+019D F0                MOVX    @DPTR,A
+019E 22                RET     
+019F         L?0148:
+019F 7A00              MOV     R2,#00H
+01A1 7D50              MOV     R5,#050H
+01A3 7C00              MOV     R4,#00H
+01A5 110000      E     ACALL   _FOsdWinScreenXY
+01A8 7B01              MOV     R3,#01H
+01AA 22                RET     
+01AB         L?0158:
+01AB 110000      E     ACALL   _FOsdWinScreenWH
+01AE 7B01              MOV     R3,#01H
+01B0 7D02              MOV     R5,#02H
+01B2 22                RET     
+01B3         L?0166:
+01B3 E0                MOVX    A,@DPTR
+01B4 FD                MOV     R5,A
+01B5 7C00              MOV     R4,#00H
+01B7 110000      E     ACALL   _FOsdWinSetOsdRamStartAddr
+01BA 7D01              MOV     R5,#01H
+01BC 22                RET     
+             ; FUNCTION _FOsdTest_1 (END)
+
+             ; FUNCTION _Print_Used_Clock (BEGIN)
+                                           ; SOURCE LINE # 888
+;---- Variable '_UsedClock' assigned to Register 'R4/R5/R6/R7' ----
+                                           ; SOURCE LINE # 889
+                                           ; SOURCE LINE # 893
+0000 90000000    R     MOV     DPTR,#UsedClock
+0004 110000      E     ACALL   ?C?LSTXDATA
+                                           ; SOURCE LINE # 894
+0007 7B64              MOV     R3,#064H
+0009 110000      R     ACALL   L?0139
+000C 110000      R     ACALL   L?0114
+000F 110000      E     ACALL   ?C?ULDIV
+0012 90000000    R     MOV     DPTR,#ms
+0016 EB                MOV     A,R3
+0017 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 895
+0018 90000000    R     MOV     DPTR,#UsedClock
+001C 110000      R     ACALL   L?0114
+001F 7B64              MOV     R3,#064H
+                                           ; SOURCE LINE # 896
+0021 110000      R     ACALL   L?0126
+0024 7007              JNZ     ?C0090
+                                           ; SOURCE LINE # 897
+0026 90000000    R     MOV     DPTR,#sec
+002A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 898
+                                           ; SOURCE LINE # 899
+                                           ; SOURCE LINE # 900
+002B 801D              SJMP    ?C0103
+002D         ?C0090:
+                                           ; SOURCE LINE # 901
+                                           ; SOURCE LINE # 902
+002D 110000      R     ACALL   L?0137
+0030 110000      R     ACALL   L?0114
+0033 110000      E     ACALL   ?C?ULDIV
+0036 90000000    R     MOV     DPTR,#sec
+003A EB                MOV     A,R3
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 50  
+
+003B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 903
+003C 90000000    R     MOV     DPTR,#UsedClock
+0040 110000      R     ACALL   L?0114
+0043 7B3C              MOV     R3,#03CH
+                                           ; SOURCE LINE # 904
+0045 110000      R     ACALL   L?0126
+0048 700C              JNZ     ?C0092
+                                           ; SOURCE LINE # 905
+004A         ?C0103:
+004A 90000000    R     MOV     DPTR,#min
+004E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 906
+004F 90000000    R     MOV     DPTR,#hour
+0053 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 907
+0054 801E              SJMP    ?C0091
+0056         ?C0092:
+                                           ; SOURCE LINE # 908
+                                           ; SOURCE LINE # 909
+0056 110000      R     ACALL   L?0137
+0059 110000      R     ACALL   L?0114
+005C 110000      E     ACALL   ?C?ULDIV
+005F 90000000    R     MOV     DPTR,#min
+0063 EB                MOV     A,R3
+0064 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 910
+0065 110000      R     ACALL   L?0138
+0068 110000      R     ACALL   L?0114
+006B 110000      E     ACALL   ?C?ULDIV
+006E 90000000    R     MOV     DPTR,#hour
+0072 EF                MOV     A,R7
+0073 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 911
+                                           ; SOURCE LINE # 912
+0074         ?C0091:
+                                           ; SOURCE LINE # 913
+0074 7B00        R     MOV     R3,#MBYTE ?SC_0
+0076 7A00        R     MOV     R2,#HIGH ?SC_0
+0078 7900        R     MOV     R1,#LOW ?SC_0
+007A 90000000    R     MOV     DPTR,#hour
+007E E0                MOVX    A,@DPTR
+007F 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0083 F0                MOVX    @DPTR,A
+0084 90000000    R     MOV     DPTR,#min
+0088 E0                MOVX    A,@DPTR
+0089 90000000    E     MOV     DPTR,#?_Printf?BYTE+04H
+008D F0                MOVX    @DPTR,A
+008E 90000000    R     MOV     DPTR,#sec
+0092 E0                MOVX    A,@DPTR
+0093 90000000    E     MOV     DPTR,#?_Printf?BYTE+05H
+0097 F0                MOVX    @DPTR,A
+0098 90000000    R     MOV     DPTR,#ms
+009C E0                MOVX    A,@DPTR
+009D 90000000    E     MOV     DPTR,#?_Printf?BYTE+06H
+00A1 F0                MOVX    @DPTR,A
+00A2 010000      E     AJMP    _Printf
+             ; FUNCTION _Print_Used_Clock (END)
+
+             ; FUNCTION _FOsdTest_5 (BEGIN)
+                                           ; SOURCE LINE # 923
+0000 90000000    R     MOV     DPTR,#start
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 51  
+
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 924
+                                           ; SOURCE LINE # 932
+                                           ; SOURCE LINE # 933
+0006 110000      R     ACALL   L?0118
+                                           ; SOURCE LINE # 934
+0009 4420              ORL     A,#020H
+000B FB                MOV     R3,A
+000C 7D06              MOV     R5,#06H
+000E 7F8A              MOV     R7,#08AH
+0010 110000      E     ACALL   _WriteI2CByte
+                                           ; SOURCE LINE # 937
+0013 7B03              MOV     R3,#03H
+0015 7DFF              MOV     R5,#0FFH
+0017 7F8A              MOV     R7,#08AH
+0019 110000      E     ACALL   _WriteI2CByte
+                                           ; SOURCE LINE # 938
+001C 110000      R     ACALL   L?0157
+                                           ; SOURCE LINE # 939
+001F 4401              ORL     A,#01H
+0021 110000      R     ACALL   L?0151
+                                           ; SOURCE LINE # 942
+                                           ; SOURCE LINE # 943
+0024 110000      R     ACALL   L?0121
+                                           ; SOURCE LINE # 944
+0027 90000000    R     MOV     DPTR,#start
+002B E0                MOVX    A,@DPTR
+                                           ; SOURCE LINE # 946
+                                           ; SOURCE LINE # 947
+                                           ; SOURCE LINE # 948
+002C 110000      R     ACALL   L?0131
+                                           ; SOURCE LINE # 951
+002F 7B00        R     MOV     R3,#MBYTE FOsdTest_5_data_88h_27
+0031 7A00        R     MOV     R2,#HIGH FOsdTest_5_data_88h_27
+0033 7900        R     MOV     R1,#LOW FOsdTest_5_data_88h_27
+0035 90000000    E     MOV     DPTR,#?_WriteI2CS?BYTE+05H
+0039 7458              MOV     A,#058H
+003B F0                MOVX    @DPTR,A
+003C 7D0A              MOV     R5,#0AH
+003E 7F8A              MOV     R7,#08AH
+0040 110000      E     ACALL   _WriteI2CS
+                                           ; SOURCE LINE # 954
+                                           ; SOURCE LINE # 955
+                                           ; SOURCE LINE # 956
+                                           ; SOURCE LINE # 957
+                                           ; SOURCE LINE # 958
+0043 110000      R     ACALL   L?0113
+0046 110000      R     ACALL   _Print_Used_Clock
+                                           ; SOURCE LINE # 959
+0049 90000000    R     MOV     DPTR,#UsedClock
+004D 110000      R     ACALL   L?0114
+0050 110000      R     ACALL   _Print_Used_Clock
+                                           ; SOURCE LINE # 962
+                                           ; SOURCE LINE # 963
+0053 110000      R     ACALL   L?0121
+                                           ; SOURCE LINE # 964
+0056 90000000    R     MOV     DPTR,#start
+005A E0                MOVX    A,@DPTR
+005B 04                INC     A
+                                           ; SOURCE LINE # 966
+                                           ; SOURCE LINE # 967
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 52  
+
+                                           ; SOURCE LINE # 968
+005C 110000      R     ACALL   L?0131
+                                           ; SOURCE LINE # 971
+005F E4                CLR     A
+0060 90000000    R     MOV     DPTR,#i
+0064 F0                MOVX    @DPTR,A
+0065 A3                INC     DPTR
+0066 F0                MOVX    @DPTR,A
+0067         ?C0095:
+0067 90000000    R     MOV     DPTR,#i
+006B E0                MOVX    A,@DPTR
+006C FE                MOV     R6,A
+006D A3                INC     DPTR
+006E E0                MOVX    A,@DPTR
+006F FF                MOV     R7,A
+0070 C3                CLR     C
+0071 9458              SUBB    A,#058H
+0073 EE                MOV     A,R6
+0074 940E              SUBB    A,#0EH
+0076 5029              JNC     ?C0096
+                                           ; SOURCE LINE # 972
+0078 7400        R     MOV     A,#LOW FOsdTest_5_data_88h_27
+007A 2F                ADD     A,R7
+007B F582              MOV     DPL,A
+007D 7400        R     MOV     A,#HIGH FOsdTest_5_data_88h_27
+007F 3E                ADDC    A,R6
+0080 F583              MOV     DPH,A
+0082 759300      E     MOV     DPX,#?C?CODESEG
+0085 E4                CLR     A
+0086 93                MOVC    A,@A+DPTR
+0087 FB                MOV     R3,A
+0088 7D0A              MOV     R5,#0AH
+008A 7F8A              MOV     R7,#08AH
+008C 110000      E     ACALL   _WriteI2CByte
+008F 90000000    R     MOV     DPTR,#i+01H
+0093 E0                MOVX    A,@DPTR
+0094 04                INC     A
+0095 F0                MOVX    @DPTR,A
+0096 7007              JNZ     ?C0100
+0098 90000000    R     MOV     DPTR,#i
+009C E0                MOVX    A,@DPTR
+009D 04                INC     A
+009E F0                MOVX    @DPTR,A
+009F         ?C0100:
+009F 80C6              SJMP    ?C0095
+00A1         ?C0096:
+                                           ; SOURCE LINE # 974
+                                           ; SOURCE LINE # 975
+                                           ; SOURCE LINE # 976
+                                           ; SOURCE LINE # 977
+                                           ; SOURCE LINE # 978
+00A1 110000      R     ACALL   L?0113
+00A4 110000      R     ACALL   _Print_Used_Clock
+                                           ; SOURCE LINE # 979
+00A7 90000000    R     MOV     DPTR,#UsedClock
+00AB 110000      R     ACALL   L?0114
+00AE 110000      R     ACALL   _Print_Used_Clock
+                                           ; SOURCE LINE # 983
+00B1 110000      R     ACALL   L?0157
+                                           ; SOURCE LINE # 984
+00B4 54FE              ANL     A,#0FEH
+00B6 110000      R     ACALL   L?0151
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 53  
+
+                                           ; SOURCE LINE # 987
+                                           ; SOURCE LINE # 988
+00B9 110000      R     ACALL   L?0118
+                                           ; SOURCE LINE # 989
+00BC 54DF              ANL     A,#0DFH
+00BE FB                MOV     R3,A
+00BF 7D06              MOV     R5,#06H
+00C1 7F8A              MOV     R7,#08AH
+00C3 010000      E     AJMP    _WriteI2CByte
+                                           ; SOURCE LINE # 990
+00C6         L?0118:
+00C6 E4                CLR     A
+00C7 FB                MOV     R3,A
+00C8 7DFF              MOV     R5,#0FFH
+00CA 7F8A              MOV     R7,#08AH
+00CC 110000      E     ACALL   _WriteI2CByte
+00CF 7D06              MOV     R5,#06H
+00D1 7F8A              MOV     R7,#08AH
+00D3 110000      E     ACALL   _ReadI2CByte
+00D6 90000000    R     MOV     DPTR,#bTemp
+00DA EF                MOV     A,R7
+00DB F0                MOVX    @DPTR,A
+00DC 22                RET     
+00DD         L?0121:
+00DD 7D04              MOV     R5,#04H
+00DF 7F8A              MOV     R7,#08AH
+00E1 110000      E     ACALL   _ReadI2CByte
+00E4 90000000    R     MOV     DPTR,#bTemp
+00E8 EF                MOV     A,R7
+00E9 F0                MOVX    @DPTR,A
+00EA 54DF              ANL     A,#0DFH
+00EC FB                MOV     R3,A
+00ED 7D04              MOV     R5,#04H
+00EF 7F8A              MOV     R7,#08AH
+00F1 110000      E     ACALL   _WriteI2CByte
+00F4 22                RET     
+00F5         L?0131:
+00F5 FB                MOV     R3,A
+00F6 7D09              MOV     R5,#09H
+00F8 7F8A              MOV     R7,#08AH
+00FA 110000      E     ACALL   _WriteI2CByte
+00FD C2A9              CLR     SFRB_ET0
+00FF AF00        E     MOV     R7,SystemClock+03H
+0101 AE00        E     MOV     R6,SystemClock+02H
+0103 AD00        E     MOV     R5,SystemClock+01H
+0105 AC00        E     MOV     R4,SystemClock
+0107 90000000    R     MOV     DPTR,#StartClock
+010B 110000      E     ACALL   ?C?LSTXDATA
+010E D2A9              SETB    SFRB_ET0
+0110 22                RET     
+0111         L?0151:
+0111 FB                MOV     R3,A
+0112 7D04              MOV     R5,#04H
+0114 7F8A              MOV     R7,#08AH
+0116 110000      E     ACALL   _WriteI2CByte
+0119 22                RET     
+011A         L?0157:
+011A 7D04              MOV     R5,#04H
+011C 7F8A              MOV     R7,#08AH
+011E 110000      E     ACALL   _ReadI2CByte
+0121 90000000    R     MOV     DPTR,#bTemp
+0125 EF                MOV     A,R7
+C51 COMPILER V9.56.0.0   TEST_FOSD                                                         07/18/2018 10:45:00 PAGE 54  
+
+0126 F0                MOVX    @DPTR,A
+0127 22                RET     
+             ; FUNCTION _FOsdTest_5 (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   3148    ----
+   CONSTANT SIZE    =   3826    ----
+   XDATA SIZE       =     12     111
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

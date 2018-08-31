@@ -1,0 +1,1884 @@
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE DRV_SCALER
+OBJECT MODULE PLACED IN .\Output\DRV_scaler.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source\drv\DRV_scaler.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(
+                    -.\Output\TW8836B_EVB11.ORC) BROWSE INCDIR(.\source\app;.\source\common;.\source\drv;.\source\HW;.\source\utils) DEFINE(E
+                    -VB_11,nullFn=//) DEBUG CODE PRINT(.\List\DRV_scaler.lst) TABS(2) OBJECT(.\Output\DRV_scaler.obj)
+
+line level    source
+
+   1          /**
+   2            ******************************************************************************
+   3            * @file    TEMPLATE.c
+   4            * @author
+   5            * @version V1.0.0
+   6            * @date    31-May-2018
+   7            * @brief   Source file of TEMPLATE.
+   8            ******************************************************************************
+   9            * @attention
+  10          
+  11            *
+  12              ******************************************************************************
+  13            */
+  14          
+  15          /**
+  16            ******************************************************************************
+  17            * History:
+  18            ******************************************************************************
+  19            * Version 1.00
+  20            *   Initial release
+  21            *
+  22            ******************************************************************************
+  23            */
+  24          
+  25          /* Includes ------------------------------------------------------------------*/
+  26          #include "HWconf.h"
+  27          
+  28          /* Private constants ---------------------------------------------------------*/
+  29          /* Private types -------------------------------------------------------------*/
+  30          /* Private macro -------------------------------------------------------------*/
+  31          
+  32          #define XSCALE_DN_BASE  0x0400L
+  33          #define XSCALE_UP_BASE  0x2000L 
+  34          #define YSCALE_BASE   0x2000L
+  35          #define PXSCALE_BASE  0x0800L
+  36          
+  37          #define SCALER_HDE_BASE       0x30
+  38          #define SCALER_HDELAY2_BASE     0x10
+  39          #define SCALER_MAX_LINEBUFF_SIZE  1366
+  40          
+  41          /* Private variables ---------------------------------------------------------*/
+  42          /* Private function prototypes -----------------------------------------------*/
+  43          /* Private functions ---------------------------------------------------------*/
+  44          /** --------------------------------------------------------------------------*
+  45            * @fn
+  46            * @brief
+  47            * @param[in]
+  48            * @return     None
+  49            * --------------------------------------------------------------------------*/
+  50          /* Exported functions --------------------------------------------------------*/
+  51          /**
+  52          * find CEA861 Video time table
+  53          */
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 2   
+
+  54          
+  55          /** --------------------------------------------------------------------------*
+  56            * @fn         
+  57            * @brief      
+  58            * @param[in]  
+  59            * @return     None
+  60            * --------------------------------------------------------------------------*/
+  61          struct DIGIT_VIDEO_TIME_TABLE_s *Find_CEA861_VideoTable(WORD hActive,WORD vActive,BYTE vFreq)
+  62          {
+  63   1        struct DIGIT_VIDEO_TIME_TABLE_s *p;
+  64   1      
+  65   1        p = CEA861_table;
+  66   1        while(p->hActive != 0xFFFF) {
+  67   2          if(p->hActive==hActive || p->hActive==(hActive+1)) {
+  68   3            if(p->vActive==vActive) {
+  69   4              if(p->vFreq == vFreq || p->vFreq == (vFreq+1)) {
+  70   5      #ifdef DEBUG_BT656
+                        Printf("\nFind CEA861 video %dx%d%s@%02bd",p->hActive,p->vActive, p->pol & INTERLACED ? "I":"P",p->vF
+             -req);
+                        Printf("  %d:%d,%d,%d  %d:%bd,%bd,%bd",
+                          p->hTotal,p->hFPorch, p->hSync, (WORD)p->hBPorch,  
+                          p->vTotal,p->vFPorch, p->vSync, p->vBPorch
+                          );
+              #endif
+  77   5                return p; 
+  78   5              } 
+  79   4            }
+  80   3          }
+  81   2          p++;
+  82   2        }
+  83   1        //fail.., try VESA
+  84   1        p = TW8836_VESA_TABLE;
+  85   1        while(p->hActive != 0xFFFF) {
+  86   2          if(p->hActive==hActive || p->hActive==(hActive+1)) {
+  87   3            if(p->vActive==vActive) {
+  88   4              if(p->vFreq == vFreq || p->vFreq == (vFreq+1)) {
+  89   5      #ifdef DEBUG_BT656
+                        Printf("\nFind VESA video %dx%d%s@%02bd",p->hActive,p->vActive, p->pol & INTERLACED ? "I":"P",p->vFre
+             -q);
+                        Printf("  %d:%d,%d,%d  %d:%bd,%bd,%bd",
+                          p->hTotal,p->hFPorch, p->hSync, (WORD)p->hBPorch,  
+                          p->vTotal,p->vFPorch, p->vSync, p->vBPorch
+                          );
+              #endif
+  96   5                return p; 
+  97   5              } 
+  98   4            }
+  99   3          }
+ 100   2          p++;
+ 101   2        }
+ 102   1        //fail
+ 103   1        Printf("\nFind_CEA861_VideoTable fail %dx%d@%bd", hActive,vActive,vFreq);
+ 104   1      
+ 105   1        return NULL;
+ 106   1      }
+ 107          
+ 108          
+ 109          //-----------------------------------------------------------------------------
+ 110          /**
+ 111          * description
+ 112          * Horizontal Down/Up Scale register.
+ 113          * Scaler do downscale first, and then do upscale.
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 3   
+
+ 114          *
+ 115          * The down scaling ratio is defined as 400h / DOWN_SCALE.
+ 116          * register
+ 117          * R20A[3:0]R209[7:0]  X-Down. 12bit
+ 118          *
+ 119          * The up scaling ratio is defined as 2000h / UP_SCALE.
+ 120          * register
+ 121          * R204[7:0]R203[7:0]  XSCALE UP. 16bit
+ 122          */
+ 123          void ScalerSetHScaleReg(WORD down, WORD up)
+ 124          {
+ 125   1        WriteTW88(REG20A, (ReadTW88(REG20A) & 0xF0) | (down >> 8));
+ 126   1        WriteTW88(REG209, (BYTE)down);
+ 127   1      
+ 128   1        WriteTW88(REG204, (BYTE)(up>>8));   
+ 129   1        WriteTW88(REG203, (BYTE)up);
+ 130   1      }
+ 131          /** --------------------------------------------------------------------------*
+ 132            * @fn         
+ 133            * @brief      
+ 134            * @param[in]  
+ 135            * @return     None
+ 136            * --------------------------------------------------------------------------*/
+ 137          HAL_StatusTypeDef Scalerinit( void)
+ 138          {
+ 139   1        //input
+ 140   1        //Hstart,Hlen,Vstart,Vlen,VSdelay
+ 141   1        WriteTW88(REG042,0x34);
+ 142   1        WriteTW88(REG043,0x15);
+ 143   1        WriteTW88(REG044,0x20);
+ 144   1        WriteTW88(REG045,0xBF);
+ 145   1        WriteTW88(REG046,0x80);
+ 146   1        WriteTW88(REG04B,0x11);
+ 147   1        //scaler
+ 148   1        
+ 149   1        //output
+ 150   1        return HAL_OK;
+ 151   1      }
+ 152          
+ 153          
+ 154          
+ 155          //-----------------------------------------------------------------------------
+ 156          //VA_POS  REG220[5:4]R215[7:0]    VDE pos 
+ 157          //      Output DE position control relative to the internal reference in number of output lines
+ 158          //VA_LEN  R217[3:0]R216[7:0]    width
+ 159          //      Output DE control in number of the output lines. A 12-bit register
+ 160          /**
+ 161          * Read Vertical DE register
+ 162          */
+ 163          WORD ScalerReadVDEReg(void)
+ 164          {
+ 165   1        WORD wTemp;
+ 166   1        wTemp = ReadTW88(REG220) & 0x30;  wTemp <<= 4;
+ 167   1        wTemp |= ReadTW88(REG215);
+ 168   1        return wTemp;
+ 169   1      }
+ 170          //-----------------------------------------------------------------------------
+ 171          /**
+ 172          * Write Vertical DE register
+ 173          */
+ 174          void ScalerWriteVDEReg(WORD pos)
+ 175          {
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 4   
+
+ 176   1        //dPrintf("\n\rScalerSetVDEAndWidth pos:%bd len:%d",pos,len);
+ 177   1        WriteTW88(REG220, (ReadTW88(REG220) & 0xCF) | ((pos >> 4) & 0x30));
+ 178   1        WriteTW88(REG215, (BYTE)pos);
+ 179   1      }
+ 180          
+ 181          
+ 182          //-----------------------------------------------------------------------------
+ 183          /**
+ 184          * calculate & write vDEReg value.
+ 185          *
+ 186          * simple Formula is   vDE = (DWORD)vStart * PANEL_V / vActive;
+ 187          * but, it is unaccurate and people does not like it.
+ 188          * read real vscaler value and calculate.
+ 189          */
+ 190          void ScalerSet_vDE_value(BYTE vStart)
+ 191          {
+ 192   1        WORD wTemp;
+ 193   1        DWORD dTemp;
+ 194   1      
+ 195   1        wTemp = ScalerReadVScaleReg();
+ 196   1        dTemp = vStart;
+ 197   1        dTemp <<= 13;  //*= 8192;
+ 198   1        dTemp /= wTemp;
+ 199   1        ScalerWriteVDEReg((WORD)dTemp);
+ 200   1        Printf("\nvStart:%bd *8192/%d => vDE:%d",vStart,wTemp,(WORD)dTemp);
+ 201   1      }
+ 202          
+ 203          //-----------------------------------------------------------------------------
+ 204          /**
+ 205          * set Horizontal DE position(DEstart) & length(active, DEwidth).
+ 206          *
+ 207          * REG221[5:4]R210[7:0]  HA_POS
+ 208          *   Output DE position control relative to the internal reference in number of output clock
+ 209          * set the "DEstart" and "DEwidth" on Horizontal Timming Flow.
+ 210          *
+ 211          * This register is related with HDELAY2.
+ 212          * We have to control it together.
+ 213          */
+ 214          void ScalerWriteHDEReg(WORD pos)
+ 215          {
+ 216   1        //FYI: DO NOT add debugmsg, it will makes a blink.
+ 217   1        //dPrintf("\n\rScalerWriteHDEReg pos:%bd",pos);
+ 218   1        WriteTW88(REG221, (ReadTW88(REG221) & 0xCF) | ((pos >> 4) & 0x30));
+ 219   1        WriteTW88(REG210, (BYTE)pos);
+ 220   1      }
+ 221          
+ 222          
+ 223          //-----------------------------------------------------------------------------
+ 224          /**
+ 225          * Read scaler LineBuffer output delay
+ 226          *
+ 227          * @see ScalerWriteLineBufferDelay
+ 228          */
+ 229          BYTE ScalerReadLineBufferDelay(void)
+ 230          {
+ 231   1        return ReadTW88(REG20B);
+ 232   1      }
+ 233          //-----------------------------------------------------------------------------
+ 234          /**
+ 235          * Calculate HDE value.
+ 236          *
+ 237          * method
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 5   
+
+ 238          * Buffer_Delay = REG(0x20b[7:0])
+ 239          * result = Buffer_Delay + 32
+ 240          */
+ 241          WORD ScalerCalcHDE(void)
+ 242          {
+ 243   1        WORD wTemp;
+ 244   1        wTemp = ScalerReadLineBufferDelay();
+ 245   1        return wTemp+32;
+ 246   1      }
+ 247          
+ 248          /**
+ 249          * Write scaler LineBuffer output delay
+ 250          *
+ 251          * HDE is related with this delay value.
+ 252          *
+ 253          * register
+ 254          * R20B
+ 255          * R20B[7:0]     HDELAY2 
+ 256          *   Scaler buffer data output delay in number of pixels in relation to the H sync.
+ 257          */
+ 258          void ScalerWriteLineBufferDelay(BYTE delay)
+ 259          {
+ 260   1        WriteTW88(REG20B, delay);
+ 261   1      }
+ 262          //-----------------------------------------------------------------------------
+ 263          /**
+ 264          * set Scaler OutputLength that is related with the line buffer size. 
+ 265          *
+ 266          * max 1024.
+ 267          * 
+ 268          * register
+ 269          * R20E[6:4]:R20C[7:0]   HACTIVE
+ 270          *   Scaler data output length in number of pixels. 
+ 271          *   A 10-bit register.==>11
+ 272          */
+ 273          void ScalerSetLineBufferSize(WORD len)
+ 274          {
+ 275   1        //TW8836B uses +1 or +2 values.
+ 276   1        if(len> (PANEL_H +2))
+ 277   1          len=PANEL_H;
+ 278   1      
+ 279   1        WriteTW88(REG20E, (ReadTW88(REG20E) & 0x8F) | ((len & 0x700) >> 4));
+ 280   1        WriteTW88(REG20C, (BYTE)len);
+ 281   1      }
+ 282          WORD ScalerGetLineBufferSize(void)
+ 283          {
+ 284   1        WORD wTemp;
+ 285   1        wTemp = ReadTW88(REG20E) & 0x70;
+ 286   1        wTemp <<=4;
+ 287   1        wTemp |= ReadTW88(REG20C);
+ 288   1        return wTemp;
+ 289   1      }
+ 290          //-----------------------------------------------------------------------------
+ 291          //internal
+ 292          /**
+ 293          * set Horizontal Scaler value on FULL mode
+ 294          *
+ 295          * @see ScalerSetHScale
+ 296          */
+ 297          void ScalerSetHScale_FULL(WORD Length)  
+ 298          {
+ 299   1        DWORD dTemp;
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 6   
+
+ 300   1      
+ 301   1        //BK130131. Now HDE need some min value, because FOSD DE.
+ 302   1        //LineBuffDelay also related with HDE.
+ 303   1        //I temporary increase it.
+ 304   1      
+ 305   1        ScalerWriteLineBufferDelay(SCALER_HDELAY2_BASE);
+ 306   1        ScalerPanoramaOnOff(OFF);
+ 307   1      
+ 308   1        //if SCALER_MAX_LINEBUFF_SIZE < PANEL_H, we have to use SCALER_MAX_LINEBUFF_SIZE.
+ 309   1        if(PANEL_H >= Length) { 
+ 310   2          //-----------------------               
+ 311   2          //UP SCALE
+ 312   2          //I don't want to add a garbage on the right side.
+ 313   2          //use a round down value, so image will be scaled up and cut on the right side.
+ 314   2          //for example
+ 315   2          //  input:720 output:800
+ 316   2          //
+ 317   2          //  720*8192/hScale=800
+ 318   2          //  hScale = 720*8192/800
+ 319   2          //  hScale = 7372.8
+ 320   2          //  So, we will use 7373 for hScale.
+ 321   2          //
+ 322   2          //  720*8192/7372=800.08681
+ 323   2          //--------------------
+ 324   2          dTemp = Length;
+ 325   2          dTemp <<= 13; /* *0x2000L */
+ 326   2          dTemp /= PANEL_H;
+ 327   2          ScalerSetHScaleReg(0x0400, dTemp);
+ 328   2          ScalerSetLineBufferSize(Length);
+ 329   2        }
+ 330   1        else {
+ 331   2          //-----------------------               
+ 332   2          //DOWN SCALE
+ 333   2          //for example
+ 334   2          //  input:1920, output:800
+ 335   2          //
+ 336   2          //  1920*1024/800 = 2457.6
+ 337   2          //  So, I will use 2457 for hScale.
+ 338   2          //
+ 339   2          //  1920*1024/2457=800.19536
+ 340   2          //--------------------------
+ 341   2          dTemp = Length;
+ 342   2          dTemp <<= 10; /* *0x400L*/
+ 343   2          dTemp /= PANEL_H;
+ 344   2      
+ 345   2          ScalerSetHScaleReg((WORD)dTemp, 0x2000);
+ 346   2          ScalerSetLineBufferSize(PANEL_H);
+ 347   2        }
+ 348   1      }
+ 349          
+ 350          
+ 351          /**
+ 352          * set Horizontal Scaler value
+ 353          *
+ 354          * @see ScalerSetHScale_FULL
+ 355          * @see ScalerSetHScale_Panorama
+ 356          */
+ 357          void ScalerSetHScale(WORD Length) 
+ 358          {
+ 359   1      //  VideoAspect = GetAspectModeEE();
+ 360   1      
+ 361   1        //dPrintf("\n\rScalerSetHScale(%d)",Length);
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 7   
+
+ 362   1        //dPrintf("\n\rVideoAspect:%bd",VideoAspect);
+ 363   1      
+ 364   1      //#if 0
+ 365   1      //  if((InputMain==INPUT_CVBS || InputMain==INPUT_SVIDEO)
+ 366   1      //  && VideoAspect == VIDEO_ASPECT_NORMAL) {
+ 367   1      //
+ 368   1      //    ScalerWriteLineBufferDelay(SCALER_HDELAY2_BASE);  //BK110916 test. Normal needs it
+ 369   1      //    ScalerPanoramaOnOff(OFF);
+ 370   1      //
+ 371   1      //
+ 372   1      //    //only at CVBS
+ 373   1      //    ScalerSetHScaleReg(0x400, 0x2000);  //clear down,up scale
+ 374   1      //    //adjust buffer output delay
+ 375   1      //    ScalerWriteLineBufferDelay((PANEL_H - Length) / 2 +SCALER_HDELAY2_BASE);
+ 376   1      //
+ 377   1      //    ScalerSetLineBufferSize(Length); //BK120111
+ 378   1      //  }
+ 379   1      //  else if(VideoAspect == VIDEO_ASPECT_PANO)
+ 380   1      //    ScalerSetHScale_Panorama(Length);
+ 381   1      //  else 
+ 382   1      //    //   VideoAspect == VIDEO_ASPECT_FULL
+ 383   1      //    //of VideoAspect == VIDEO_ASPECT_ZOOM
+ 384   1      //#endif
+ 385   1          ScalerSetHScale_FULL(Length);
+ 386   1      }
+ 387          //YSCALE
+ 388          //-----------------------------------------------------------------------------
+ 389          /**
+ 390          * Up / down scaling ratio control in Y-direction. 
+ 391          *
+ 392          * The scaling ratio is defined as 2000h / YSCALE.
+ 393          * A 16-bit register. 
+ 394          *
+ 395          * register
+ 396          * R206[7:0]R205[7:0]  YSCALE  
+ 397          */
+ 398          void ScalerWriteVScaleReg(WORD value)
+ 399          {
+ 400   1        WriteTW88(REG206, (BYTE)(value>>8));
+ 401   1        WriteTW88(REG205, (BYTE)value);
+ 402   1      }
+ 403          //-----------------------------------------------------------------------------
+ 404          /**
+ 405          * read Vertical Scale register value
+ 406          *
+ 407          * @see ScalerWriteVScaleReg
+ 408          */
+ 409          WORD ScalerReadVScaleReg(void)
+ 410          {
+ 411   1        WORD VScale;
+ 412   1        Read2TW88(REG206,REG205, VScale);
+ 413   1        return VScale;
+ 414   1      }
+ 415          
+ 416          //-----------------------------------------------------------------------------
+ 417          /**
+ 418          * set Vertical Scale
+ 419          *
+ 420          * output_length = input_length * 0x2000 / YSCALE_REG
+ 421          * YSCALE_REG = input_length * 0x2000 / output_length
+ 422          * YSCALE_REG = input_length * 0x2000 / PANEL_V
+ 423          * YSCALE_REG = (input_length * 0x2000 + r) / PANEL_V. r = PANEL_V/2
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 8   
+
+ 424          */
+ 425          void ScalerSetVScale(WORD Length)
+ 426          {
+ 427   1        //----------------
+ 428   1        //output = input * 8192 / PANEL_V
+ 429   1        //----------------
+ 430   1        DWORD dTemp;
+ 431   1      #if (PANEL_V==480)
+ 432   1        WORD wDiv;
+ 433   1      #endif
+ 434   1      
+ 435   1      #if (PANEL_V==480)
+ 436   1        //if we need scale down, I will use 479.50 not a 480.
+ 437   1        if(Length > PANEL_V) {
+ 438   2          dTemp = Length;
+ 439   2          dTemp *= 8192L;
+ 440   2          dTemp <<=1;
+ 441   2          wDiv = PANEL_V;
+ 442   2          wDiv <<=1;
+ 443   2          wDiv -= 1;
+ 444   2          dTemp /= wDiv;
+ 445   2        }
+ 446   1        else {
+ 447   2          dTemp = Length;
+ 448   2          dTemp *= 8192L;
+ 449   2          dTemp /= PANEL_V;
+ 450   2        }
+ 451   1      #else
+                dTemp = Length;
+                dTemp <<= 13; //*= 8192L;
+                dTemp /= PANEL_V;
+              
+              #endif
+ 457   1        ScalerWriteVScaleReg((WORD)dTemp);
+ 458   1      }
+ 459          //-----------------------------------------------------------------------------
+ 460          /**
+ 461          * set Panorama mode
+ 462          *
+ 463          * register
+ 464          * R201[6] Enable Panorama/waterglass display
+ 465          */
+ 466          void ScalerPanoramaOnOff(BYTE fOn)
+ 467          {
+ 468   1        if(fOn) WriteTW88(REG201, ReadTW88(REG201) | 0x40);
+ 469   1        else    WriteTW88(REG201, ReadTW88(REG201) & ~0x40);
+ 470   1      }
+ 471          
+ 472          
+ 473          /**
+ 474          * Find ScalerTable
+ 475          * @param InputMain
+ 476          * @param hActive
+ 477          * @param vActive
+ 478          * @param vFreq
+ 479          * @param vStart
+ 480          * if vStart is 0, ignore vPol
+ 481          * @param vPol
+ 482          * if vStart is 0, ignore vPol
+ 483          * @return 
+ 484          * fail:NULL:fail
+ 485          * success: table location
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 9   
+
+ 486          */   
+ 487          struct SCALER_TIME_TABLE_s *FindScalerTable(BYTE _InputMain,WORD hActive,WORD vActive,BYTE vFreq, BYTE vSt
+             -art, BYTE vPol)
+ 488          {
+ 489   1        struct SCALER_TIME_TABLE_s *p;  //result
+ 490   1        BYTE fScale;
+ 491   1        BYTE vDE;
+ 492   1      
+ 493   1        p = SCALER_DTV_time; 
+ 494   1      
+ 495   1        Printf("\nFindScalerTable(%bd,%dx%d@%bd vStart:%bd,vPol:%bd)", _InputMain, hActive,vActive,vFreq, vStart,
+             -vPol);
+ 496   1      
+ 497   1        //horizontal values are not accurate.
+ 498   1        // FW will use +-2 value.
+ 499   1        //vertical values are accurate.
+ 500   1        // But, sometimes, external device send an incorrect video source.
+ 501   1        // FW will check +1 value on vFreq search.
+ 502   1        while(p->hActive) {
+ 503   2          if(p->vActive == vActive) {
+ 504   3            if(p->hActive  >= (hActive-2)  
+ 505   3            && p->hActive <= (hActive+2)) { 
+ 506   4              if((p->vFreq == vFreq)
+ 507   4              || ((p->vFreq+p->vClone) == vFreq)) {
+ 508   5                if(vStart==0) //if vStart is 0, ignore
+ 509   5                  return p;
+ 510   5      
+ 511   5                vDE = p->vBPorch;
+ 512   5                if(vPol) vDE += p->vSyncWidth;
+ 513   5                if(vDE == vStart)
+ 514   5                  return p;
+ 515   5              }
+ 516   4            }
+ 517   3          }     
+ 518   2          p++;
+ 519   2        }
+ 520   1        Puts(" Fail");
+ 521   1        return NULL;  
+ 522   1      }
+*** WARNING C280 IN LINE 490 OF source\drv\DRV_scaler.c: 'fScale': unreferenced local variable
+ 523          /**
+ 524            *****************************************************************************
+ 525            * END OF FILE                                                               *
+ 526            *****************************************************************************
+ 527            */
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 10  
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com0042 (BEGIN)
+0000         L?0067:
+0000         L?0068:
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 2420              ADD     A,#020H
+0007         L?0069:
+0007 F582              MOV     DPL,A
+0009 E500        E     MOV     A,regTW88
+000B 3402              ADDC    A,#02H
+000D F583              MOV     DPH,A
+000F 759300      E     MOV     DPX,#?C?XDATASEG
+0012 22                RET     
+0013         L?0070:
+0013 A3                INC     DPTR
+0014 E0                MOVX    A,@DPTR
+0015 FF                MOV     R7,A
+0016 E4                CLR     A
+0017 FC                MOV     R4,A
+0018 FD                MOV     R5,A
+0019 A3                INC     DPTR
+001A 110000      E     ACALL   ?C?LSTXDATA
+001D 90000000    R     MOV     DPTR,#dTemp
+0021 E0                MOVX    A,@DPTR
+0022 FC                MOV     R4,A
+0023 A3                INC     DPTR
+0024 E0                MOVX    A,@DPTR
+0025 FD                MOV     R5,A
+0026 A3                INC     DPTR
+0027 E0                MOVX    A,@DPTR
+0028 FE                MOV     R6,A
+0029 A3                INC     DPTR
+002A E0                MOVX    A,@DPTR
+002B FF                MOV     R7,A
+002C E4                CLR     A
+002D FB                MOV     R3,A
+002E 7A20              MOV     R2,#020H
+0030 F9                MOV     R1,A
+0031 F8                MOV     R0,A
+0032 110000      E     ACALL   ?C?LMUL
+0035 90000000    R     MOV     DPTR,#dTemp
+0039 110000      E     ACALL   ?C?LSTXDATA
+003C         L?0071:
+003C 90000000    R     MOV     DPTR,#dTemp
+0040         L?0072:
+0040 E0                MOVX    A,@DPTR
+0041 FC                MOV     R4,A
+0042 A3                INC     DPTR
+0043 E0                MOVX    A,@DPTR
+0044 FD                MOV     R5,A
+0045         L?0073:
+0045 A3                INC     DPTR
+0046 E0                MOVX    A,@DPTR
+0047 FE                MOV     R6,A
+0048 A3                INC     DPTR
+0049 E0                MOVX    A,@DPTR
+004A FF                MOV     R7,A
+004B 22                RET     
+004C         L?0074:
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 11  
+
+004C         L?0075:
+004C 90000000    R     MOV     DPTR,#p
+0050         L?0076:
+0050 E0                MOVX    A,@DPTR
+0051 FB                MOV     R3,A
+0052 A3                INC     DPTR
+0053 E0                MOVX    A,@DPTR
+0054 FA                MOV     R2,A
+0055 A3                INC     DPTR
+0056 E0                MOVX    A,@DPTR
+0057 22                RET     
+0058         L?0077:
+0058 E4                CLR     A
+0059 7B20              MOV     R3,#020H
+005B 7A03              MOV     R2,#03H
+005D F9                MOV     R1,A
+005E F8                MOV     R0,A
+005F 110000      E     ACALL   ?C?ULDIV
+0062         L?0078:
+0062 90000000    R     MOV     DPTR,#dTemp
+0066         L?0079:
+0066 110000      E     ACALL   ?C?LSTXDATA
+0069 90000000    R     MOV     DPTR,#dTemp
+006D 22                RET     
+006E         L?0080:
+006E         L?0081:
+006E F582              MOV     DPL,A
+0070 E4                CLR     A
+0071 3500        E     ADDC    A,regTW88
+0073 F583              MOV     DPH,A
+0075 759300      E     MOV     DPX,#?C?XDATASEG
+0078 22                RET     
+0079         L?0082:
+0079         L?0083:
+0079 2405              ADD     A,#05H
+007B         L?0084:
+007B F9                MOV     R1,A
+007C E4                CLR     A
+007D 3A                ADDC    A,R2
+007E FA                MOV     R2,A
+007F 010000      E     AJMP    ?C?CLDPTR
+0082         L?0085:
+0082 2401              ADD     A,#01H
+0084         L?0086:
+0084 F9                MOV     R1,A
+0085 E4                CLR     A
+0086 3A                ADDC    A,R2
+0087 FA                MOV     R2,A
+0088 110000      E     ACALL   ?C?ILDPTR
+008B FF                MOV     R7,A
+008C 22                RET     
+008D         L?0087:
+008D         L?0088:
+008D EF                MOV     A,R7
+008E         L?0089:
+008E F0                MOVX    @DPTR,A
+008F AF05              MOV     R7,AR5
+0091 759300      E     MOV     DPX,#?C?XDATASEG
+0094 E500        E     MOV     A,regTW88+01H
+0096 22                RET     
+0097         L?0090:
+0097 7E00              MOV     R6,#00H
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 12  
+
+0099 C4                SWAP    A
+009A F8                MOV     R0,A
+009B 540F              ANL     A,#0FH
+009D C8                XCH     A,R0
+009E 68                XRL     A,R0
+009F FF                MOV     R7,A
+00A0 EE                MOV     A,R6
+00A1 C4                SWAP    A
+00A2 54F0              ANL     A,#0F0H
+00A4 48                ORL     A,R0
+00A5         L?0091:
+00A5 FE                MOV     R6,A
+00A6 759300      E     MOV     DPX,#?C?XDATASEG
+00A9 E500        E     MOV     A,regTW88+01H
+00AB 22                RET     
+00AC         L?0092:
+00AC E0                MOVX    A,@DPTR
+00AD         L?0093:
+00AD FF                MOV     R7,A
+00AE 759300      E     MOV     DPX,#?C?XDATASEG
+00B1 E500        E     MOV     A,regTW88+01H
+00B3 22                RET     
+00B4         L?0094:
+00B4         L?0095:
+00B4 90000000    R     MOV     DPTR,#dTemp
+00B8 110000      E     ACALL   ?C?LSTXDATA
+00BB 90000000    R     MOV     DPTR,#dTemp
+00BF 22                RET     
+00C0         L?0096:
+00C0 AD07              MOV     R5,AR7
+00C2 AC06              MOV     R4,AR6
+00C4 EC                MOV     A,R4
+00C5 C4                SWAP    A
+00C6 F8                MOV     R0,A
+00C7 54F0              ANL     A,#0F0H
+00C9 C8                XCH     A,R0
+00CA ED                MOV     A,R5
+00CB C4                SWAP    A
+00CC 540F              ANL     A,#0FH
+00CE 48                ORL     A,R0
+00CF 5430              ANL     A,#030H
+00D1 22                RET     
+00D2         L?0097:
+00D2         L?0098:
+00D2 F0                MOVX    @DPTR,A
+00D3 759300      E     MOV     DPX,#?C?XDATASEG
+00D6 E500        E     MOV     A,regTW88+01H
+00D8 22                RET     
+00D9         L?0099:
+00D9         L?0100:
+00D9 90000000    R     MOV     DPTR,#Length
+00DD E0                MOVX    A,@DPTR
+00DE FE                MOV     R6,A
+00DF A3                INC     DPTR
+00E0 E0                MOVX    A,@DPTR
+00E1 FF                MOV     R7,A
+00E2 22                RET     
+00E3         L?0101:
+00E3 E0                MOVX    A,@DPTR
+00E4 FF                MOV     R7,A
+00E5 A3                INC     DPTR
+00E6 E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 13  
+
+00E7 90000000    E     MOV     DPTR,#?_Printf?BYTE+06H
+00EB CF                XCH     A,R7
+00EC F0                MOVX    @DPTR,A
+00ED A3                INC     DPTR
+00EE EF                MOV     A,R7
+00EF F0                MOVX    @DPTR,A
+00F0 22                RET     
+00F1         L?0102:
+00F1 90000000    R     MOV     DPTR,#p+01H
+00F5 E4                CLR     A
+00F6 75F019            MOV     B,#019H
+00F9 010000      E     AJMP    ?C?IILDX
+00FC         L?0103:
+00FC         L?0104:
+00FC 4F                ORL     A,R7
+00FD FF                MOV     R7,A
+00FE 759300      E     MOV     DPX,#?C?XDATASEG
+0101 E500        E     MOV     A,regTW88+01H
+0103 22                RET     
+0104         L?0105:
+0104 90000000    R     MOV     DPTR,#hActive
+0108 E0                MOVX    A,@DPTR
+0109 FC                MOV     R4,A
+010A A3                INC     DPTR
+010B E0                MOVX    A,@DPTR
+010C FD                MOV     R5,A
+010D 6F                XRL     A,R7
+010E 22                RET     
+010F         L?0106:
+010F EF                MOV     A,R7
+0110 FD                MOV     R5,A
+0111 EE                MOV     A,R6
+0112 2401              ADD     A,#01H
+0114 FF                MOV     R7,A
+0115 E4                CLR     A
+0116 33                RLC     A
+0117 FE                MOV     R6,A
+0118 ED                MOV     A,R5
+0119 22                RET     
+011A         L?0107:
+011A E0                MOVX    A,@DPTR
+011B FE                MOV     R6,A
+011C A3                INC     DPTR
+011D E0                MOVX    A,@DPTR
+011E FB                MOV     R3,A
+011F AA06              MOV     R2,AR6
+0121 E4                CLR     A
+0122 F9                MOV     R1,A
+0123 F8                MOV     R0,A
+0124 22                RET     
+0125         L?0108:
+0125 ED                MOV     A,R5
+0126 2401              ADD     A,#01H
+0128 FD                MOV     R5,A
+0129 E4                CLR     A
+012A 3C                ADDC    A,R4
+012B FC                MOV     R4,A
+012C ED                MOV     A,R5
+012D 6F                XRL     A,R7
+012E 22                RET     
+             ; FUNCTION Com0042 (END)
+
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 14  
+
+             ; FUNCTION _Find_CEA861_VideoTable (BEGIN)
+                                           ; SOURCE LINE # 61
+0000 90000000    R     MOV     DPTR,#hActive
+0004 EE                MOV     A,R6
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 EF                MOV     A,R7
+0008 F0                MOVX    @DPTR,A
+0009 A3                INC     DPTR
+000A EC                MOV     A,R4
+000B F0                MOVX    @DPTR,A
+000C A3                INC     DPTR
+000D ED                MOV     A,R5
+000E F0                MOVX    @DPTR,A
+000F A3                INC     DPTR
+0010 EB                MOV     A,R3
+0011 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 62
+                                           ; SOURCE LINE # 65
+0012 A3                INC     DPTR
+0013 7400        E     MOV     A,#MBYTE CEA861_table
+0015 F0                MOVX    @DPTR,A
+0016 A3                INC     DPTR
+0017 7400        E     MOV     A,#HIGH CEA861_table
+0019 F0                MOVX    @DPTR,A
+001A A3                INC     DPTR
+001B 7400        E     MOV     A,#LOW CEA861_table
+001D F0                MOVX    @DPTR,A
+001E         ?C0001:
+                                           ; SOURCE LINE # 66
+001E 110000      R     ACALL   L?0074
+0021 110000      R     ACALL   L?0085
+0024 AEF0              MOV     R6,B
+0026 F4                CPL     A
+0027 7002              JNZ     ?C0050
+0029 EE                MOV     A,R6
+002A F4                CPL     A
+002B         ?C0050:
+002B 6049              JZ      ?C0002
+                                           ; SOURCE LINE # 67
+002D 110000      R     ACALL   L?0105
+0030 7002              JNZ     ?C0051
+0032 EC                MOV     A,R4
+0033 6E                XRL     A,R6
+0034         ?C0051:
+0034 6009              JZ      ?C0004
+0036 110000      R     ACALL   L?0108
+0039 7002              JNZ     ?C0052
+003B EC                MOV     A,R4
+003C 6E                XRL     A,R6
+003D         ?C0052:
+003D 7032              JNZ     ?C0003
+003F         ?C0004:
+                                           ; SOURCE LINE # 68
+003F 110000      R     ACALL   L?0074
+0042 2403              ADD     A,#03H
+0044 110000      R     ACALL   L?0086
+0047 90000000    R     MOV     DPTR,#vActive
+004B E0                MOVX    A,@DPTR
+004C 65F0              XRL     A,B
+004E 7003              JNZ     ?C0053
+0050 A3                INC     DPTR
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 15  
+
+0051 E0                MOVX    A,@DPTR
+0052 6F                XRL     A,R7
+0053         ?C0053:
+0053 701C              JNZ     ?C0003
+                                           ; SOURCE LINE # 69
+0055 110000      R     ACALL   L?0075
+0058 110000      R     ACALL   L?0082
+005B FF                MOV     R7,A
+005C 90000000    R     MOV     DPTR,#vFreq
+0060 E0                MOVX    A,@DPTR
+0061 FE                MOV     R6,A
+0062 6F                XRL     A,R7
+0063 6071              JZ      ?C0062
+0065 110000      R     ACALL   L?0106
+0068 B50706            CJNE    A,AR7,?C0003
+006B E4                CLR     A
+006C B50602            CJNE    A,AR6,?C0003
+006F         ?C0007:
+                                           ; SOURCE LINE # 77
+006F 8065              SJMP    ?C0062
+                                           ; SOURCE LINE # 78
+                                           ; SOURCE LINE # 79
+                                           ; SOURCE LINE # 80
+0071         ?C0003:
+                                           ; SOURCE LINE # 81
+0071 110000      R     ACALL   L?0102
+                                           ; SOURCE LINE # 82
+0074 80A8              SJMP    ?C0001
+0076         ?C0002:
+                                           ; SOURCE LINE # 84
+0076 90000000    R     MOV     DPTR,#p
+007A 7400        E     MOV     A,#MBYTE TW8836_VESA_TABLE
+007C F0                MOVX    @DPTR,A
+007D A3                INC     DPTR
+007E 7400        E     MOV     A,#HIGH TW8836_VESA_TABLE
+0080 F0                MOVX    @DPTR,A
+0081 A3                INC     DPTR
+0082 7400        E     MOV     A,#LOW TW8836_VESA_TABLE
+0084 F0                MOVX    @DPTR,A
+0085         ?C0009:
+                                           ; SOURCE LINE # 85
+0085 110000      R     ACALL   L?0075
+0088 110000      R     ACALL   L?0085
+008B AEF0              MOV     R6,B
+008D F4                CPL     A
+008E 7002              JNZ     ?C0055
+0090 EE                MOV     A,R6
+0091 F4                CPL     A
+0092         ?C0055:
+0092 604C              JZ      ?C0010
+                                           ; SOURCE LINE # 86
+0094 110000      R     ACALL   L?0105
+0097 7002              JNZ     ?C0056
+0099 EC                MOV     A,R4
+009A 6E                XRL     A,R6
+009B         ?C0056:
+009B 6009              JZ      ?C0012
+009D 110000      R     ACALL   L?0108
+00A0 7002              JNZ     ?C0057
+00A2 EC                MOV     A,R4
+00A3 6E                XRL     A,R6
+00A4         ?C0057:
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 16  
+
+00A4 7035              JNZ     ?C0011
+00A6         ?C0012:
+                                           ; SOURCE LINE # 87
+00A6 110000      R     ACALL   L?0075
+00A9 2403              ADD     A,#03H
+00AB 110000      R     ACALL   L?0086
+00AE 90000000    R     MOV     DPTR,#vActive
+00B2 E0                MOVX    A,@DPTR
+00B3 65F0              XRL     A,B
+00B5 7003              JNZ     ?C0058
+00B7 A3                INC     DPTR
+00B8 E0                MOVX    A,@DPTR
+00B9 6F                XRL     A,R7
+00BA         ?C0058:
+00BA 701F              JNZ     ?C0011
+                                           ; SOURCE LINE # 88
+00BC 110000      R     ACALL   L?0075
+00BF 110000      R     ACALL   L?0082
+00C2 FF                MOV     R7,A
+00C3 90000000    R     MOV     DPTR,#vFreq
+00C7 E0                MOVX    A,@DPTR
+00C8 FE                MOV     R6,A
+00C9 6F                XRL     A,R7
+00CA 600A              JZ      ?C0015
+00CC 110000      R     ACALL   L?0106
+00CF B50709            CJNE    A,AR7,?C0011
+00D2 E4                CLR     A
+00D3 B50605            CJNE    A,AR6,?C0011
+00D6         ?C0015:
+                                           ; SOURCE LINE # 96
+00D6         ?C0062:
+00D6 110000      R     ACALL   L?0075
+00D9 F9                MOV     R1,A
+00DA 22                RET     
+                                           ; SOURCE LINE # 97
+                                           ; SOURCE LINE # 98
+                                           ; SOURCE LINE # 99
+00DB         ?C0011:
+                                           ; SOURCE LINE # 100
+00DB 110000      R     ACALL   L?0102
+                                           ; SOURCE LINE # 101
+00DE 80A5              SJMP    ?C0009
+00E0         ?C0010:
+                                           ; SOURCE LINE # 103
+00E0 7B00        R     MOV     R3,#MBYTE ?SC_0
+00E2 7A00        R     MOV     R2,#HIGH ?SC_0
+00E4 7900        R     MOV     R1,#LOW ?SC_0
+00E6 90000000    R     MOV     DPTR,#hActive
+00EA E0                MOVX    A,@DPTR
+00EB FF                MOV     R7,A
+00EC A3                INC     DPTR
+00ED E0                MOVX    A,@DPTR
+00EE 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+00F2 CF                XCH     A,R7
+00F3 F0                MOVX    @DPTR,A
+00F4 A3                INC     DPTR
+00F5 EF                MOV     A,R7
+00F6 F0                MOVX    @DPTR,A
+00F7 90000000    R     MOV     DPTR,#vActive
+00FB E0                MOVX    A,@DPTR
+00FC FF                MOV     R7,A
+00FD A3                INC     DPTR
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 17  
+
+00FE E0                MOVX    A,@DPTR
+00FF 90000000    E     MOV     DPTR,#?_Printf?BYTE+05H
+0103 CF                XCH     A,R7
+0104 F0                MOVX    @DPTR,A
+0105 A3                INC     DPTR
+0106 EF                MOV     A,R7
+0107 F0                MOVX    @DPTR,A
+0108 90000000    R     MOV     DPTR,#vFreq
+010C E0                MOVX    A,@DPTR
+010D 90000000    E     MOV     DPTR,#?_Printf?BYTE+07H
+0111 F0                MOVX    @DPTR,A
+0112 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 105
+0115 7B00              MOV     R3,#00H
+0117 7A00              MOV     R2,#00H
+0119 7900              MOV     R1,#00H
+                                           ; SOURCE LINE # 106
+011B         ?C0008:
+011B 22                RET     
+             ; FUNCTION _Find_CEA861_VideoTable (END)
+
+             ; FUNCTION _ScalerSetHScaleReg (BEGIN)
+                                           ; SOURCE LINE # 123
+0000 90000000    R     MOV     DPTR,#down
+0004 EE                MOV     A,R6
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 EF                MOV     A,R7
+0008 F0                MOVX    @DPTR,A
+;---- Variable 'up' assigned to Register 'R4/R5' ----
+                                           ; SOURCE LINE # 124
+                                           ; SOURCE LINE # 125
+0009 90000000    R     MOV     DPTR,#down
+000D 110000      R     ACALL   L?0092
+0010 240A              ADD     A,#0AH
+0012 110000      R     ACALL   L?0069
+0015 E0                MOVX    A,@DPTR
+0016 54F0              ANL     A,#0F0H
+0018 110000      R     ACALL   L?0103
+001B 240A              ADD     A,#0AH
+001D 110000      R     ACALL   L?0069
+0020 EF                MOV     A,R7
+0021 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 126
+0022 90000000    R     MOV     DPTR,#down
+0026 A3                INC     DPTR
+0027 110000      R     ACALL   L?0092
+002A 2409              ADD     A,#09H
+002C 110000      R     ACALL   L?0069
+002F EF                MOV     A,R7
+0030 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 128
+0031 EC                MOV     A,R4
+0032 110000      R     ACALL   L?0093
+0035 2404              ADD     A,#04H
+0037 110000      R     ACALL   L?0069
+003A EF                MOV     A,R7
+                                           ; SOURCE LINE # 129
+003B 110000      R     ACALL   L?0089
+003E 2403              ADD     A,#03H
+0040 110000      R     ACALL   L?0069
+0043 EF                MOV     A,R7
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 18  
+
+0044 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 130
+0045 22                RET     
+             ; FUNCTION _ScalerSetHScaleReg (END)
+
+             ; FUNCTION Scalerinit (BEGIN)
+                                           ; SOURCE LINE # 137
+                                           ; SOURCE LINE # 138
+                                           ; SOURCE LINE # 141
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 2442              ADD     A,#042H
+0007 110000      R     ACALL   L?0080
+000A 7434              MOV     A,#034H
+                                           ; SOURCE LINE # 142
+000C 110000      R     ACALL   L?0097
+000F 2443              ADD     A,#043H
+0011 110000      R     ACALL   L?0080
+0014 7415              MOV     A,#015H
+                                           ; SOURCE LINE # 143
+0016 110000      R     ACALL   L?0097
+0019 2444              ADD     A,#044H
+001B 110000      R     ACALL   L?0081
+001E 7420              MOV     A,#020H
+                                           ; SOURCE LINE # 144
+0020 110000      R     ACALL   L?0098
+0023 2445              ADD     A,#045H
+0025 110000      R     ACALL   L?0081
+0028 74BF              MOV     A,#0BFH
+                                           ; SOURCE LINE # 145
+002A 110000      R     ACALL   L?0098
+002D 2446              ADD     A,#046H
+002F 110000      R     ACALL   L?0081
+0032 7480              MOV     A,#080H
+                                           ; SOURCE LINE # 146
+0034 110000      R     ACALL   L?0098
+0037 244B              ADD     A,#04BH
+0039 110000      R     ACALL   L?0081
+003C 7411              MOV     A,#011H
+003E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 150
+003F 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 151
+0041         ?C0017:
+0041 22                RET     
+             ; FUNCTION Scalerinit (END)
+
+             ; FUNCTION ScalerReadVDEReg (BEGIN)
+                                           ; SOURCE LINE # 163
+                                           ; SOURCE LINE # 164
+                                           ; SOURCE LINE # 166
+0000 110000      R     ACALL   L?0067
+0003 E0                MOVX    A,@DPTR
+0004 5430              ANL     A,#030H
+;---- Variable 'wTemp' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 167
+0006 110000      R     ACALL   L?0090
+0009 2415              ADD     A,#015H
+000B 110000      R     ACALL   L?0069
+000E E0                MOVX    A,@DPTR
+000F FD                MOV     R5,A
+0010 EF                MOV     A,R7
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 19  
+
+0011 4D                ORL     A,R5
+0012 FF                MOV     R7,A
+                                           ; SOURCE LINE # 168
+                                           ; SOURCE LINE # 169
+0013         ?C0018:
+0013 22                RET     
+             ; FUNCTION ScalerReadVDEReg (END)
+
+             ; FUNCTION _ScalerWriteVDEReg (BEGIN)
+                                           ; SOURCE LINE # 174
+;---- Variable 'pos' assigned to Register 'R4/R5' ----
+                                           ; SOURCE LINE # 175
+                                           ; SOURCE LINE # 177
+0000 110000      R     ACALL   L?0096
+0003 FF                MOV     R7,A
+0004 110000      R     ACALL   L?0067
+0007 E0                MOVX    A,@DPTR
+0008 54CF              ANL     A,#0CFH
+000A 4F                ORL     A,R7
+000B FF                MOV     R7,A
+000C 110000      R     ACALL   L?0068
+                                           ; SOURCE LINE # 178
+000F 110000      R     ACALL   L?0087
+0012 2415              ADD     A,#015H
+0014 110000      R     ACALL   L?0069
+0017 EF                MOV     A,R7
+0018 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 179
+0019 22                RET     
+             ; FUNCTION _ScalerWriteVDEReg (END)
+
+             ; FUNCTION _ScalerSet_vDE_value (BEGIN)
+                                           ; SOURCE LINE # 190
+0000 90000000    R     MOV     DPTR,#vStart
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 191
+                                           ; SOURCE LINE # 195
+0006 110000      R     ACALL   ScalerReadVScaleReg
+0009 90000000    R     MOV     DPTR,#wTemp
+000D EE                MOV     A,R6
+000E F0                MOVX    @DPTR,A
+000F A3                INC     DPTR
+0010 EF                MOV     A,R7
+0011 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 196
+0012 90000000    R     MOV     DPTR,#vStart
+0016 E0                MOVX    A,@DPTR
+0017 FF                MOV     R7,A
+0018 E4                CLR     A
+0019 FC                MOV     R4,A
+001A FD                MOV     R5,A
+001B FE                MOV     R6,A
+                                           ; SOURCE LINE # 197
+001C 110000      R     ACALL   L?0094
+001F 110000      R     ACALL   L?0072
+0022 780D              MOV     R0,#0DH
+0024 110000      E     ACALL   ?C?LSHL
+                                           ; SOURCE LINE # 198
+0027 110000      R     ACALL   L?0094
+002A 110000      R     ACALL   L?0072
+002D C006              PUSH    AR6
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 20  
+
+002F C007              PUSH    AR7
+0031 90000000    R     MOV     DPTR,#wTemp
+0035 110000      R     ACALL   L?0107
+0038 D007              POP     AR7
+003A D006              POP     AR6
+003C 110000      E     ACALL   ?C?ULDIV
+                                           ; SOURCE LINE # 199
+003F 110000      R     ACALL   L?0095
+0042 A3                INC     DPTR
+0043 110000      R     ACALL   L?0073
+0046 110000      R     ACALL   _ScalerWriteVDEReg
+                                           ; SOURCE LINE # 200
+0049 7B00        R     MOV     R3,#MBYTE ?SC_39
+004B 7A00        R     MOV     R2,#HIGH ?SC_39
+004D 7900        R     MOV     R1,#LOW ?SC_39
+004F 90000000    R     MOV     DPTR,#vStart
+0053 E0                MOVX    A,@DPTR
+0054 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0058 F0                MOVX    @DPTR,A
+0059 90000000    R     MOV     DPTR,#wTemp
+005D E0                MOVX    A,@DPTR
+005E FF                MOV     R7,A
+005F A3                INC     DPTR
+0060 E0                MOVX    A,@DPTR
+0061 90000000    E     MOV     DPTR,#?_Printf?BYTE+04H
+0065 CF                XCH     A,R7
+0066 F0                MOVX    @DPTR,A
+0067 A3                INC     DPTR
+0068 EF                MOV     A,R7
+0069 F0                MOVX    @DPTR,A
+006A 90000000    R     MOV     DPTR,#dTemp
+006E A3                INC     DPTR
+006F A3                INC     DPTR
+0070 110000      R     ACALL   L?0101
+0073 010000      E     AJMP    _Printf
+             ; FUNCTION _ScalerSet_vDE_value (END)
+
+             ; FUNCTION _ScalerWriteHDEReg (BEGIN)
+                                           ; SOURCE LINE # 214
+;---- Variable 'pos' assigned to Register 'R4/R5' ----
+                                           ; SOURCE LINE # 215
+                                           ; SOURCE LINE # 218
+0000 110000      R     ACALL   L?0096
+0003 110000      R     ACALL   L?0093
+0006 2421              ADD     A,#021H
+0008 110000      R     ACALL   L?0069
+000B E0                MOVX    A,@DPTR
+000C 54CF              ANL     A,#0CFH
+000E 110000      R     ACALL   L?0103
+0011 2421              ADD     A,#021H
+0013 110000      R     ACALL   L?0069
+                                           ; SOURCE LINE # 219
+0016 110000      R     ACALL   L?0087
+0019 2410              ADD     A,#010H
+001B 110000      R     ACALL   L?0069
+001E EF                MOV     A,R7
+001F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 220
+0020 22                RET     
+             ; FUNCTION _ScalerWriteHDEReg (END)
+
+             ; FUNCTION ScalerReadLineBufferDelay (BEGIN)
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 21  
+
+                                           ; SOURCE LINE # 229
+                                           ; SOURCE LINE # 230
+                                           ; SOURCE LINE # 231
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 240B              ADD     A,#0BH
+0007 110000      R     ACALL   L?0069
+000A E0                MOVX    A,@DPTR
+000B FF                MOV     R7,A
+                                           ; SOURCE LINE # 232
+000C         ?C0022:
+000C 22                RET     
+             ; FUNCTION ScalerReadLineBufferDelay (END)
+
+             ; FUNCTION ScalerCalcHDE (BEGIN)
+                                           ; SOURCE LINE # 241
+                                           ; SOURCE LINE # 242
+                                           ; SOURCE LINE # 244
+0000 110000      R     ACALL   ScalerReadLineBufferDelay
+0003 7E00              MOV     R6,#00H
+;---- Variable 'wTemp' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 245
+0005 EF                MOV     A,R7
+0006 2420              ADD     A,#020H
+0008 FF                MOV     R7,A
+0009 EE                MOV     A,R6
+000A 33                RLC     A
+000B FE                MOV     R6,A
+                                           ; SOURCE LINE # 246
+000C         ?C0023:
+000C 22                RET     
+             ; FUNCTION ScalerCalcHDE (END)
+
+             ; FUNCTION _ScalerWriteLineBufferDelay (BEGIN)
+                                           ; SOURCE LINE # 258
+;---- Variable 'delay' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 259
+                                           ; SOURCE LINE # 260
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 240B              ADD     A,#0BH
+0007 110000      R     ACALL   L?0069
+000A EF                MOV     A,R7
+000B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 261
+000C 22                RET     
+             ; FUNCTION _ScalerWriteLineBufferDelay (END)
+
+             ; FUNCTION _ScalerSetLineBufferSize (BEGIN)
+                                           ; SOURCE LINE # 273
+;---- Variable 'len' assigned to Register 'R4/R5' ----
+0000 AD07              MOV     R5,AR7
+0002 AC06              MOV     R4,AR6
+                                           ; SOURCE LINE # 274
+                                           ; SOURCE LINE # 276
+0004 D3                SETB    C
+0005 ED                MOV     A,R5
+0006 9422              SUBB    A,#022H
+0008 EC                MOV     A,R4
+0009 9403              SUBB    A,#03H
+000B 4004              JC      ?C0025
+                                           ; SOURCE LINE # 277
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 22  
+
+000D 7C03              MOV     R4,#03H
+000F 7D20              MOV     R5,#020H
+0011         ?C0025:
+                                           ; SOURCE LINE # 279
+0011 EC                MOV     A,R4
+0012 5407              ANL     A,#07H
+0014 C4                SWAP    A
+0015 F8                MOV     R0,A
+0016 54F0              ANL     A,#0F0H
+0018 C8                XCH     A,R0
+0019 E4                CLR     A
+001A C4                SWAP    A
+001B 540F              ANL     A,#0FH
+001D 48                ORL     A,R0
+001E 110000      R     ACALL   L?0093
+0021 240E              ADD     A,#0EH
+0023 110000      R     ACALL   L?0069
+0026 E0                MOVX    A,@DPTR
+0027 548F              ANL     A,#08FH
+0029 110000      R     ACALL   L?0104
+002C 240E              ADD     A,#0EH
+002E 110000      R     ACALL   L?0069
+                                           ; SOURCE LINE # 280
+0031 110000      R     ACALL   L?0088
+0034 240C              ADD     A,#0CH
+0036 110000      R     ACALL   L?0069
+0039 EF                MOV     A,R7
+003A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 281
+003B 22                RET     
+             ; FUNCTION _ScalerSetLineBufferSize (END)
+
+             ; FUNCTION ScalerGetLineBufferSize (BEGIN)
+                                           ; SOURCE LINE # 282
+                                           ; SOURCE LINE # 283
+                                           ; SOURCE LINE # 285
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 240E              ADD     A,#0EH
+0007 110000      R     ACALL   L?0069
+000A E0                MOVX    A,@DPTR
+000B 5470              ANL     A,#070H
+;---- Variable 'wTemp' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 286
+                                           ; SOURCE LINE # 287
+000D 110000      R     ACALL   L?0090
+0010 240C              ADD     A,#0CH
+0012 110000      R     ACALL   L?0069
+0015 E0                MOVX    A,@DPTR
+0016 FD                MOV     R5,A
+0017 EF                MOV     A,R7
+0018 4D                ORL     A,R5
+0019 FF                MOV     R7,A
+                                           ; SOURCE LINE # 288
+                                           ; SOURCE LINE # 289
+001A         ?C0027:
+001A 22                RET     
+             ; FUNCTION ScalerGetLineBufferSize (END)
+
+             ; FUNCTION _ScalerSetHScale_FULL (BEGIN)
+                                           ; SOURCE LINE # 297
+0000 90000000    R     MOV     DPTR,#Length
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 23  
+
+0004 EE                MOV     A,R6
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 EF                MOV     A,R7
+0008 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 298
+                                           ; SOURCE LINE # 305
+0009 7F10              MOV     R7,#010H
+000B 110000      R     ACALL   _ScalerWriteLineBufferDelay
+                                           ; SOURCE LINE # 306
+000E E4                CLR     A
+000F FF                MOV     R7,A
+0010 110000      R     ACALL   _ScalerPanoramaOnOff
+                                           ; SOURCE LINE # 309
+0013 110000      R     ACALL   L?0099
+0016 D3                SETB    C
+0017 9420              SUBB    A,#020H
+0019 EE                MOV     A,R6
+001A 9403              SUBB    A,#03H
+001C 502D              JNC     ?C0028
+                                           ; SOURCE LINE # 324
+001E E4                CLR     A
+001F FC                MOV     R4,A
+0020 FD                MOV     R5,A
+0021 A3                INC     DPTR
+                                           ; SOURCE LINE # 325
+0022 110000      R     ACALL   L?0079
+0025 110000      R     ACALL   L?0072
+0028 780D              MOV     R0,#0DH
+002A 110000      E     ACALL   ?C?LSHL
+                                           ; SOURCE LINE # 326
+002D 110000      R     ACALL   L?0078
+0030 110000      R     ACALL   L?0072
+                                           ; SOURCE LINE # 327
+0033 110000      R     ACALL   L?0077
+0036 A3                INC     DPTR
+0037 A3                INC     DPTR
+0038 E0                MOVX    A,@DPTR
+0039 FE                MOV     R6,A
+003A A3                INC     DPTR
+003B E0                MOVX    A,@DPTR
+003C FD                MOV     R5,A
+003D AC06              MOV     R4,AR6
+003F 7F00              MOV     R7,#00H
+0041 7E04              MOV     R6,#04H
+0043 110000      R     ACALL   _ScalerSetHScaleReg
+                                           ; SOURCE LINE # 328
+0046 110000      R     ACALL   L?0099
+                                           ; SOURCE LINE # 329
+0049 802A              SJMP    ?C0063
+004B         ?C0028:
+                                           ; SOURCE LINE # 330
+                                           ; SOURCE LINE # 341
+004B 110000      R     ACALL   L?0100
+004E E4                CLR     A
+004F FC                MOV     R4,A
+0050 FD                MOV     R5,A
+0051 A3                INC     DPTR
+                                           ; SOURCE LINE # 342
+0052 110000      R     ACALL   L?0079
+0055 110000      R     ACALL   L?0072
+0058 780A              MOV     R0,#0AH
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 24  
+
+005A 110000      E     ACALL   ?C?LSHL
+                                           ; SOURCE LINE # 343
+005D 110000      R     ACALL   L?0078
+0060 110000      R     ACALL   L?0072
+                                           ; SOURCE LINE # 345
+0063 110000      R     ACALL   L?0077
+0066 A3                INC     DPTR
+0067 110000      R     ACALL   L?0073
+006A 7D00              MOV     R5,#00H
+006C 7C20              MOV     R4,#020H
+006E 110000      R     ACALL   _ScalerSetHScaleReg
+                                           ; SOURCE LINE # 346
+0071 7F20              MOV     R7,#020H
+0073 7E03              MOV     R6,#03H
+0075         ?C0063:
+0075 110000      R     ACALL   _ScalerSetLineBufferSize
+                                           ; SOURCE LINE # 347
+                                           ; SOURCE LINE # 348
+0078         ?C0030:
+0078 22                RET     
+             ; FUNCTION _ScalerSetHScale_FULL (END)
+
+             ; FUNCTION _ScalerSetHScale (BEGIN)
+                                           ; SOURCE LINE # 357
+;---- Variable 'Length' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 358
+                                           ; SOURCE LINE # 385
+0000 010000      R     AJMP    _ScalerSetHScale_FULL
+             ; FUNCTION _ScalerSetHScale (END)
+
+             ; FUNCTION _ScalerWriteVScaleReg (BEGIN)
+                                           ; SOURCE LINE # 398
+;---- Variable 'value' assigned to Register 'R4/R5' ----
+0000 AD07              MOV     R5,AR7
+0002 AC06              MOV     R4,AR6
+                                           ; SOURCE LINE # 399
+                                           ; SOURCE LINE # 400
+0004 EC                MOV     A,R4
+0005 110000      R     ACALL   L?0093
+0008 2406              ADD     A,#06H
+000A 110000      R     ACALL   L?0069
+000D EF                MOV     A,R7
+                                           ; SOURCE LINE # 401
+000E 110000      R     ACALL   L?0089
+0011 2405              ADD     A,#05H
+0013 110000      R     ACALL   L?0069
+0016 EF                MOV     A,R7
+0017 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 402
+0018 22                RET     
+             ; FUNCTION _ScalerWriteVScaleReg (END)
+
+             ; FUNCTION ScalerReadVScaleReg (BEGIN)
+                                           ; SOURCE LINE # 409
+                                           ; SOURCE LINE # 410
+                                           ; SOURCE LINE # 412
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 2406              ADD     A,#06H
+0007 110000      R     ACALL   L?0069
+000A E0                MOVX    A,@DPTR
+;---- Variable 'VScale' assigned to Register 'R6/R7' ----
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 25  
+
+000B 110000      R     ACALL   L?0091
+000E 2405              ADD     A,#05H
+0010 110000      R     ACALL   L?0069
+0013 E0                MOVX    A,@DPTR
+0014 FD                MOV     R5,A
+0015 ED                MOV     A,R5
+0016 FF                MOV     R7,A
+                                           ; SOURCE LINE # 413
+                                           ; SOURCE LINE # 414
+0017         ?C0033:
+0017 22                RET     
+             ; FUNCTION ScalerReadVScaleReg (END)
+
+             ; FUNCTION _ScalerSetVScale (BEGIN)
+                                           ; SOURCE LINE # 425
+0000 90000000    R     MOV     DPTR,#Length
+0004 EE                MOV     A,R6
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 EF                MOV     A,R7
+0008 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 426
+                                           ; SOURCE LINE # 437
+0009 D3                SETB    C
+000A 94E0              SUBB    A,#0E0H
+000C EE                MOV     A,R6
+000D 9401              SUBB    A,#01H
+000F 90000000    R     MOV     DPTR,#Length
+0013 E0                MOVX    A,@DPTR
+0014 FE                MOV     R6,A
+0015 4043              JC      ?C0034
+                                           ; SOURCE LINE # 438
+                                           ; SOURCE LINE # 439
+                                           ; SOURCE LINE # 440
+0017 110000      R     ACALL   L?0070
+001A 7801              MOV     R0,#01H
+001C 110000      E     ACALL   ?C?LSHL
+001F 90000000    R     MOV     DPTR,#dTemp
+0023 110000      E     ACALL   ?C?LSTXDATA
+                                           ; SOURCE LINE # 441
+0026 90000000    R     MOV     DPTR,#wDiv
+002A 7401              MOV     A,#01H
+002C F0                MOVX    @DPTR,A
+002D A3                INC     DPTR
+002E 74E0              MOV     A,#0E0H
+0030 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 442
+0031 E0                MOVX    A,@DPTR
+0032 25E0              ADD     A,ACC
+0034 F0                MOVX    @DPTR,A
+0035 90000000    R     MOV     DPTR,#wDiv
+0039 E0                MOVX    A,@DPTR
+003A 33                RLC     A
+003B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 443
+003C A3                INC     DPTR
+003D E0                MOVX    A,@DPTR
+003E 24FF              ADD     A,#0FFH
+0040 F0                MOVX    @DPTR,A
+0041 90000000    R     MOV     DPTR,#wDiv
+0045 E0                MOVX    A,@DPTR
+0046 34FF              ADDC    A,#0FFH
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 26  
+
+0048 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 444
+0049 110000      R     ACALL   L?0071
+004C C006              PUSH    AR6
+004E C007              PUSH    AR7
+0050 A3                INC     DPTR
+0051 110000      R     ACALL   L?0107
+0054 D007              POP     AR7
+0056 D006              POP     AR6
+                                           ; SOURCE LINE # 445
+0058 800A              SJMP    ?C0064
+005A         ?C0034:
+                                           ; SOURCE LINE # 446
+                                           ; SOURCE LINE # 447
+                                           ; SOURCE LINE # 448
+                                           ; SOURCE LINE # 449
+005A 110000      R     ACALL   L?0070
+005D E4                CLR     A
+005E 7BE0              MOV     R3,#0E0H
+0060 7A01              MOV     R2,#01H
+0062 F9                MOV     R1,A
+0063 F8                MOV     R0,A
+0064         ?C0064:
+0064 110000      E     ACALL   ?C?ULDIV
+0067 90000000    R     MOV     DPTR,#dTemp
+006B 110000      E     ACALL   ?C?LSTXDATA
+                                           ; SOURCE LINE # 450
+006E         ?C0035:
+                                           ; SOURCE LINE # 457
+006E 90000000    R     MOV     DPTR,#dTemp
+0072 A3                INC     DPTR
+0073 110000      R     ACALL   L?0073
+0076 010000      R     AJMP    _ScalerWriteVScaleReg
+             ; FUNCTION _ScalerSetVScale (END)
+
+             ; FUNCTION _ScalerPanoramaOnOff (BEGIN)
+                                           ; SOURCE LINE # 466
+;---- Variable 'fOn' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 467
+                                           ; SOURCE LINE # 468
+0000 EF                MOV     A,R7
+0001 600F              JZ      ?C0037
+0003 759300      E     MOV     DPX,#?C?XDATASEG
+0006 E500        E     MOV     A,regTW88+01H
+0008 2401              ADD     A,#01H
+000A 110000      R     ACALL   L?0069
+000D E0                MOVX    A,@DPTR
+000E 4440              ORL     A,#040H
+0010 F0                MOVX    @DPTR,A
+0011 22                RET     
+0012         ?C0037:
+                                           ; SOURCE LINE # 469
+0012 759300      E     MOV     DPX,#?C?XDATASEG
+0015 E500        E     MOV     A,regTW88+01H
+0017 2401              ADD     A,#01H
+0019 110000      R     ACALL   L?0069
+001C E0                MOVX    A,@DPTR
+001D 54BF              ANL     A,#0BFH
+001F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 470
+0020         ?C0039:
+0020 22                RET     
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 27  
+
+             ; FUNCTION _ScalerPanoramaOnOff (END)
+
+             ; FUNCTION _FindScalerTable (BEGIN)
+                                           ; SOURCE LINE # 487
+0000 90000000    R     MOV     DPTR,#vActive
+0004 EA                MOV     A,R2
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 EB                MOV     A,R3
+0008 F0                MOVX    @DPTR,A
+;---- Variable '_InputMain' assigned to Register 'R7' ----
+0009 90000000    R     MOV     DPTR,#hActive
+000D EC                MOV     A,R4
+000E F0                MOVX    @DPTR,A
+000F A3                INC     DPTR
+0010 ED                MOV     A,R5
+0011 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 488
+                                           ; SOURCE LINE # 493
+0012 90000000    R     MOV     DPTR,#p
+0016 7400        E     MOV     A,#MBYTE SCALER_DTV_time
+0018 F0                MOVX    @DPTR,A
+0019 A3                INC     DPTR
+001A 7400        E     MOV     A,#HIGH SCALER_DTV_time
+001C F0                MOVX    @DPTR,A
+001D A3                INC     DPTR
+001E 7400        E     MOV     A,#LOW SCALER_DTV_time
+0020 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 495
+0021 7B00        R     MOV     R3,#MBYTE ?SC_70
+0023 7A00        R     MOV     R2,#HIGH ?SC_70
+0025 7900        R     MOV     R1,#LOW ?SC_70
+0027 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+002B EF                MOV     A,R7
+002C F0                MOVX    @DPTR,A
+002D A3                INC     DPTR
+002E EC                MOV     A,R4
+002F F0                MOVX    @DPTR,A
+0030 A3                INC     DPTR
+0031 ED                MOV     A,R5
+0032 F0                MOVX    @DPTR,A
+0033 90000000    R     MOV     DPTR,#vActive
+0037 110000      R     ACALL   L?0101
+003A 90000000    R     MOV     DPTR,#vFreq
+003E E0                MOVX    A,@DPTR
+003F 90000000    E     MOV     DPTR,#?_Printf?BYTE+08H
+0043 F0                MOVX    @DPTR,A
+0044 90000000    R     MOV     DPTR,#vStart
+0048 E0                MOVX    A,@DPTR
+0049 90000000    E     MOV     DPTR,#?_Printf?BYTE+09H
+004D F0                MOVX    @DPTR,A
+004E 90000000    R     MOV     DPTR,#vPol
+0052 E0                MOVX    A,@DPTR
+0053 90000000    E     MOV     DPTR,#?_Printf?BYTE+0AH
+0057 F0                MOVX    @DPTR,A
+0058 110000      E     ACALL   _Printf
+005B         ?C0040:
+                                           ; SOURCE LINE # 502
+005B 90000000    R     MOV     DPTR,#p
+005F 110000      R     ACALL   L?0076
+0062 F9                MOV     R1,A
+0063 110000      E     ACALL   ?C?ILDPTR
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 28  
+
+0066 45F0              ORL     A,B
+0068 7003              JNZ     $ + 5H
+006A 010000      R     AJMP    ?C0041
+                                           ; SOURCE LINE # 503
+006D E9                MOV     A,R1
+006E 2402              ADD     A,#02H
+0070 110000      R     ACALL   L?0086
+0073 90000000    R     MOV     DPTR,#vActive
+0077 E0                MOVX    A,@DPTR
+0078 65F0              XRL     A,B
+007A 7003              JNZ     ?C0060
+007C A3                INC     DPTR
+007D E0                MOVX    A,@DPTR
+007E 6F                XRL     A,R7
+007F         ?C0060:
+007F 6003              JZ      $ + 5H
+0081 010000      R     AJMP    ?C0042
+                                           ; SOURCE LINE # 504
+0084 90000000    R     MOV     DPTR,#p
+0088 110000      R     ACALL   L?0076
+008B F9                MOV     R1,A
+008C 110000      E     ACALL   ?C?ILDPTR
+008F FF                MOV     R7,A
+0090 AEF0              MOV     R6,B
+0092 C3                CLR     C
+0093 90000000    R     MOV     DPTR,#hActive+01H
+0097 E0                MOVX    A,@DPTR
+0098 9402              SUBB    A,#02H
+009A FD                MOV     R5,A
+009B 90000000    R     MOV     DPTR,#hActive
+009F E0                MOVX    A,@DPTR
+00A0 9400              SUBB    A,#00H
+00A2 FC                MOV     R4,A
+00A3 C3                CLR     C
+00A4 EF                MOV     A,R7
+00A5 9D                SUBB    A,R5
+00A6 EE                MOV     A,R6
+00A7 9C                SUBB    A,R4
+00A8 4077              JC      ?C0042
+00AA A3                INC     DPTR
+00AB E0                MOVX    A,@DPTR
+00AC 2402              ADD     A,#02H
+00AE FD                MOV     R5,A
+00AF 90000000    R     MOV     DPTR,#hActive
+00B3 E0                MOVX    A,@DPTR
+00B4 3400              ADDC    A,#00H
+00B6 FC                MOV     R4,A
+00B7 D3                SETB    C
+00B8 EF                MOV     A,R7
+00B9 9D                SUBB    A,R5
+00BA EE                MOV     A,R6
+00BB 9C                SUBB    A,R4
+00BC 5063              JNC     ?C0042
+                                           ; SOURCE LINE # 505
+                                           ; SOURCE LINE # 506
+00BE E9                MOV     A,R1
+00BF 2404              ADD     A,#04H
+00C1 110000      R     ACALL   L?0084
+00C4 FF                MOV     R7,A
+00C5 90000000    R     MOV     DPTR,#vFreq
+00C9 E0                MOVX    A,@DPTR
+00CA 6F                XRL     A,R7
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 29  
+
+00CB 601C              JZ      ?C0045
+00CD 90000000    R     MOV     DPTR,#p
+00D1 A3                INC     DPTR
+00D2 E0                MOVX    A,@DPTR
+00D3 FA                MOV     R2,A
+00D4 A3                INC     DPTR
+00D5 E0                MOVX    A,@DPTR
+00D6 110000      R     ACALL   L?0083
+00D9 2F                ADD     A,R7
+00DA FF                MOV     R7,A
+00DB E4                CLR     A
+00DC 33                RLC     A
+00DD FE                MOV     R6,A
+00DE 90000000    R     MOV     DPTR,#vFreq
+00E2 E0                MOVX    A,@DPTR
+00E3 6F                XRL     A,R7
+00E4 7001              JNZ     ?C0061
+00E6 EE                MOV     A,R6
+00E7         ?C0061:
+00E7 7038              JNZ     ?C0042
+00E9         ?C0045:
+                                           ; SOURCE LINE # 507
+                                           ; SOURCE LINE # 508
+00E9 90000000    R     MOV     DPTR,#vStart
+00ED E0                MOVX    A,@DPTR
+00EE FF                MOV     R7,A
+00EF 7002              JNZ     ?C0046
+                                           ; SOURCE LINE # 509
+00F1 8025              SJMP    ?C0065
+00F3         ?C0046:
+                                           ; SOURCE LINE # 511
+00F3 90000000    R     MOV     DPTR,#p
+00F7 110000      R     ACALL   L?0076
+00FA 2407              ADD     A,#07H
+00FC 110000      R     ACALL   L?0084
+00FF FE                MOV     R6,A
+;---- Variable 'vDE' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 512
+0100 90000000    R     MOV     DPTR,#vPol
+0104 E0                MOVX    A,@DPTR
+0105 600D              JZ      ?C0048
+0107 A3                INC     DPTR
+0108 A3                INC     DPTR
+0109 E0                MOVX    A,@DPTR
+010A FA                MOV     R2,A
+010B A3                INC     DPTR
+010C E0                MOVX    A,@DPTR
+010D 2406              ADD     A,#06H
+010F 110000      R     ACALL   L?0084
+0112 2E                ADD     A,R6
+0113 FE                MOV     R6,A
+0114         ?C0048:
+                                           ; SOURCE LINE # 513
+0114 EE                MOV     A,R6
+0115 B50709            CJNE    A,AR7,?C0042
+                                           ; SOURCE LINE # 514
+0118         ?C0065:
+0118 90000000    R     MOV     DPTR,#p
+011C 110000      R     ACALL   L?0076
+011F F9                MOV     R1,A
+0120 22                RET     
+                                           ; SOURCE LINE # 515
+C51 COMPILER V9.56.0.0   DRV_SCALER                                                        08/23/2018 15:16:50 PAGE 30  
+
+                                           ; SOURCE LINE # 516
+                                           ; SOURCE LINE # 517
+0121         ?C0042:
+                                           ; SOURCE LINE # 518
+0121 90000000    R     MOV     DPTR,#p+01H
+0125 E4                CLR     A
+0126 75F01D            MOV     B,#01DH
+0129 110000      E     ACALL   ?C?IILDX
+                                           ; SOURCE LINE # 519
+012C 010000      R     AJMP    ?C0040
+012F         ?C0041:
+                                           ; SOURCE LINE # 520
+012F 7B00        R     MOV     R3,#MBYTE ?SC_122
+0131 7A00        R     MOV     R2,#HIGH ?SC_122
+0133 7900        R     MOV     R1,#LOW ?SC_122
+0135 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 521
+0138 7B00              MOV     R3,#00H
+013A 7A00              MOV     R2,#00H
+013C 7900              MOV     R1,#00H
+                                           ; SOURCE LINE # 522
+013E         ?C0047:
+013E 22                RET     
+             ; FUNCTION _FindScalerTable (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1692    ----
+   CONSTANT SIZE    =    128    ----
+   XDATA SIZE       =   ----      43
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  1 WARNING(S),  0 ERROR(S)

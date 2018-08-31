@@ -1,0 +1,16 @@
+$1E000800  _delay1ms
+$0E000880  _DETIM_Init
+$1E000800  _Pclkinit
+$1E000C8F  _Puts
+$80000000  _RS_tx
+$1E00088E  _TIM_Init
+$0E000880  _TIM_Start
+$1E000C8F  ChangeText
+$1E000880  InitCpu
+$1E000880  OutputPlantInit
+$18000880  RS_ready
+$18000881  RS_rx
+$1E000CFF  SysclkInit
+$0E000800  timer0_int
+$0E000800  timer1_int
+$180008C1  uart0_int

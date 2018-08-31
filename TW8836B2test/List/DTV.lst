@@ -1,0 +1,4724 @@
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE DTV
+OBJECT MODULE PLACED IN .\Output\DTV.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source36\DTV.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\Output\
+                    -TW8836B_EVB11.ORC) BROWSE INCDIR(SiI-SW;SiI-SW\HAL;SiI-SW\DEBUG;SiI-SW\CEC;.\Source36\LIB) DEFINE(EVB_11,nullFn=//) DEBU
+                    -G CODE PRINT(.\List\DTV.lst) TABS(2) OBJECT(.\Output\DTV.obj)
+
+line level    source
+
+   1          /**
+   2           * @file
+   3           * DTV.c 
+   4           * @author Brian Kang
+   5           * @version 1.2
+   6           * @section LICENSE
+   7           *  Copyright (C) 2011~2014 Intersil Corporation
+   8           * @section DESCRIPTION
+   9           *  DTV for DVI,HDMI,BT656, and LVDS.
+  10           *
+  11           * history
+  12           *  120803  add MeasStartMeasure before FW use a measured value.
+  13           *      update Freerun Htotal,VTotal at VBlank.
+  14           *      add checkroutine for HDMI detect flag.
+  15           *  141010  Support ActiveLow Horizontal/Vertical Sync.
+  16           *      Minimize HDMI external chip routines. 
+  17          */
+  18          /*
+  19          Disclaimer: THIS INFORMATION IS PROVIDED 'AS-IS' FOR EVALUATION PURPOSES ONLY.  
+  20          INTERSIL CORPORATION AND ITS SUBSIDIARIES ('INTERSIL') DISCLAIM ALL WARRANTIES, 
+  21          INCLUDING WITHOUT LIMITATION FITNESS FOR A PARTICULAR PURPOSE AND MERCHANTABILITY.  
+  22          Intersil provides evaluation platforms to help our customers to develop products. 
+  23          However, factors beyond Intersil's control could significantly affect Intersil 
+  24          product performance. 
+  25          It remains the customers' responsibility to verify the actual system performance.
+  26          */
+  27          
+  28          #include "Config.h"
+  29          #include "reg.h"
+  30          #include "typedefs.h"
+  31          #include "TW8836.h"
+  32          #include "Global.h"
+  33          
+  34          #include "CPU.h"
+  35          #include "Printf.h"
+  36          #include "Monitor.h"
+  37          
+  38          #include "I2C.h"
+  39          
+  40          #include "main.h"
+  41          #include "Scaler.h"
+  42          #include "InputCtrl.h"
+  43          #include "eeprom.h"
+  44          #include "Decoder.h"
+  45          #include "aRGB.h"
+  46          #include "dtv.h"
+  47          #include "measure.h"
+  48          #include "PC_modes.h"
+  49          
+  50          
+  51          #ifdef SUPPORT_HDMI_TW8837
+              #include "HDMI_TW8837.h"
+              #endif
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 2   
+
+  54          #ifdef SUPPORT_HDMI_EP907M
+  55          #include "HDMI_EP907M.h"
+  56          #include "EP907M_RegDef.h"
+  57          #endif
+  58          
+  59          #include "Settings.h"
+  60          
+  61          #include "DebugMsg.h"
+  62          #include "util.h"
+  63          #include "FOsd.h"
+  64          #include "SOsdMenu.h"
+  65          
+  66          
+  67          #ifdef DEBUG_DTV
+                #define dtv_dPrintf   dPrintf
+                #define dtv_dPuts   dPuts 
+              #else
+  71            #define argb_dPrintf  nullFn
+  72            #define argb_dPuts    nullFn  
+  73          #endif
+  74          
+  75          
+  76          #if !defined(SUPPORT_DVI) && !defined(SUPPORT_HDMI)
+              //----------------------------
+              /**
+              * Trick for Bank Code Segment
+              */
+              //----------------------------
+              CODE BYTE DUMMY_DTV_CODE;
+              void Dummy_DTV_func(void)
+              {
+                BYTE temp;
+                temp = DUMMY_DTV_CODE;
+              }
+              #endif
+  89          
+  90          
+  91          /**
+  92          *
+  93          * REG040[2] Enable 2nd DTVCLK
+  94          */
+  95          
+  96                      
+  97          
+  98          #if defined(SUPPORT_DVI) || defined(SUPPORT_HDMI)
+  99          /**
+ 100          * set DTV Sync Polarity
+ 101          * @param  hPol  1:ActiveLow
+ 102          * @param  vPol  1:ActiveLow
+ 103          *
+ 104          * register
+ 105          * R050[2] hPol  1:AvtiveLow(Invert)
+ 106          * R050[1] vPol  1:ActiveLow(Invert)
+ 107          *
+ 108          * This register does not work on Measure. 
+ 109          *   Only works with scaler.
+ 110          *
+ 111          */
+ 112          void DtvSetSyncPolarity(BYTE hPol, BYTE vPol)
+ 113          {
+ 114   1        BYTE value;
+ 115   1      
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 3   
+
+ 116   1        value = ReadTW88(REG050) & ~0x06;
+ 117   1        if(hPol)  value |= 0x04;  //H Active Low    
+ 118   1        if(vPol)  value |= 0x02;  //V Active Low    
+ 119   1        WriteTW88(REG050, value); 
+ 120   1      }
+ 121          #endif
+ 122          
+ 123          
+ 124          
+ 125          /**
+ 126          * set DTV Color bus order
+ 127          *
+ 128          * register
+ 129          * R051[3]  1: Reverse data line order on each 8bit bus.
+ 130          */
+ 131          void DtvSetReverseBusOrder(BYTE fReverse)
+ 132          {
+ 133   1        BYTE value;
+ 134   1      
+ 135   1        value = ReadTW88(REG051) & 0xF7;
+ 136   1        if(fReverse)  value |=  0x08;   
+ 137   1      
+ 138   1        WriteTW88(REG051, value);   
+ 139   1      }
+ 140          
+ 141          #if defined(SUPPORT_DVI) || defined(SUPPORT_BT656_LOOP) || defined(SUPPORT_HDMI)
+ 142          /**
+ 143          * set DTV DataRouting and InputFormat
+ 144          *
+ 145          * register
+ 146          * R052[2:0] DataRouting:100 Y(R):Pb(G):Pr(B)
+ 147          * R053[3:0] InputFormat:1000=RGB565
+ 148          *
+ 149          * @param  route:  Data bus routing selection for DTV.
+ 150          * @param  format
+ 151          * 0: Interlaced ITU656    i656    
+ 152          * 1: Progressive ITU656   p656
+ 153          * 2: 8bit 601         422 8bit
+ 154          * 3: 16bit 601        422 16bit
+ 155          * 4: 24bit 601        444 24bit
+ 156          * 5: 16/18/24 bit RGB     RGB 24bit
+ 157          * 6: ITU1120          BT1120          
+ 158          * 7: SMP 720P         SMPTE296M
+ 159          * 8: RGB565         RGB565
+ 160          *
+ 161          *
+ 162          * Data bus routing
+ 163          * ================
+ 164          * 
+ 165          * For 24 bit YPbPr           For 24bit RGB
+ 166          * ----------------           ----------------
+ 167          *   DTVD  DTVD  DTVD        DTVD  DTVD  DTVD
+ 168          *     [23:16] [15:8]  [7:0]       [23:16] [15:8]  [7:0] 
+ 169          * 0:  Pr    Y   Pb       0: R   G   B
+ 170          * 1:  Pr    Pb    Y      1: R   B   G
+ 171          * 2:  Pb    Y   Pr       2: B   G   R
+ 172          * 3:  Pb    Pr    Y      3: B   R   G
+ 173          * 4:  Y   Pb    Pr       4: G   B   R
+ 174          * 5:  Y   Pr    Pb       5: G   R   B
+ 175          *                  
+ 176          *
+ 177          * For 16bit RGB565           For 16 bit YPbPr
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 4   
+
+ 178          * ----------------           ----------------
+ 179          *   DTVD  DTVD  DTVD        DTVD  DTVD  DTVD
+ 180          *     [23:16] [15:8]  [7:0]        [23:16]  [15:8]  [7:0] 
+ 181          * 0:  LSB       MSB      0:     MSB   LSB
+ 182          * 1:  LSB   MSB          1:     LSB   MSB
+ 183          * 2:  MSB       LSB      2: LSB   MSB   
+ 184          * 3:  MSB   LSB          3: LSB       MSB
+ 185          * 4:      MSB   LSB      4: MSB   LSB   
+ 186          * 5:      LSB   MSB      5: MSB       PbLSB
+ 187          * 
+ 188          * 
+ 189          * For 8 bit YPbPr
+ 190          * ----------------
+ 191          *   DTVD  DTVD  DTVD
+ 192          *     [23:16] [15:8]  [7:0] 
+ 193          * 0:  data  
+ 194          * 1:  data
+ 195          * 2:          data
+ 196          * 3:      data
+ 197          * 4:          data
+ 198          * 5:      data
+ 199          * 
+ 200          * 8 bit data order
+ 201          * ----------------
+ 202          * DTV_DODR is set, DE_POL is ignored. 
+ 203          * (??HW captures signal at DE edge.)
+ 204          * Pb or Pr always comes frist depend on DTV_CR601.
+ 205          * 
+ 206          * DTV_DODR  DTV_CR601 Data Order
+ 207          * R051[5]   R052[3]
+ 208          *    1        0   Pb-Y-Pr-Y     
+ 209          *    1          1       Pr-Y-Pb-Y
+ 210          * 
+ 211          * DTV_DODR is reset,  DE_POL makes affect on the Data Order.
+ 212          * (??HW captures signal at HSync)
+ 213          * If DE_POL is set, Y comes first.
+ 214          * 
+ 215          * DTV_DODR  DE_POL    DTV_CR601 Data Order
+ 216          * R051[5] R050[3]   R052[3]
+ 217          *    0     0      0     Pb-Y-Pr-Y     
+ 218          *    0       0      1           Pr-Y-Pb-Y
+ 219          *    0     1      0     Y-Pb-Y-Pr     
+ 220          *    0       1      1           Y-Pr-Y-Pb
+ 221          * 
+ 222          * The BT656 uses Cb-Y-Cr-Y order.  
+ 223          * 
+ 224          *        +-+-+-+-+----------
+ 225          *  Y   |0|1|2|3|
+ 226          *        +-+-+-+-+----------
+ 227          *  Cr  | 0 | 1 |
+ 228          *        +---+---+-----------
+ 229          *  Cb    | 0 | 1 |  
+ 230          *        +---+---+-----------
+ 231          * 
+ 232          * data order  Cb0 Y0 Cr0 Y1, Cb1 Y2
+ 233          * So, choose R051[5]=1, R052[3]=0.
+ 234          * 
+ 235          * 
+ 236          * Data Bus Bit Order
+ 237          * ===================
+ 238          * REG051[3] 1:Reverse 0:Normal.
+ 239          * 
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 5   
+
+ 240          
+ 241          =======<<Below Example is incorrect....Need to redefine....>>===========
+ 242          * example. For 16bit RGB565
+ 243          * ----------------
+ 244          *   DTVD  DTVD  DTVD
+ 245          *    [23:16]  [15:8]  [7:0] 
+ 246          * 1:  LSB   MSB   
+ 247          * 
+ 248          * 
+ 249          * If input source order is reversed, select Route Order "1" and set REG051[3].
+ 250          * 
+ 251          * INPUT         Connect   On Reverse.
+ 252          * ===========   ======    ========
+ 253          * Dinput03(B3)    DTVD23    08  [LSB]
+ 254          * Dinput04(B4)    DTVD22    09
+ 255          * Dinput05(B5)    DTVD21    10
+ 256          * Dinput06(B6)    DTVD20    11
+ 257          * Dinput07(B7)    DTVD19    12
+ 258          * .
+ 259          * Dinput10(G2)    DTVD18    13
+ 260          * Dinput11(G3)    DTVD17    14
+ 261          * Dinput12(G4)    DTVD16    15
+ 262          
+ 263          * Dinput13(G5)    DTVD15    16
+ 264          * Dinput14(G6)    DTVD14    17
+ 265          * Dinput15(G7)    DTVD13    18
+ 266          * .
+ 267          * Dinput19(R3)    DTVD12    19
+ 268          * Dinput20(R4)    DTVD11    20
+ 269          * Dinput21(R5)    DTVD10    21
+ 270          * Dinput22(R6)    DTVD09    22
+ 271          * Dinput23(R7)    DTVD08    23  [MSB]
+ 272          * 
+ 273          * 
+ 274          *
+ 275          * If input order is normal, select Route Order "3".
+ 276          * For 16bit RGB565
+ 277          * ----------------
+ 278          *   DTVD  DTVD  DTVD
+ 279          *     [23:16] [15:8]  [7:0] 
+ 280          * 3:  MSB   LSB   
+ 281          * 
+ 282          * INPUT TW8836    
+ 283          *     ======
+ 284          * R7    DTV23  [MSB]    
+ 285          * R6    DTV22   
+ 286          * R5    DTV21   
+ 287          * R4    DTV20   
+ 288          * R3    DTV19   
+ 289          *     
+ 290          * G7    DTV18   
+ 291          * G6    DTV17   
+ 292          * G5    DTV16   
+ 293          * G4    DTV15   
+ 294          * G3    DTV14   
+ 295          * G2    DTV13   
+ 296          *     
+ 297          * B7    DTV12   
+ 298          * B6    DTV11   
+ 299          * B5    DTV10   
+ 300          * B4    DTV09   
+ 301          * B3    DTV08  [LSB]    
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 6   
+
+ 302          *
+ 303          */
+ 304          void DtvSetRouteFormat(BYTE route, BYTE format)
+ 305          {
+ 306   1        WriteTW88(REG052, (ReadTW88(REG052) & 0xF8) | route);
+ 307   1        WriteTW88(REG053, (ReadTW88(REG053) & 0xF0) | format);
+ 308   1      }
+ 309          #endif
+ 310          
+ 311          #if defined(SUPPORT_DVI) || defined(SUPPORT_HDMI)
+ 312          /**
+ 313          * set DTV Field Detection Register.
+ 314          * looking for ODD field.
+ 315          * param
+ 316          * register
+ 317          * R054[7:4] End Location
+ 318          * R054[3:0] Start Location
+ 319          * example:
+ 320          * DtvSetFieldDetectionRegion(ON, (end<<4) | start)
+ 321          *
+ 322          *   480i    384 < 492 < 512   vs_lead
+ 323          * 1080i@50  960 < 1320 < 1408   vs_lead
+ 324          * 1080i@60  960 < 1100 < 1408   vs_lead
+ 325          *
+ 326          * To verify, 
+ 327          * select ODD; REG508[3:2].
+ 328          * repeat below two steps
+ 329          *   start measure.
+ 330          *   check vPeriod(REG522:REG523) and VS_Position(REG52C:REG52D);
+ 331          *     vPeriod will have big value, and VS_Position will have (vTotal/2).  
+ 332          */
+ 333          void DtvSetFieldDetectionRegion(BYTE fOn, BYTE r054)
+ 334          {
+ 335   1        if(fOn) {
+ 336   2          WriteTW88(REG050, ReadTW88(REG050) | 0xA0 );  // set Det field by WIN. use vs_lead.
+ 337   2          WriteTW88(REG054, r054 );           // set window
+ 338   2        }
+ 339   1        else {
+ 340   2          WriteTW88(REG050, ReadTW88(REG050) & ~0x80 ); // use VSync/HSync Pulse
+ 341   2        }
+ 342   1      }
+ 343          struct DTV_FIELD_WIN_s {
+ 344            WORD start;
+ 345            WORD end;
+ 346          };
+ 347          code struct DTV_FIELD_WIN_s DtvFieldWin[] = {
+ 348          /*0*/ {32,64},    /*1*/ {64,128},   /*2*/ {128,256},  /*3*/ {192,384},
+ 349          /*4*/ {256,512},  /*5*/ {320,640},  /*6*/ {384,768},  /*7*/ {448,896},
+ 350          /*8*/ {512,1024}, /*9*/ {576,1152}, /*A*/ {640,1280}, /*B*/ {704,1408},
+ 351          /*C*/ {768,1536}, /*D*/ {832,1664}, /*E*/ {896,1792}, /*F*/ {960,1920}
+ 352          };
+ 353          BYTE DtvFindFieldWindow(WORD base)
+ 354          {
+ 355   1        BYTE i;
+ 356   1        BYTE start,end;
+ 357   1        struct DTV_FIELD_WIN_s *p;
+ 358   1      
+ 359   1        //search Start
+ 360   1        p = &DtvFieldWin[15];
+ 361   1        i=15;
+ 362   1        while(i) {
+ 363   2          if(p->start < base)
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 7   
+
+ 364   2            break;
+ 365   2          p--;
+ 366   2          i--;
+ 367   2        }
+ 368   1        start = i;
+ 369   1        //search End
+ 370   1        p = DtvFieldWin;
+ 371   1        for(i=0; i<16; i++) {
+ 372   2          if(p->end > base)
+ 373   2            break;
+ 374   2          p++;
+ 375   2        }
+ 376   1        end = i;
+ 377   1      
+ 378   1        Printf("\nDtvFindFieldWindow(%d) %d~%d", base, DtvFieldWin[start].start, DtvFieldWin[end].end); 
+ 379   1        return ((end << 4) | start);
+ 380   1      }
+ 381          
+ 382          #endif
+ 383          
+ 384          
+ 385          
+ 386          #if defined(SUPPORT_DVI)  || defined(SUPPORT_HDMI)
+ 387          
+ 388          /**
+ 389          * set DTV delay
+ 390          * register
+ 391          * R051[2:0] Input clock DTVCLK delay time selection.
+ 392          * R056[7:0] Input Vsync delay,  applicable to DTV only (one input hsync per increment)
+ 393          */
+ 394          void DtvSetDelay(BYTE clock, BYTE vSync)
+ 395          {
+ 396   1        WriteTW88(REG051, (ReadTW88(REG051) & 0xF8) | clock);
+ 397   1        WriteTW88(REG056, vSync);
+ 398   1      }
+ 399          
+ 400          #endif
+ 401          
+ 402          
+ 403          //=============================================================================
+ 404          // DVI
+ 405          //=============================================================================
+ 406          
+ 407          #if defined(SUPPORT_DVI)
+              //-----------------------------------------------------------------------------
+              //    void  DVISetInputCrop( void )
+              //-----------------------------------------------------------------------------
+              /**
+              * set InputCrop for DVI
+              *
+              * extern
+              * MeasHPulse ->Removed
+              * MeasVPulse ->Removed
+              * MeasVStart
+              */
+              static void DVISetInputCrop( void )
+              {
+                BYTE  offset, VPulse, HPulse;
+                WORD  hstart, vstart, vtotal, hActive;
+                BYTE HPol, VPol;
+                WORD Meas_HPulse,Meas_VPulse;
+              
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 8   
+
+                Meas_HPulse = MeasGetHSyncRiseToFallWidth();
+                Meas_VPulse = MeasGetVSyncRiseToFallWidth();
+                vtotal = MeasGetVPeriod();
+                hActive = MeasGetHActive( &hstart );
+              
+              #ifdef DEBUG_DTV
+                dPuts("\n\rMeas");
+                dPrintf("\n\r\tH           Pulse:%4d BPorch:%3d Active:%4d hAvtive:%d",Meas_HPulse,hstart,MeasHLen,hActiv
+             -e);
+                dPrintf("\n\r\tV Total:%4d Pulse:%4d BPorch:%3d Active:%4d",vtotal,Meas_VPulse,MeasVStart,MeasVLen);
+              #endif
+              
+                offset = 5;  //meas delay value:4
+                //hstart = MeasHStart + offset;
+                hstart += offset;
+                if ( Meas_HPulse > (hActive/2) ) {
+                  if(hActive > Meas_HPulse)
+                    HPulse = hActive - Meas_HPulse;
+                  else
+                    HPulse = Meas_HPulse - hActive;
+                  HPol = 0; 
+                }
+                else  {
+                  HPulse = Meas_HPulse;
+                  HPol = 1;
+                  hstart -= HPulse; // correct position
+                }
+              
+                if ( Meas_VPulse > (vtotal/2) ) {
+                  VPulse = vtotal - Meas_VPulse;
+                  VPol = 0;
+                }
+                else  {
+                  VPulse = Meas_VPulse;
+                  VPol = 1;
+                }
+                vstart = MeasVStart + VPulse;
+              
+                DtvSetSyncPolarity(HPol,VPol);
+              
+              #ifdef DEBUG_DTV
+                dPuts("\n\rmodified");
+                dPrintf("\n\r\tH           Pulse:%2bd BPorch:%3d Active:%4d Pol:%bd hActive:%4d ",HPulse,hstart,MeasHLen,
+             -HPol, hActive);
+                dPrintf("\n\r\tV Total:%4d Pulse:%2bd BPorch:%3d Active:%4d Pol:%bd",vtotal,VPulse,vstart,MeasVLen,VPol);
+              #endif
+                //BKFYI. The calculated method have to use "InputSetCrop(hstart, vstart, MeasHLen, MeasVLen);"
+                //     But, we using a big VLen value to extend the vblank area.
+                InputSetCrop(hstart, 1, MeasHLen, 0x7fe);
+              }
+              
+              /**
+              * set Output for DVI
+              */
+              static void DVISetOutput( void )
+              {
+                BYTE  HDE;
+                WORD temp16;
+              
+                ScalerSetHScale(MeasHLen);
+                ScalerSetVScale(MeasVLen);
+              
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 9   
+
+                //=============HDE=====================
+                HDE = ScalerCalcHDE();
+              #ifdef DEBUG_DTV
+                dPrintf("\n\r\tH-DE start = %bd", HDE);
+              #endif
+                ScalerWriteHDEReg(HDE);
+              
+              
+                //=============VDE=====================
+                //  MeasVStart ??R536:R537
+                //  MeasVPulse ??R52A,R52B
+                temp16 = ScalerCalcVDE();
+              #ifdef DEBUG_DTV
+                dPrintf("\n\r\tV-DE start = %d", temp16);
+              #endif
+                ScalerWriteVDEReg((BYTE)temp16);
+                     //BKTODO131011: use void ScalerSet_vDE_value(BYTE vStart)
+              
+                //FYI.
+                //ScalerSetFreerun will be updated at VInput_enableOutput().
+              }
+              
+              /**
+              * Check and Set DVI
+              *
+              * extern
+              * MeasVStart,MeasVLen,MeasHLen  
+              * @return 
+              * -0:ERR_SUCCESS
+              * -1:ERR_FAIL
+              */
+              BYTE CheckAndSetDVI( void )
+              {
+                WORD  Meas_HStart;
+                WORD  MeasVLenDebug, MeasHLenDebug;
+                WORD    MeasVStartDebug, MeasHStartDebug;
+              //  struct DIGIT_VIDEO_TIME_TABLE_s *pTimeTable;
+              //  struct SCALER_TIME_TABLE_s *pScaler;
+              
+                //DtvSetSyncPolarity(0,0);
+              
+                do {                            
+                  Meas_StartMeasure();
+                  if(Meas_IsMeasureDone(50)) {
+                    return ERR_FAIL;
+                  }
+                  MeasVLen = MeasGetVActive( &MeasVStart );       //v_active_start v_active_perios
+                  MeasHLen = MeasGetHActive( &Meas_HStart );        //h_active_start h_active_perios
+              #ifdef DEBUG_DTV
+                  dPrintf("\n\rDVI Measure Value: %dx%d HS:%d VS:%d",MeasHLen,MeasVLen, Meas_HStart, MeasVStart);
+                  dPrintf("==>Htotal:%d",  MeasGetVsyncRisePos());
+              #endif
+              
+                  DVISetInputCrop();
+                  DVISetOutput();
+              
+                  MeasVLenDebug = MeasGetVActive( &MeasVStartDebug );   //v_active_start v_active_perios
+                  MeasHLenDebug = MeasGetHActive( &MeasHStartDebug );   //h_active_start h_active_perios
+              
+                } while (( MeasVLenDebug != MeasVLen ) || ( MeasHLenDebug != MeasHLen )) ;
+              
+                //AdjustPixelClk_TEST(need htotal);
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 10  
+
+                AdjustPixelClk(0, 0); //NOTE:it uses DVI_Divider.
+              
+              
+              #ifdef SUPPORT_SCALER_OVERWRITE_TABLE
+              //  pScaler = FindScalerTable(InputMain, pTimeTable->hActive,pTimeTable->vActive,pTimeTable->vFreq,1);
+              //  if(pScaler != NULL)
+              //    OverWriteScalerWithTable(pScaler,1,1);
+              #endif
+              
+                //prepare info
+                DVI_PrepareInfoString(MeasHLen,MeasVLen,MeasGetVFreq() /*0*/ /*freq*/);
+              
+                //for debug. check the measure value again
+                CheckMeasure();
+              
+                return ERR_SUCCESS;
+              }
+              
+              //=============================================================================
+              // Change to DVI
+              //=============================================================================
+              
+              //-----------------------------------------------------------------------------
+              /**
+              * Change to DVI
+              *
+              * linked with SIL151
+              * @return
+              * - 0: success
+              * - 1: No Update happen
+              * - 2: No Signal or unknown video sidnal.
+              */
+              BYTE  ChangeDVI( void )
+              {
+                BYTE ret;
+              
+                if ( InputMain == INPUT_DVI ) {
+                  //dPrintf("\n\rSkip ChangeDVI");
+                  return(1);
+                }
+              
+                InputMain = INPUT_DVI;
+              
+                if(GetInputMainEE() != InputMain)
+                  SaveInputMainEE( InputMain );
+              
+                //----------------
+                // initialize video input
+                InitInputAsDefault();
+              
+                //
+                // Check and Set VADC,mesaure,Scaler for Analog PC input
+                //
+                ret = CheckAndSetDVI();   //same as CheckAndSetInput()
+                if(ret==0) {
+                  //success
+                  VInput_enableOutput(0);
+                  return 0;
+                }
+              
+                //------------------
+                // NO SIGNAL
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 11  
+
+                // Prepare NoSignal Task...
+                VInput_gotoFreerun(0);
+              
+                //dPrintf("\n\rChangeDVI--END");
+                return(2);
+              }
+              #endif
+ 617          
+ 618          //=============================================================================
+ 619          // HDMI
+ 620          //=============================================================================
+ 621          
+ 622          #if defined(SUPPORT_HDMI)
+ 623          /**
+ 624          * Set Scaler Output for HDMI
+ 625          */
+ 626          static void HDMISetOutput(WORD HActive, WORD VActive, BYTE  vDE )
+ 627          {
+ 628   1        BYTE  hDE;
+ 629   1        WORD VScale;
+ 630   1        DWORD dTemp;
+ 631   1      
+ 632   1        ScalerSetVScale(VActive);
+ 633   1        ScalerSetHScale(HActive);
+ 634   1      
+ 635   1        //=============HDE=====================
+ 636   1        hDE = ScalerCalcHDE();
+ 637   1      #ifdef DEBUG_DTV
+                dPrintf("\n\r\tH-DE start = %bd", hDE);
+              #endif
+ 640   1      
+ 641   1      
+ 642   1        //=============VDE=====================
+ 643   1      
+ 644   1        VScale = ScalerReadVScaleReg();
+ 645   1      
+ 646   1      //#ifdef DEBUG_DTV
+ 647   1      //  dPrintf("\n\r\tV-DE start = %bd", vDE);
+ 648   1      //#endif
+ 649   1        //pal need to add 0.5. The real value is 23.5.
+ 650   1        dTemp = vDE;
+ 651   1        dTemp <<= 1;
+ 652   1        if(VActive==288) //is pal
+ 653   1          dTemp+=1;
+ 654   1        dTemp *= 8192L;
+ 655   1        dTemp /= VScale;
+ 656   1        dTemp >>= 1;
+ 657   1        vDE = dTemp;
+ 658   1      
+ 659   1      //#ifdef DEBUG_DTV
+ 660   1      //  dPrintf("=> %bd", vDE);
+ 661   1      //#endif
+ 662   1      
+ 663   1        //---------------------UPDATE-----------------------------
+ 664   1      
+ 665   1        ScalerWriteHDEReg(hDE);
+ 666   1        ScalerWriteVDEReg(vDE);
+ 667   1      
+ 668   1        //BKTODO: aspect will overwrite it. let me solve later.
+ 669   1        if(HActive <= PANEL_H)
+ 670   1          ScalerSetLineBufferSize(HActive+1);
+ 671   1        else
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 12  
+
+ 672   1          ScalerSetLineBufferSize(PANEL_H+1);
+ 673   1      }
+ 674          
+ 675          
+ 676          //CheckAndSetHDMI and CheckAndSetLVDS use a same routines to detect the HDMI chip output.
+ 677          //let's merge it.
+ 678          /*
+ 679            DEBUG_DTV__TEST.
+ 680          
+ 681            EP907M time register and TW8836 meas value have a same result.
+ 682            So, if some assumeption is correct, we can reduce the code size.
+ 683          
+ 684                  pol   Sync  BPorch    ScalerStart
+ 685              1080p h:0   44(44)  148(189)  192+1(189+4)
+ 686                  v:0   5(5)  36(42)    41+2(42+1)
+ 687              1080i h:0   44(44)  148(188)  192+1(188+4+1)
+ 688                  v:0   5(5)  15(21)    20+2(21+1)
+ 689               720p h:0   40(40)  220(256)  260+1(256+4+1)
+ 690                  v:0   5(5)  20(26)    25+2(26+1)
+ 691              480p  h:0   62(62)  60(118)   122+1(118+4)
+ 692                  v:0   6(6)  30(37)    36+2(37+1)
+ 693              480i  h:0   124(62) 114(115)  (124+114+1)/2(115+4)
+ 694                  v:0   3(3)  15(19)    18+2(19+1)    
+ 695              note:() is for meas value.  
+ 696          
+ 697              Timing Register value and the measued value have a same result.
+ 698              We can ignore one of them.
+ 699          */
+ 700          BYTE CheckHdmiChipRegister(void)
+ 701          {
+ 702   1        BYTE ret;
+ 703   1      
+ 704   1      #ifdef DEBUG_DTV__TEST
+                BYTE TempByte[8];
+                WORD hFPorch,vFPorch;
+                WORD hBPorch,vBPorch;
+              #endif
+ 709   1        WORD hActive,vActive;
+ 710   1      #if defined(SUPPORT_HDMI_EP907M)
+ 711   1      #else
+                WORD Old_hActive,Old_vActive;
+              #endif
+ 714   1        BYTE vFreq;
+ 715   1          
+ 716   1        WORD hCropStart,vCropStart;
+ 717   1        BYTE bTemp;
+ 718   1        struct DIGIT_VIDEO_TIME_TABLE_s *pCEA861;
+ 719   1        struct SCALER_TIME_TABLE_s *pScaler;
+ 720   1      
+ 721   1        WORD hSync,vSync;
+ 722   1        BYTE hPol,vPol;
+ 723   1      
+ 724   1      
+ 725   1      #if defined(SUPPORT_HDMI_EP907M)
+ 726   1        /*
+ 727   1        If you can control the external device, 
+ 728   1        */
+ 729   1        ret = HdmiCheckConnection();
+ 730   1        if(ret)
+ 731   1          return ret;
+ 732   1        ret = HdmiCheckMode();  //HDMI or DVI
+ 733   1      
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 13  
+
+ 734   1        //If we using AUTO_VFMTb==0, we don't need it.
+ 735   1        //
+ 736   1        //set color space.
+ 737   1        if(ret) {
+ 738   2          ret = CheckAviInfoFrame();
+ 739   2        }
+ 740   1        else {
+ 741   2          //BKTODO:We need default color space value. RGB,YUV422,YUV420
+ 742   2          //BK130204. We need a EEPROM value.
+ 743   2          HdmiSetColorSpace(0x00); //clear
+ 744   2        }
+ 745   1      
+ 746   1        HdmiDebugTimingValue(); 
+ 747   1      
+ 748   1        Meas_StartMeasure();
+ 749   1        ret=Meas_IsMeasureDone(50);
+ 750   1        if(ret) {
+ 751   2          /*if measure fail, it measn no signal.*/
+ 752   2      
+ 753   2          Printf(" meas=> NoSignal");
+ 754   2          return ERR_FAIL;
+ 755   2        }
+ 756   1      #else //..defined(SUPPORT_HDMI_EP907M)
+                //If you cannot control the external device, 
+                //use the measure method.
+              
+                //If we don't know HDMI RX chip, we have to wait until DTV has a stable image.
+                //I will wait total 3 sec.
+                //MeasStartMeasure() use 500ms.
+                for(i=0; i < 6; i++) {
+                  Meas_StartMeasure();
+                  ret=Meas_IsMeasureDone(50);
+                  if(ret==0)
+                    break;
+                }
+                if(ret) {
+                  /*if measure fail, it measn no signal...*/
+                  Printf(" meas=> NoSignal");
+                  return ERR_FAIL;
+                }
+                /*wait until it has a stable value.*/
+                Old_hActive = MeasGetHActive( &hCropStart );
+                Old_vActive = MeasGetVActive( &vCropStart );
+                for(i=0; i < 10; i++) {
+                  delay1ms(10);
+                  Meas_StartMeasure();
+                  ret=Meas_IsMeasureDone(50);
+                  hActive = MeasGetHActive( &hCropStart );
+                  vActive = MeasGetVActive( &vCropStart );
+                  if(Old_hActive==hActive && Old_vActive==vActive)
+                    break;
+                  Old_hActive = hActive;
+                  Old_vActive = vActive;
+                }
+              #endif
+ 789   1        //=================================
+ 790   1        // Read Measured data
+ 791   1        //=================================
+ 792   1        hSync = MeasGetHSyncRiseToFallWidth();
+ 793   1        vSync = MeasGetVSyncRiseToFallWidth();
+ 794   1      
+ 795   1      //  hTotal = MeasGetVsyncRisePos();
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 14  
+
+ 796   1      //  vTotal = MeasGetVPeriod();  //BK130204, vtotal is better. We can use a meas vCropStart. 
+ 797   1        hActive = MeasGetHActive( &hCropStart );
+ 798   1        vActive = MeasGetVActive( &vCropStart );
+ 799   1        vFreq = MeasGetVFreq();
+ 800   1        PrintMeasValue("DTV");
+ 801   1        if(vFreq==59)
+ 802   1          vFreq=60;
+ 803   1      
+ 804   1        /*check sync polarity */
+ 805   1        if ( hSync > (hActive/2) )  hPol = 0; //active low. something wrong.
+ 806   1        else            hPol = 1; //active high.(Low signal on the Active Video Area)
+ 807   1        if ( vSync > (vActive/2) )  vPol = 0; //active low. something wrong.
+ 808   1        else            vPol = 1; //active high.(Low signal on the Active Video Area)
+ 809   1        //if(hPol==0 || vPol==0)
+ 810   1        //  Printf("\n\rWarning:: hPol:%bx vPol:%bx",hPol,vPol);
+ 811   1      #if 0
+              
+              
+              #endif
+ 815   1      
+ 816   1      
+ 817   1      
+ 818   1        /* search video table */
+ 819   1        pCEA861 = Find_CEA861_VideoTable(hActive,vActive,vFreq);
+ 820   1      #ifdef SUPPORT_DEONLY_DTV
+                if(ReadTW88(REG050) & 0x10) {
+                  Puts("\n!!!DE only!!");
+                  if(pCEA861)
+                    PrintCEAVideoTimeTable(pCEA861);
+                  pCEA861 = NULL;
+                }
+              #endif
+ 828   1        if(pCEA861) {
+ 829   2          PrintCEAVideoTimeTable(pCEA861);
+ 830   2          //use table value
+ 831   2          hActive =    pCEA861->hActive;
+ 832   2          hCropStart = pCEA861->hBPorch;
+ 833   2          if(hPol) 
+ 834   2            hCropStart += pCEA861->hSync;
+ 835   2          vActive =    pCEA861->vActive;
+ 836   2          vCropStart = pCEA861->vBPorch;
+ 837   2          if(vPol) 
+ 838   2            vCropStart += pCEA861->vSync;
+ 839   2          PrintMeasAdjValue("DTV_TBL",hCropStart,vCropStart); 
+ 840   2        }
+ 841   1        else {
+ 842   2          //---------------------
+ 843   2          //DTV measure adjust. hStart+4, vStart-1.
+ 844   2          //---------------------
+ 845   2          hCropStart += 4;
+ 846   2          vCropStart -= 1;
+ 847   2          PrintMeasAdjValue("DTV",hCropStart,vCropStart); 
+ 848   2        }
+ 849   1        //if source is 720x240, EP907M reports it as 1440x240 on power up.
+ 850   1        //I assume, 720x288, also same.
+ 851   1        if(hActive==1440) {
+ 852   2          if(vActive==240 || vActive==288) {
+ 853   3            hActive >>= 1;
+ 854   3            hCropStart >>=1;
+ 855   3            Printf("\n=>hActive:%d =>hCropStart:%d",hActive, hCropStart);
+ 856   3          }
+ 857   2        }
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 15  
+
+ 858   1      
+ 859   1        //
+ 860   1        //set DTV hPol and vPol polarity.
+ 861   1        //FW uses the measured hActiveStart+4 & vActiveStart+1.
+ 862   1        //so FW donot use Dtv polarity.
+ 863   1        DtvSetSyncPolarity(0 ,0); //base ActiveHigh   
+ 864   1      
+ 865   1        // Interlaced Field detection.
+ 866   1        if(pCEA861) {
+ 867   2          if(pCEA861->pol & INTERLACED) {
+ 868   3            bTemp = DtvFindFieldWindow(pCEA861->hTotal / 2);
+ 869   3            DtvSetFieldDetectionRegion(ON, bTemp);
+ 870   3            Meas_StartMeasure();
+ 871   3            Meas_IsMeasureDone(50);
+ 872   3            PrintMeasValue("DTV");
+ 873   3          }
+ 874   2        }
+ 875   1      
+ 876   1        /* set input crop */ 
+ 877   1        InputSetCrop(hCropStart-1, vCropStart-1, hActive+2, vActive+2);
+ 878   1        HDMISetOutput( hActive, vActive,  vCropStart );
+ 879   1        //scaler_set_output(hActive, vActive, vCropStart, 0);
+ 880   1      
+ 881   1        /* search scaler table. If success, overwrite */
+ 882   1      #ifdef SUPPORT_SCALER_OVERWRITE_TABLE
+ 883   1        pScaler = FindScalerTable(InputMain, hActive,vActive,vFreq, vCropStart,vPol);
+ 884   1      #ifdef SUPPORT_DEONLY_DTV
+                if(ReadTW88(REG050) & 0x10) {
+                  pScaler = NULL;
+                }
+              #endif
+ 889   1        if(pScaler != NULL)
+ 890   1          OverWriteScalerWithTable(pScaler,hPol,vPol);
+ 891   1      #endif
+ 892   1        
+ 893   1      
+ 894   1      #if 0 //def SUPPORT_DEONLY_DTV
+                if(hActive==720) {
+                  if(vActive==240 || vActive==288) {
+                    if(ReadTW88(REG004) & 0x01) {
+                      WriteTW88(REG004, ReadTW88(REG004) | 0x01);
+                    }
+                  }
+                }
+              #endif
+ 903   1      
+ 904   1        return ERR_SUCCESS;
+ 905   1      }
+ 906          
+ 907          /**
+ 908          * Check and Set HDMI
+ 909          *
+ 910          * Hot Boot: Reset only TW8835.
+ 911          *   Hot boot needs a EP9351 Software Reset, but FW does not support it anymore.
+ 912          *   Please, use a Reset button or Power Switch.
+ 913          */
+ 914          BYTE CheckAndSetHDMI(void)
+ 915          {
+ 916   1        dPuts("\n\rCheckAndSetHDMI START");
+ 917   1      
+ 918   1        //return CheckAndSetDtvSignal();
+ 919   1        return CheckHdmiChipRegister();
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 16  
+
+ 920   1      }
+ 921          #endif 
+ 922          
+ 923          /**
+ 924          * some HDMI chip needs to download EDID & HDCP key.
+ 925          */
+ 926          #if 0
+              void Init_HdmiSystem(void)
+              {
+              #ifdef SUPPORT_HDMI_TW8837
+                Hdmi_SystemInit_TW8837();
+              #endif
+              #ifdef SUPPORT_HDMI_EP907M
+                Hdmi_SystemInit_EP907M();
+              #endif
+              }
+              #endif
+ 937          
+ 938          //=============================================================================
+ 939          // Change to HDMI
+ 940          //=============================================================================
+ 941          
+ 942          //-----------------------------------------------------------------------------
+ 943          /**
+ 944          * Change to HDMI
+ 945          *
+ 946          * linked with EP9553E.
+ 947          * @return
+ 948          * - 0: success
+ 949          * - 1: No Update happen
+ 950          * - 2: No Signal or unknown video sidnal.
+ 951          */
+ 952          extern void Interrupt_enableVideoDetect(BYTE fOn);
+ 953          
+ 954          #if defined(SUPPORT_FAST_INPUT_TOGGLE)
+              XDATA REG_IDX_DATA_t Fast_Hdmi_Buff[] = {
+                {REG040, 0x12},
+                {REG041, 0x51},
+                
+                {REG203, 0x00},
+                {REG204, 0x00},
+                {REG205, 0x00},
+                {REG206, 0x00},
+                {REG207, 0x00},
+                {REG208, 0x00},
+                {REG209, 0x00},
+                {REG20A, 0x00},
+                {REG20B, 0x00},
+                {REG20C, 0x00},
+                {REG20D, 0x00},
+                {REG20E, 0x00},
+                {REG20F, 0x00},
+                {REG210, 0x00},
+                {REG211, 0x00},
+                {REG212, 0x00},
+                {REG213, 0x00},
+                {REG214, 0x00},
+                {REG215, 0x00},
+              
+                {0x000, 0x00}
+              };
+              #endif
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 17  
+
+ 982          
+ 983          BYTE ChangeHDMI(void)
+ 984          {
+ 985   1        BYTE ret;
+ 986   1      
+ 987   1      #if defined(SUPPORT_FAST_INPUT_TOGGLE)
+                if(g_hdmi_checked) {
+                  InputMain = INPUT_HDMIPC;
+              
+                  LinkCheckAndSetInput();           //link CheckAndSetInput
+                  Interrupt_enableVideoDetect(OFF);     //turnoff Video Signal Interrupt
+                  TaskNoSignal_setCmd(TASK_CMD_DONE);     //turnoff NoSignal Task
+              
+                  ChangeFastInputMain();
+              
+                  //
+                  //check vdloss.
+                  //
+                  Meas_StartMeasure();
+                  ret=Meas_IsMeasureDone(50);
+                  if(ret==0) {
+                    WORD hTotal, vTotal;
+                    ScalerCalcFreerunValue(&hTotal,&vTotal);
+                    ScalerWriteFreerunTotal(hTotal,vTotal);       
+              
+                    //success
+                    TaskNoSignal_setCmd(TASK_CMD_DONE); 
+                    Interrupt_enableVideoDetect(ON);
+                    return 0;
+              
+                  }
+                  //If measure was fail, we have to use the normal routines...
+                }
+              #endif
+1016   1      
+1017   1        if ( InputMain == INPUT_HDMIPC || InputMain == INPUT_HDMITV ) {
+1018   2          //dPrintf("\n\rSkip ChangeHDMI");
+1019   2          return(1);
+1020   2        }
+1021   1      
+1022   1        if(GetHdmiModeEE())  InputMain = INPUT_HDMITV;
+1023   1        else         InputMain = INPUT_HDMIPC;
+1024   1      
+1025   1        if(GetInputMainEE() != InputMain)
+1026   1          SaveInputMainEE( InputMain );
+1027   1      
+1028   1        //dPrintf("\n\rChangeHDMI InputMain:%02bx",InputMain);
+1029   1      
+1030   1        //----------------
+1031   1        // initialize video input
+1032   1        InitInputAsDefault();
+1033   1      
+1034   1      
+1035   1      #ifdef SUPPORT_HDMI_EP907M
+1036   1        HdmiInitEp907MChip();
+1037   1      #endif
+1038   1      
+1039   1      #ifdef SUPPORT_DEONLY_DTV
+                WriteTW88(REG050, ReadTW88(REG050) | 0x10);
+              #endif
+1042   1      #if 0 //def SUPPORT_DEONLY_DTV
+                WriteTW88(REG050, ReadTW88(REG050) &  ~0x80);
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 18  
+
+              #endif
+1045   1      
+1046   1        //
+1047   1        // Check and Set 
+1048   1        //
+1049   1      #if defined(SUPPORT_HDMI)
+1050   1        ret = CheckAndSetHDMI();
+1051   1      #else
+                ret=ERR_FAIL;
+              #endif
+1054   1        if(ret==ERR_SUCCESS) {
+1055   2          //success
+1056   2          VInput_enableOutput(0);
+1057   2      #if defined(SUPPORT_FAST_INPUT_TOGGLE)
+                  ReadTW88Reg2Buff(Fast_VIDEO_Toggle_info,Fast_DTV_Toggle_Buff);
+                  g_hdmi_checked = 1;
+              #endif
+1061   2          return 0;
+1062   2        }
+1063   1      
+1064   1        //------------------
+1065   1        // NO SIGNAL
+1066   1        // Prepare NoSignal Task...
+1067   1        VInput_gotoFreerun(0);
+1068   1        //dPrintf("\n\rChangeHDMI--END");
+1069   1      #if defined(SUPPORT_FAST_INPUT_TOGGLE)
+                g_hdmi_checked = 0;
+              #endif
+1072   1        return(2);
+1073   1      }
+1074          
+1075          
+1076          //=============================================================================
+1077          // Change to LVDSRx
+1078          //=============================================================================
+1079          #ifdef SUPPORT_LVDSRX
+1080          
+1081          /**
+1082          * TW8836 EVB1.0 uses a HDMI output for LVDS Tx chip input.
+1083          *
+1084          * video path
+1085          * HDMI=>LVDS Tx chip =>TW8836 LVDSRx => Scaler => Panel
+1086          */
+1087          BYTE CheckAndSetLVDSRx(void)
+1088          {
+1089   1        dPuts("\n\rCheckAndSetLVDS START");
+1090   1        return CheckAndSetDtvSignal();
+1091   1      }
+1092          
+1093          BYTE ChangeLVDSRx(void)
+1094          {
+1095   1        BYTE ret;
+1096   1      
+1097   1        if ( InputMain == INPUT_LVDS ) {
+1098   2          //dPrintf("\n\rSkip ChangeLVDSRx");
+1099   2          return(1);
+1100   2        }
+1101   1        InputMain = INPUT_LVDS;
+1102   1      
+1103   1        if(GetInputMainEE() != InputMain)
+1104   1          SaveInputMainEE( InputMain );
+1105   1      
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 19  
+
+1106   1        //----------------
+1107   1        // initialize video input
+1108   1        InitInputAsDefault();
+1109   1      
+1110   1        //
+1111   1        // Check and Set Input crop, scale rate, scaler output time.
+1112   1        //
+1113   1      #ifdef SUPPORT_LVDSRX
+1114   1        ret = CheckAndSetLVDSRx();    
+1115   1        if(ret==0) {
+1116   2          //success
+1117   2          VInput_enableOutput(0);
+1118   2          return 0;
+1119   2        }
+1120   1      #endif
+1121   1        //------------------
+1122   1        // NO SIGNAL
+1123   1        // Prepare NoSignal Task...
+1124   1      
+1125   1        VInput_gotoFreerun(0);
+1126   1        return(2);
+1127   1      }
+1128          #endif
+1129          
+1130          
+1131          
+1132          
+1133          
+1134          //=============================================================================
+1135          // Change to BT656
+1136          //=============================================================================
+1137          #ifdef SUPPORT_BT656_LOOP
+1138          
+1139          
+1140          //-----------------------------------------------------------------------------
+1141          /**
+1142          * Check and Set BT656
+1143          *
+1144          * @return
+1145          * - 0: success
+1146          * - other: error
+1147          * @todo REG04A[0] does not work.
+1148          *
+1149          * video path
+1150          * CVBS=>BT656Out=>DTV i656=>Scaler=>Panel.
+1151          */
+1152          BYTE CheckAndSetBT656Loop(void)
+1153          {
+1154   1        BYTE  mode;
+1155   1        BYTE hDelay,vDelay;
+1156   1        DWORD dTemp;
+1157   1        BYTE bTemp;
+1158   1        WORD MeasVStart, MeasHStart;
+1159   1        WORD MeasHLen, MeasVLen;
+1160   1        struct DEC_VIDEO_TIME_TABLE_s *pVideoTable;
+1161   1      
+1162   1        //dPrintf("\n\rCheckAndSetBT656Loop start.");
+1163   1      
+1164   1        //
+1165   1        //check decoder
+1166   1        //
+1167   1        if ( DecoderCheckVDLOSS(100) ) {
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 20  
+
+1168   2          return 1; //no decoder signal
+1169   2        }
+1170   1        mode = DecoderCheckSTD(100);
+1171   1        if ( mode == 0x80 ) {
+1172   2            ePrintf("\n\r NoSTD");
+1173   2          return( 2 );
+1174   2        }
+1175   1        mode >>= 4;
+1176   1        InputSubMode = mode;
+1177   1        if(mode >= 7)
+1178   1          return 3;
+1179   1      
+1180   1        pVideoTable = &TW8836_DEC_TABLE[mode];
+1181   1      
+1182   1        //
+1183   1        //init decoder input crop.
+1184   1        //
+1185   1        if(mode==0 || mode==3 || mode==4 || mode ==6) {
+1186   2          //NTSC.
+1187   2          //Decoder & BT656Loopback using different value.
+1188   2          //Decoder using  8,720,21,240.
+1189   2          //BT656 will use 13,720,21,240.
+1190   2          hDelay = 13;   vDelay = 21;
+1191   2      
+1192   2        }
+1193   1        else if(mode==1 || mode==2 || mode==5) {
+1194   2          // PAL.
+1195   2          //Decoder & BT656Loopback using different value.
+1196   2          //Decoder using  6,720,23,288.
+1197   2          //BT656 will use 11,720,22,288
+1198   2          hDelay = 11;   vDelay = 22;
+1199   2      
+1200   2        }
+1201   1        else {
+1202   2          Printf("\n\rUnknown mode;%bx",mode);
+1203   2          return 3;
+1204   2        }
+1205   1      
+1206   1      
+1207   1        DecoderSetOutputCrop(hDelay,pVideoTable->hActive,vDelay,pVideoTable->vActive);
+1208   1        //PrintDecoderOutputCrop("BT656Loop",);
+1209   1        //
+1210   1        //set External BT656 Encoder
+1211   1        //
+1212   1        if(mode==0 || mode==3 || mode==4 || mode ==6)
+1213   1          BT656_InitExtEncoder(BT656_8BIT_525I_YCBCR_TO_CVBS);
+1214   1        else
+1215   1          BT656_InitExtEncoder(BT656_8BIT_625I_YCBCR_TO_CVBS);
+1216   1        
+1217   1        //
+1218   1        //init scaler inputcrop,scale rate, scale output time.  
+1219   1        //
+1220   1        Meas_StartMeasure();
+1221   1        if(Meas_IsMeasureDone(50)) {
+1222   2          //it is comes from decoder. let's use a measure.
+1223   2          //if meas success, please remove this routine...
+1224   2          ScalerSetLineBufferSize(pVideoTable->hActive);  //BK120116  - temp location. pls remove
+1225   2        
+1226   2          ScalerSetHScale(pVideoTable->hActive);
+1227   2          ScalerSetVScale(pVideoTable->vActive);
+1228   2          dTemp = vDelay;
+1229   2          dTemp *= PANEL_V;
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 21  
+
+1230   2          dTemp /= pVideoTable->vActive;
+1231   2      
+1232   2          //BK130129. If NTSC, use 38(it was 42). so reduce 4;
+1233   2          if(mode==0)
+1234   2            dTemp -=4;
+1235   2      
+1236   2          ScalerWriteVDEReg((WORD)dTemp);
+1237   2      //BKTODO131011: use void ScalerSet_vDE_value(BYTE vStart)
+1238   2          return 0;
+1239   2        }
+1240   1      
+1241   1        MeasVLen = MeasGetVActive( &MeasVStart );       //v_active_start v_active_perios
+1242   1        MeasHLen = MeasGetHActive( &MeasHStart );       //h_active_start h_active_perios
+1243   1        //dPrintf("\n\rBT656 Measure Value: %dx%d hStart:%d+4 vStart:%d-1",MeasHLen,MeasVLen, MeasHStart, MeasVSt
+             -art);
+1244   1        //dPrintf("==>Htotal:%d",  MeasGetVsyncRisePos());
+1245   1        InputSetCrop(MeasHStart+4,MeasVStart+1, MeasHLen,MeasVLen);  //add 2 more for scaler on H value.
+1246   1      #ifdef DEBUG_BT656
+                PrintScalerInputCrop("BT656Loop",MeasHStart+4,MeasVStart+1, MeasHLen,MeasVLen); 
+              #endif
+1249   1      
+1250   1        //implicit DE.
+1251   1        bTemp = ReadTW88(REG041);
+1252   1        bTemp &= ~0x01;   //YUV;
+1253   1        bTemp |= 0x10;    //Implicit DE
+1254   1        WriteTW88(REG041,bTemp);
+1255   1      
+1256   1        ScalerSetLineBufferSize(MeasHLen / 2);
+1257   1        ScalerSetHScale(MeasHLen / 2);
+1258   1        ScalerSetVScale(MeasVLen);
+1259   1        ScalerSetVScale(pVideoTable->vActive);
+1260   1      
+1261   1        dTemp = MeasVStart + 1;
+1262   1        dTemp *= PANEL_V;
+1263   1        dTemp /= MeasVLen;
+1264   1        if(mode==1) // is pal
+1265   1          dTemp += 6;
+1266   1        if(PANEL_V==600)
+1267   1          dTemp -= 1;  
+1268   1        ScalerWriteVDEReg((WORD)dTemp);
+1269   1      
+1270   1      //BKTODO131011: use void ScalerSet_vDE_value(BYTE vStart)
+1271   1      
+1272   1        return 0;
+1273   1      }
+1274          
+1275          //-----------------------------------------------------------------------------
+1276          /**
+1277          * Change to BT656Loop
+1278          *
+1279          * VideoPath
+1280          * CVBS=>BT656 Out=>VD[] bus=>DTV(i656)=>Scaler=>Panel.
+1281          *
+1282          * @return
+1283          * - 0: success
+1284          * - 1: No Update happen
+1285          * - 2: No Signal or unknown video sidnal.
+1286          */
+1287          BYTE ChangeBT656Loop(void)
+1288          {
+1289   1        BYTE ret;
+1290   1      
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 22  
+
+1291   1        if ( InputMain == INPUT_BT656 ) {
+1292   2          //dPrintf("\n\rSkip ChangeBT656");
+1293   2          return(1);
+1294   2        }
+1295   1        InputMain = INPUT_BT656;
+1296   1      
+1297   1        if(GetInputMainEE() != InputMain)
+1298   1          SaveInputMainEE( InputMain );
+1299   1      
+1300   1        //----------------
+1301   1        // initialize video input
+1302   1        InitInputAsDefault();
+1303   1      
+1304   1        delay1ms(350);  //decoder need a delay.
+1305   1      
+1306   1        //
+1307   1        // Check and Set DEC,mesaure,Scaler for BT656 Loopback input
+1308   1        //
+1309   1        ret = CheckAndSetBT656Loop();
+1310   1        if(ret==0) {
+1311   2          //success
+1312   2          VInput_enableOutput(0);
+1313   2          return 0;
+1314   2        }
+1315   1      
+1316   1        //------------------
+1317   1        // NO SIGNAL
+1318   1        // Prepare NoSignal Task...
+1319   1      
+1320   1        VInput_gotoFreerun(0);
+1321   1      
+1322   1        return(2);
+1323   1      }
+1324          #endif
+1325          /*
+1326           *
+1327           */
+1328          #if defined(SUPPORT_LVDSRX)
+1329          BYTE CheckAndSetDtvSignal(void)
+1330          {
+1331   1        BYTE ret;
+1332   1        BYTE i;
+1333   1        BYTE vFreq;
+1334   1        WORD hActive,vActive;
+1335   1        WORD hStart,vStart;
+1336   1      
+1337   1        WORD hPeriod,vPeriod;
+1338   1        WORD hFPorch,vFPorch;
+1339   1        WORD hSync,vSync;
+1340   1        WORD hBPorch,vBPorch;
+1341   1          
+1342   1        struct DIGIT_VIDEO_TIME_TABLE_s *pCEA861;
+1343   1        struct SCALER_TIME_TABLE_s *pScaler;
+1344   1      
+1345   1        BYTE hPol,vPol;
+1346   1        WORD wTemp0,wTemp1;
+1347   1        DWORD dTemp,pclk;
+1348   1      
+1349   1        /*If someone changed meas, recover it*/
+1350   1        MeasSetWindow( 0, 0, 0xfff, 0xfff );//set dummy window. 1600x600
+1351   1        WriteTW88(REG50A, ReadTW88(REG50A) | 0x01); //Enable DE measure
+1352   1        WriteTW88(REG508, ReadTW88(REG508) & ~0x10);
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 23  
+
+1353   1      
+1354   1        /* check video signal */
+1355   1        for(i=0; i < 5; i++) {
+1356   2          Meas_StartMeasure();
+1357   2          ret=Meas_IsMeasureDone(50);
+1358   2          if(ret==0)
+1359   2            break;
+1360   2          delay1ms(10);
+1361   2          Puts("."); //I am alive...
+1362   2        }
+1363   1        if(ret) {
+1364   2          /*if measure fail, it measn no signal...*/
+1365   2          Printf(" meas=> NoSignal");
+1366   2          return ERR_FAIL;
+1367   2        }
+1368   1        /* wait until DTV has a stable image. */
+1369   1        wTemp0 = MeasGetHActive( &hStart );
+1370   1        wTemp1 = MeasGetVActive( &vStart );
+1371   1        for(i=0; i < 20; i++) {
+1372   2          delay1ms(10);
+1373   2          Meas_StartMeasure();
+1374   2          ret=Meas_IsMeasureDone(50);
+1375   2          hActive = MeasGetHActive( &hStart );
+1376   2          vActive = MeasGetVActive( &vStart );
+1377   2          if(wTemp0==hActive && wTemp1==vActive)
+1378   2            break;
+1379   2          wTemp0 = hActive;
+1380   2          wTemp1 = vActive;
+1381   2          Puts("*"); //I am alive...
+1382   2        }
+1383   1        /* read measured registers */
+1384   1        hSync = MeasGetHSyncRiseToFallWidth();
+1385   1        vSync = MeasGetVSyncRiseToFallWidth();
+1386   1        hPeriod = MeasGetVsyncRisePos();
+1387   1        vPeriod = MeasGetVPeriod();  
+1388   1        vFreq = MeasGetVFreq();
+1389   1        PrintMeasValue("DTV");
+1390   1        //---------------------
+1391   1        //DTV measure adjust. hStart+4, vStart-1.
+1392   1        //If pol is active high, hStart is Sync+BPorch
+1393   1        //If pol ia active low,  hStart is BPorch
+1394   1        //---------------------
+1395   1        hStart += 4;
+1396   1        vStart -= 1;
+1397   1        PrintMeasAdjValue("DTV",hStart,vStart); 
+1398   1      
+1399   1        /*Find CEA861 or VESA table*/
+1400   1        pCEA861 = Find_CEA861_VideoTable(hActive,vActive,vFreq);
+1401   1        if(pCEA861) {
+1402   2          PrintCEAVideoTimeTable(pCEA861);
+1403   2          /* If meas has a differnet value, use CEA861 value.
+1404   2             for example
+1405   2            if(hActive==1151) hActive = 1152;
+1406   2            if(hActive==1279) hActive = 1280;
+1407   2            if(hActive==1439) hActive = 1440;
+1408   2            if(hActive==1599) hActive = 1600;
+1409   2            if(hActive==1919) hActive = 1920;
+1410   2          */
+1411   2          hActive = pCEA861->hActive;
+1412   2        }
+1413   1      
+1414   1        /*check Sync polarity.*/
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 24  
+
+1415   1        /*Firmware likes the active high polarity.*/
+1416   1        if ( hSync > hActive )  hPol = 0; //active low.  Negative
+1417   1        else          hPol = 1; //active high. Positive
+1418   1        if ( vSync > vActive )  vPol = 0; //active low.  Negative
+1419   1        else          vPol = 1; //active high. Positive
+1420   1      
+1421   1        /*set DTV hPol and vPol polarity.*/
+1422   1        //These start values are BPorch or Sync+BPorch that depend on the polarity.
+1423   1        //so FW do not use Dtv polarity.
+1424   1        DtvSetSyncPolarity(0,0);
+1425   1      
+1426   1        /*set field window for Interlaced*/
+1427   1        if(pCEA861) {
+1428   2          if(pCEA861->pol & INTERLACED) {
+1429   3            i = DtvFindFieldWindow(pCEA861->hTotal / 2);
+1430   3            DtvSetFieldDetectionRegion(ON, i);
+1431   3            Meas_StartMeasure();
+1432   3            Meas_IsMeasureDone(50);
+1433   3            PrintMeasValue("DTV");
+1434   3          }
+1435   2        }
+1436   1      
+1437   1        /*Find vFPorch,vSync,vBPorch.*/
+1438   1        if(vPol==0) {
+1439   2          vSync = vPeriod - MeasGetVSyncRiseToFallWidth();
+1440   2          vBPorch = vStart;
+1441   2          vFPorch = vPeriod - vSync - vBPorch - vActive;
+1442   2        }
+1443   1        else {
+1444   2          vSync = MeasGetVSyncRiseToFallWidth();
+1445   2          vBPorch = vStart - vSync;
+1446   2          vFPorch = vPeriod - vSync - vBPorch - vActive;
+1447   2        }
+1448   1        /*Find hFPorch,hSync,hBPorch and hPeriod.*/
+1449   1        if(hPol==0) {
+1450   2          hBPorch = hStart;
+1451   2          hFPorch = MeasGetHSyncRiseToFallWidth() - MeasGetHSyncRiseToHActiveEnd();
+1452   2          WriteTW88(REG508, ReadTW88(REG508) | 0x10);
+1453   2          Meas_StartMeasure();
+1454   2          Meas_IsMeasureDone(50);
+1455   2          hPeriod = MeasGetHSyncRiseToFallWidth();
+1456   2          hSync = hPeriod - hFPorch - hBPorch - hActive;
+1457   2          
+1458   2          //BKTODO141009 remove it
+1459   2          WriteTW88(REG508, ReadTW88(REG508) & ~0x10);
+1460   2          Meas_StartMeasure();
+1461   2          Meas_IsMeasureDone(50);
+1462   2        }
+1463   1        else {
+1464   2          hSync = MeasGetHSyncRiseToFallWidth();
+1465   2          hBPorch = hStart - hSync;
+1466   2          hPeriod = MeasGetVsyncRisePos();    
+1467   2          hFPorch = hPeriod - hBPorch - hSync - hActive;
+1468   2        }
+1469   1        /*Find an input pixel clock.*/
+1470   1        //  InputPixelClock = hPeriod * pclk / MeasGetHPeriodReg();
+1471   1        wTemp0 = MeasGetHPeriodReg();
+1472   1        dTemp = Sspll2GetFreq();
+1473   1        pclk   = PclkGetFreq(dTemp);
+1474   1        pclk /= 1000;
+1475   1        dTemp = hPeriod;
+1476   1        dTemp *= pclk;
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 25  
+
+1477   1        dTemp /= wTemp0;
+1478   1      
+1479   1        //print out the result
+1480   1        Printf("\n%dx%d@%bd", hActive,vActive,vFreq);
+1481   1        Printf(" hStart:%d vStart:%d", hStart, vStart);
+1482   1      
+1483   1        Printf(" %s", hPol ? "HP" : "HN");
+1484   1        Printf("_%s", vPol ? "VP" : "VN");
+1485   1      
+1486   1        Printf(" %d,%d,%d,%d",
+1487   1          hPeriod, hFPorch, hSync, hBPorch);
+1488   1        Printf(" %d,%d,%d,%d",
+1489   1          vPeriod, vFPorch, vSync, vBPorch);
+1490   1        Printf("\n pclk:%ld SSPLL:%ld", dTemp,pclk);
+1491   1      
+1492   1        //if (( pclk / InputPixelClock) > 2), use 2 for hStart crop value. 
+1493   1        wTemp1= wTemp0 / hPeriod;
+1494   1        if(wTemp1 > 2)  i = 2;
+1495   1        else      i = 1;
+1496   1        Printf(" hOffset:%bd",i); 
+1497   1      
+1498   1        //If input has a pixel repeat, some HDMI Rx chip send a double horizontal values.
+1499   1        if(hActive==1440) {
+1500   2          if(vActive==240 || vActive==288) {
+1501   3            hActive >>= 1;
+1502   3            hStart >>=1;
+1503   3            Printf("\n=>hActive:%d =>hCropStart:%d",hActive, hStart);
+1504   3          }
+1505   2        }
+1506   1      
+1507   1        //-------------------------------------------
+1508   1        // input crop
+1509   1        InputSetCrop(hStart-i, vStart-vPol, hActive+2, vActive+2);
+1510   1        HDMISetOutput( hActive, vActive,  vStart );
+1511   1      
+1512   1        //Find the scaler table and then overwrite.
+1513   1        //because,...
+1514   1      #ifdef SUPPORT_SCALER_OVERWRITE_TABLE
+1515   1        pScaler = FindScalerTable(InputMain, hActive,vActive,vFreq, vStart,vPol);
+1516   1        if(pScaler != NULL)
+1517   1          OverWriteScalerWithTable(pScaler, hPol, vPol);
+1518   1      #endif
+1519   1      
+1520   1        return ERR_SUCCESS;
+1521   1      }
+1522          #endif
+1523          
+1524          
+1525          //=====================================NEW CODE==============================
+1526          #if 0
+              /**
+              * It will read HDMI chip to get AVI.
+              */
+              BYTE ChangeHDMI(void)
+              {
+              }
+              BYTE CheckAndSetHdmi(void)
+              {
+              #if defined(SUPPORT_HDMI_EP907M)
+                /*
+                If you can control the external device, 
+                */
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 26  
+
+                ret = HdmiCheckConnection();
+                if(ret)
+                  return ret;
+                ret = HdmiCheckMode();  //HDMI or DVI
+              
+                //If we using AUTO_VFMTb==0, we don't need it.
+                //
+                //set color space.
+                if(ret) {
+                  ret = CheckAviInfoFrame();
+                }
+                else {
+                  //BKTODO:We need default color space value. RGB,YUV422,YUV420
+                  //BK130204. We need a EEPROM value.
+                  HdmiSetColorSpace(0x00); //clear
+                }
+              
+                HdmiDebugTimingValue(); 
+              
+                Meas_StartMeasure();
+                ret=Meas_IsMeasureDone(50);
+                if(ret) {
+                  /*if measure fail, it measn no signal.*/
+              
+                  Printf(" meas=> NoSignal");
+                  return ERR_FAIL;
+                } 
+              #endif
+              }
+              
+              /**
+              * On this mode, I am using only measure block.
+              * I want to add DE only option...
+              */
+              BYTE ChangeDTV(void)
+              {
+              }
+              BYTE CheckAndSetDTV(void)
+              {
+                /* If you cannot control the external device, use the measure method.*/
+              
+                /* wait until you get a video signal */
+                /* max wait is 3 sec. */
+                /* If video comes later, ISR will take care */
+                for(i=0; i < 6; i++) {
+                  Meas_StartMeasure();
+                  ret=Meas_IsMeasureDone(50); /*500ms */
+                  if(ret==0)
+                    break;
+                }
+                if(ret) {
+                  /*if measure fail, it measn no signal...*/
+                  Printf(" meas=> NoSignal");
+                  return ERR_FAIL;
+                }
+                /*wait until it has a stable value.*/
+                Old_hActive = MeasGetHActive( &hCropStart );
+                Old_vActive = MeasGetVActive( &vCropStart );
+                for(i=0; i < 10; i++) {
+                  delay1ms(10);
+                  Meas_StartMeasure();
+                  ret=Meas_IsMeasureDone(50);
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 27  
+
+                  hActive = MeasGetHActive( &hCropStart );
+                  vActive = MeasGetVActive( &vCropStart );
+                  if(Old_hActive==hActive && Old_vActive==vActive)
+                    break;
+                  Old_hActive = hActive;
+                  Old_vActive = vActive;
+                }
+              
+                /*=================================
+                 Read Measured data
+                =================================*/
+                hSync = MeasGetHSyncRiseToFallWidth();
+                vSync = MeasGetVSyncRiseToFallWidth();
+              
+              //  hTotal = MeasGetVsyncRisePos();
+              //  vTotal = MeasGetVPeriod();  //BK130204, vtotal is better. We can use a meas vCropStart. 
+                hActive = MeasGetHActive(&hCropStart);
+                vActive = MeasGetVActive(&vCropStart);
+                vFreq = MeasGetVFreq();
+                PrintMeasValue("DTV");
+                if(vFreq==59)
+                  vFreq=60;
+              
+                /* check sync polarity */
+                if ( hSync > (hActive/2) )  hPol = 0; //active low. something wrong.
+                else            hPol = 1; //active high.(Low signal on the Active Video Area)
+                if ( vSync > (vActive/2) )  vPol = 0; //active low. something wrong.
+                else            vPol = 1; //active high.(Low signal on the Active Video Area)
+                //if(hPol==0 || vPol==0)
+                //  Printf("\n\rWarning:: hPol:%bx vPol:%bx",hPol,vPol);
+              
+                /* search video table */
+                pCEA861 = Find_CEA861_VideoTable(hActive,vActive,vFreq);
+                if(pCEA861 == NULL) {
+                  /* No standard */
+                  /* adjust measured data. hStart+4, vStart-1 */
+                  hCropStart += 4;
+                  vCropStart -= 1;
+                }
+                else {
+                  /* use table value */
+                  PrintCEAVideoTimeTable(pCEA861);
+                  hActive =    pCEA861->hActive;
+                  hCropStart = pCEA861->hBPorch;
+                  if(hPol) 
+                    hCropStart += pCEA861->hSync;
+                  vActive =    pCEA861->vActive;
+                  vCropStart = pCEA861->vBPorch;
+                  if(vPol) 
+                    vCropStart += pCEA861->vSync;
+                  PrintMeasAdjValue("DTV_TBL",hCropStart,vCropStart); 
+                }
+                /* adjust double pixeled video */
+                /* If source is 720x480i or 720x288i, some video chip makes a double pixels */
+                if(hActive==1440) {
+                  if(vActive==240 || vActive==288) {
+                    hActive >>= 1;
+                    hCropStart >>=1;
+                    Printf("\n=>hActive:%d =>hCropStart:%d",hActive, hCropStart);
+                  }
+                }
+              
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 28  
+
+                /* FW not using DTV polarity registers */ 
+                DtvSetSyncPolarity(0 ,0); //base ActiveHigh   
+                
+                /* Field detection for interlaced video */
+                if(pCEA861 && (pCEA861->pol & INTERLACED)) {
+                  bTemp = DtvFindFieldWindow(pCEA861->hTotal / 2);
+                  DtvSetFieldDetectionRegion(ON, bTemp);
+                  Meas_StartMeasure();
+                  Meas_IsMeasureDone(50);
+                  PrintMeasValue("DTV");
+                }
+              
+                /* set scaler input crop */ 
+                InputSetCrop(hCropStart-1, vCropStart-1, hActive+2, vActive+2);
+              
+                /* set scaler output */
+                DtvSetScalerOutput( hActive, vActive,  vCropStart );
+              
+                /* adjust pclk */
+                xdown = ReadTW88(REG20A) & 0x0F;
+                xdown <<=4;
+                xdown |= ReadTW88(REG209);
+                if(xdown > 400) {
+                  /* SSPLL2 = PCLK = PCLKO *2 */
+                }
+                else {
+                  /* SSPLL2 = PCLK = PCLKO *1 */
+                }
+              
+              
+                /* search scaler table. 
+                   If success, overwrite.
+                   If failed, just use a calculated values
+                 */
+              #ifdef SUPPORT_SCALER_OVERWRITE_TABLE
+                pScaler = FindScalerTable(InputMain, hActive,vActive,vFreq, vCropStart,vPol);
+                if(pScaler != NULL)
+                  OverWriteScalerWithTable(pScaler,hPol,vPol);
+              #endif
+                
+                return ERR_SUCCESS;
+              }
+              
+              static void DtvSetScalerOutput(WORD hActive, WORD vActive, BYTE vDE )
+              {
+                BYTE  hDE;
+                WORD vScale;
+                DWORD dTemp;
+              
+                ScalerSetVScale(vActive);
+                ScalerSetHScale(hActive);
+              
+                hDE = ScalerCalcHDE();
+                ScalerWriteHDEReg(hDE);
+              
+                vScale = ScalerReadVScaleReg();
+                dTemp = vDE;
+                dTemp <<= 1;
+                if(vActive==288) /*if pal, add 0.5 */
+                  dTemp+=1;
+                dTemp <<= 13; /* *8192L */
+                dTemp /= vScale;
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 29  
+
+                dTemp >>= 1;
+                vDE = dTemp;
+                ScalerWriteVDEReg(vDE);
+              
+                if(hActive <= PANEL_H)
+                  ScalerSetLineBufferSize(hActive+1);
+                else
+                  ScalerSetLineBufferSize(PANEL_H+1);
+              }
+              
+              #endif
+1736          
+1737          
+1738          
+*** WARNING C294 IN LINE 1267 OF source36\DTV.c: unreachable code
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 30  
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com0078 (BEGIN)
+0000         L?0121:
+0000 110000      E     ACALL   ?C?LSTXDATA
+0003 90000000    R     MOV     DPTR,#dTemp
+0007 E0                MOVX    A,@DPTR
+0008 FC                MOV     R4,A
+0009 A3                INC     DPTR
+000A E0                MOVX    A,@DPTR
+000B FD                MOV     R5,A
+000C A3                INC     DPTR
+000D E0                MOVX    A,@DPTR
+000E FE                MOV     R6,A
+000F A3                INC     DPTR
+0010 E0                MOVX    A,@DPTR
+0011 FF                MOV     R7,A
+0012 E4                CLR     A
+0013 7BE0              MOV     R3,#0E0H
+0015 7A01              MOV     R2,#01H
+0017 F9                MOV     R1,A
+0018 F8                MOV     R0,A
+0019 110000      E     ACALL   ?C?LMUL
+001C 90000000    R     MOV     DPTR,#dTemp
+0020 110000      E     ACALL   ?C?LSTXDATA
+0023         L?0122:
+0023 90000000    R     MOV     DPTR,#dTemp
+0027         L?0123:
+0027 E0                MOVX    A,@DPTR
+0028 FC                MOV     R4,A
+0029 A3                INC     DPTR
+002A E0                MOVX    A,@DPTR
+002B FD                MOV     R5,A
+002C A3                INC     DPTR
+002D E0                MOVX    A,@DPTR
+002E FE                MOV     R6,A
+002F A3                INC     DPTR
+0030 E0                MOVX    A,@DPTR
+0031 22                RET     
+0032         L?0124:
+0032         L?0125:
+0032 759300      E     MOV     DPX,#?C?XDATASEG
+0035 E500        E     MOV     A,regTW88+01H
+0037 2450              ADD     A,#050H
+0039         L?0126:
+0039 F582              MOV     DPL,A
+003B E4                CLR     A
+003C 3500        E     ADDC    A,regTW88
+003E F583              MOV     DPH,A
+0040 759300      E     MOV     DPX,#?C?XDATASEG
+0043 22                RET     
+0044         L?0127:
+0044 FD                MOV     R5,A
+0045 C3                CLR     C
+0046 EF                MOV     A,R7
+0047 9D                SUBB    A,R5
+0048 FF                MOV     R7,A
+0049 EE                MOV     A,R6
+004A 9C                SUBB    A,R4
+004B FE                MOV     R6,A
+004C E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 31  
+
+004D FC                MOV     R4,A
+004E A3                INC     DPTR
+004F E0                MOVX    A,@DPTR
+0050 90000000    R     MOV     DPTR,#hActive
+0054         L?0128:
+0054 FD                MOV     R5,A
+0055 C3                CLR     C
+0056 EF                MOV     A,R7
+0057 9D                SUBB    A,R5
+0058 FF                MOV     R7,A
+0059 EE                MOV     A,R6
+005A 9C                SUBB    A,R4
+005B FE                MOV     R6,A
+005C E0                MOVX    A,@DPTR
+005D FC                MOV     R4,A
+005E A3                INC     DPTR
+005F E0                MOVX    A,@DPTR
+0060 FD                MOV     R5,A
+0061 C3                CLR     C
+0062 EF                MOV     A,R7
+0063 9D                SUBB    A,R5
+0064 FF                MOV     R7,A
+0065 EE                MOV     A,R6
+0066 9C                SUBB    A,R4
+0067 22                RET     
+0068         L?0129:
+0068         L?0130:
+0068 90000000    R     MOV     DPTR,#pVideoTable
+006C         L?0131:
+006C E0                MOVX    A,@DPTR
+006D FB                MOV     R3,A
+006E A3                INC     DPTR
+006F E0                MOVX    A,@DPTR
+0070 FA                MOV     R2,A
+0071 A3                INC     DPTR
+0072 E0                MOVX    A,@DPTR
+0073 22                RET     
+0074         L?0132:
+0074         L?0133:
+0074 E0                MOVX    A,@DPTR
+0075 FF                MOV     R7,A
+0076 A3                INC     DPTR
+0077 E0                MOVX    A,@DPTR
+0078         L?0134:
+0078 90000000    E     MOV     DPTR,#?_Printf?BYTE+05H
+007C CF                XCH     A,R7
+007D F0                MOVX    @DPTR,A
+007E A3                INC     DPTR
+007F EF                MOV     A,R7
+0080 F0                MOVX    @DPTR,A
+0081 22                RET     
+0082         L?0135:
+0082         L?0136:
+0082 2402              ADD     A,#02H
+0084         L?0137:
+0084 F9                MOV     R1,A
+0085 E4                CLR     A
+0086 3A                ADDC    A,R2
+0087 FA                MOV     R2,A
+0088 010000      E     AJMP    ?C?ILDPTR
+008B         L?0138:
+008B F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 32  
+
+008C A3                INC     DPTR
+008D EF                MOV     A,R7
+008E F0                MOVX    @DPTR,A
+008F         L?0139:
+008F 759300      E     MOV     DPX,#?C?XDATASEG
+0092 E500        E     MOV     A,regTW88+01H
+0094 2408              ADD     A,#08H
+0096         L?0140:
+0096 F582              MOV     DPL,A
+0098 E500        E     MOV     A,regTW88
+009A 3405              ADDC    A,#05H
+009C F583              MOV     DPH,A
+009E 759300      E     MOV     DPX,#?C?XDATASEG
+00A1 E0                MOVX    A,@DPTR
+00A2 22                RET     
+00A3         L?0141:
+00A3 7B00        R     MOV     R3,#MBYTE ?SC_221
+00A5 7A00        R     MOV     R2,#HIGH ?SC_221
+00A7 7900        R     MOV     R1,#LOW ?SC_221
+00A9         L?0142:
+00A9 E0                MOVX    A,@DPTR
+00AA FF                MOV     R7,A
+00AB A3                INC     DPTR
+00AC E0                MOVX    A,@DPTR
+00AD CF                XCH     A,R7
+00AE         L?0143:
+00AE 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+00B2 F0                MOVX    @DPTR,A
+00B3 A3                INC     DPTR
+00B4 22                RET     
+00B5         L?0144:
+00B5 90000000    R     MOV     DPTR,#hActive
+00B9         L?0145:
+00B9 E0                MOVX    A,@DPTR
+00BA FE                MOV     R6,A
+00BB A3                INC     DPTR
+00BC E0                MOVX    A,@DPTR
+00BD FF                MOV     R7,A
+00BE         L?0146:
+00BE A3                INC     DPTR
+00BF E0                MOVX    A,@DPTR
+00C0 FC                MOV     R4,A
+00C1 A3                INC     DPTR
+00C2 E0                MOVX    A,@DPTR
+00C3 FD                MOV     R5,A
+00C4 22                RET     
+00C5         L?0147:
+00C5 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+00C9         L?0148:
+00C9 EB                MOV     A,R3
+00CA         L?0149:
+00CA F0                MOVX    @DPTR,A
+00CB A3                INC     DPTR
+00CC EA                MOV     A,R2
+00CD F0                MOVX    @DPTR,A
+00CE A3                INC     DPTR
+00CF E9                MOV     A,R1
+00D0 F0                MOVX    @DPTR,A
+00D1 22                RET     
+00D2         L?0150:
+00D2 FF                MOV     R7,A
+00D3 E5F0              MOV     A,B
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 33  
+
+00D5 F0                MOVX    @DPTR,A
+00D6 A3                INC     DPTR
+00D7 EF                MOV     A,R7
+00D8 F0                MOVX    @DPTR,A
+00D9         L?0151:
+00D9 90000000    R     MOV     DPTR,#pCEA861
+00DD A3                INC     DPTR
+00DE E0                MOVX    A,@DPTR
+00DF FA                MOV     R2,A
+00E0 A3                INC     DPTR
+00E1 E0                MOVX    A,@DPTR
+00E2 22                RET     
+00E3         L?0152:
+00E3 FF                MOV     R7,A
+00E4 E4                CLR     A
+00E5 3E                ADDC    A,R6
+00E6 FE                MOV     R6,A
+00E7 E4                CLR     A
+00E8 3D                ADDC    A,R5
+00E9 FD                MOV     R5,A
+00EA E4                CLR     A
+00EB 3C                ADDC    A,R4
+00EC FC                MOV     R4,A
+00ED 010000      E     AJMP    ?C?LSTXDATA
+00F0         L?0153:
+00F0         L?0154:
+00F0 90000000    R     MOV     DPTR,#dTemp
+00F4 110000      E     ACALL   ?C?LSTXDATA
+00F7 90000000    R     MOV     DPTR,#dTemp
+00FB 22                RET     
+00FC         L?0155:
+00FC E0                MOVX    A,@DPTR
+00FD 34FF              ADDC    A,#0FFH
+00FF         L?0156:
+00FF F0                MOVX    @DPTR,A
+0100         L?0157:
+0100 7B00        R     MOV     R3,#MBYTE ?SC_47
+0102 7A00        R     MOV     R2,#HIGH ?SC_47
+0104 7900        R     MOV     R1,#LOW ?SC_47
+0106 22                RET     
+0107         L?0158:
+0107 FD                MOV     R5,A
+0108 E0                MOVX    A,@DPTR
+0109 C3                CLR     C
+010A 13                RRC     A
+010B F0                MOVX    @DPTR,A
+010C A3                INC     DPTR
+010D E0                MOVX    A,@DPTR
+010E 13                RRC     A
+010F F0                MOVX    @DPTR,A
+0110 7B00        R     MOV     R3,#MBYTE ?SC_59
+0112 7A00        R     MOV     R2,#HIGH ?SC_59
+0114 7900        R     MOV     R1,#LOW ?SC_59
+0116 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+011A EC                MOV     A,R4
+011B F0                MOVX    @DPTR,A
+011C A3                INC     DPTR
+011D ED                MOV     A,R5
+011E F0                MOVX    @DPTR,A
+011F 22                RET     
+0120         L?0160:
+0120         L?0161:
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 34  
+
+0120 AE07              MOV     R6,AR7
+0122         L?0162:
+0122 90000000    E     MOV     DPTR,#InputMain
+0126 E0                MOVX    A,@DPTR
+0127 FF                MOV     R7,A
+0128 22                RET     
+0129         L?0163:
+0129 90000000    R     MOV     DPTR,#MeasHLen
+012D         L?0164:
+012D E0                MOVX    A,@DPTR
+012E C3                CLR     C
+012F 13                RRC     A
+0130 FE                MOV     R6,A
+0131 A3                INC     DPTR
+0132 E0                MOVX    A,@DPTR
+0133 13                RRC     A
+0134 FF                MOV     R7,A
+0135 22                RET     
+0136         L?0166:
+0136         L?0167:
+0136 E0                MOVX    A,@DPTR
+0137 FE                MOV     R6,A
+0138 A3                INC     DPTR
+0139 E0                MOVX    A,@DPTR
+013A         L?0168:
+013A FB                MOV     R3,A
+013B AA06              MOV     R2,AR6
+013D E4                CLR     A
+013E F9                MOV     R1,A
+013F F8                MOV     R0,A
+0140 22                RET     
+0141         L?0169:
+0141 A3                INC     DPTR
+0142 A3                INC     DPTR
+0143 E0                MOVX    A,@DPTR
+0144 2406              ADD     A,#06H
+0146         L?0170:
+0146 F9                MOV     R1,A
+0147 E4                CLR     A
+0148 3A                ADDC    A,R2
+0149 FA                MOV     R2,A
+014A 010000      E     AJMP    ?C?CLDPTR
+014D         L?0171:
+014D 3400              ADDC    A,#00H
+014F FA                MOV     R2,A
+0150 E0                MOVX    A,@DPTR
+0151 FE                MOV     R6,A
+0152 A3                INC     DPTR
+0153 E0                MOVX    A,@DPTR
+0154 2402              ADD     A,#02H
+0156 FF                MOV     R7,A
+0157 E4                CLR     A
+0158 3E                ADDC    A,R6
+0159 90000000    E     MOV     DPTR,#?_InputSetCrop?BYTE+06H
+015D F0                MOVX    @DPTR,A
+015E A3                INC     DPTR
+015F EF                MOV     A,R7
+0160 F0                MOVX    @DPTR,A
+0161 22                RET     
+0162         L?0172:
+0162 E0                MOVX    A,@DPTR
+0163 FC                MOV     R4,A
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 35  
+
+0164 A3                INC     DPTR
+0165 E0                MOVX    A,@DPTR
+0166 FD                MOV     R5,A
+0167 A3                INC     DPTR
+0168 E0                MOVX    A,@DPTR
+0169 FF                MOV     R7,A
+016A A3                INC     DPTR
+016B E0                MOVX    A,@DPTR
+016C 90000000    E     MOV     DPTR,#?_PrintMeasAdjValue?BYTE+05H
+0170 CF                XCH     A,R7
+0171 F0                MOVX    @DPTR,A
+0172 A3                INC     DPTR
+0173 EF                MOV     A,R7
+0174 F0                MOVX    @DPTR,A
+0175 22                RET     
+0176         L?0173:
+0176         L?0174:
+0176 90000000    R     MOV     DPTR,#dTemp
+017A 110000      E     ACALL   ?C?LSTXDATA
+017D 90000000    R     MOV     DPTR,#dTemp
+0181 22                RET     
+0182         L?0175:
+0182 E0                MOVX    A,@DPTR
+0183 FF                MOV     R7,A
+0184 A3                INC     DPTR
+0185 E0                MOVX    A,@DPTR
+0186         L?0176:
+0186 90000000    E     MOV     DPTR,#?_Printf?BYTE+07H
+018A CF                XCH     A,R7
+018B F0                MOVX    @DPTR,A
+018C A3                INC     DPTR
+018D EF                MOV     A,R7
+018E F0                MOVX    @DPTR,A
+018F 22                RET     
+0190         L?0177:
+0190 E0                MOVX    A,@DPTR
+0191 54F8              ANL     A,#0F8H
+0193 4F                ORL     A,R7
+0194         L?0178:
+0194 FF                MOV     R7,A
+0195 759300      E     MOV     DPX,#?C?XDATASEG
+0198 E500        E     MOV     A,regTW88+01H
+019A 22                RET     
+019B         L?0180:
+019B FF                MOV     R7,A
+019C E5F0              MOV     A,B
+019E         L?0181:
+019E C3                CLR     C
+019F 13                RRC     A
+01A0 FE                MOV     R6,A
+01A1 EF                MOV     A,R7
+01A2 13                RRC     A
+01A3 FF                MOV     R7,A
+01A4 22                RET     
+01A5         L?0182:
+01A5 110000      E     ACALL   ?C?ULDIV
+01A8 90000000    R     MOV     DPTR,#dTemp
+01AC 110000      E     ACALL   ?C?LSTXDATA
+01AF 90000000    R     MOV     DPTR,#mode
+01B3 E0                MOVX    A,@DPTR
+01B4 22                RET     
+01B5         L?0183:
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 36  
+
+01B5         L?0184:
+01B5 90000000    R     MOV     DPTR,#wTemp0
+01B9 EE                MOV     A,R6
+01BA F0                MOVX    @DPTR,A
+01BB A3                INC     DPTR
+01BC EF                MOV     A,R7
+01BD F0                MOVX    @DPTR,A
+01BE 22                RET     
+01BF         L?0185:
+01BF         L?0186:
+01BF 90000000    R     MOV     DPTR,#hActive
+01C3 E0                MOVX    A,@DPTR
+01C4 FE                MOV     R6,A
+01C5 A3                INC     DPTR
+01C6 E0                MOVX    A,@DPTR
+01C7 FF                MOV     R7,A
+01C8 22                RET     
+01C9         L?0187:
+01C9 E0                MOVX    A,@DPTR
+01CA FC                MOV     R4,A
+01CB A3                INC     DPTR
+01CC E0                MOVX    A,@DPTR
+01CD FD                MOV     R5,A
+01CE         L?0188:
+01CE A3                INC     DPTR
+01CF E0                MOVX    A,@DPTR
+01D0 FA                MOV     R2,A
+01D1 A3                INC     DPTR
+01D2 E0                MOVX    A,@DPTR
+01D3 FB                MOV     R3,A
+01D4 22                RET     
+01D5         L?0190:
+01D5 C3                CLR     C
+01D6 90000000    R     MOV     DPTR,#hStart+01H
+01DA E0                MOVX    A,@DPTR
+01DB 9F                SUBB    A,R7
+01DC FF                MOV     R7,A
+01DD 90000000    R     MOV     DPTR,#hStart
+01E1 E0                MOVX    A,@DPTR
+01E2 22                RET     
+01E3         L?0191:
+01E3 90000000    R     MOV     DPTR,#p+01H
+01E7 110000      E     ACALL   ?C?IILDX
+01EA 90000000    R     MOV     DPTR,#i
+01EE E0                MOVX    A,@DPTR
+01EF 22                RET     
+01F0         L?0192:
+01F0         L?0193:
+01F0 90000000    R     MOV     DPTR,#ret
+01F4 EF                MOV     A,R7
+01F5 F0                MOVX    @DPTR,A
+01F6 22                RET     
+01F7         L?0194:
+01F7 90000000    R     MOV     DPTR,#hActive
+01FB F0                MOVX    @DPTR,A
+01FC A3                INC     DPTR
+01FD EF                MOV     A,R7
+01FE F0                MOVX    @DPTR,A
+01FF 22                RET     
+0200         L?0197:
+0200         L?0198:
+0200 759300      E     MOV     DPX,#?C?XDATASEG
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 37  
+
+0203 E500        E     MOV     A,regTW88+01H
+0205 2451              ADD     A,#051H
+0207 22                RET     
+0208         L?0199:
+0208 F583              MOV     DPH,A
+020A 759300      E     MOV     DPX,#?C?CODESEG
+020D E4                CLR     A
+020E 93                MOVC    A,@A+DPTR
+020F FF                MOV     R7,A
+0210 7401              MOV     A,#01H
+0212 93                MOVC    A,@A+DPTR
+0213 22                RET     
+0214         L?0200:
+0214 F9                MOV     R1,A
+0215 E0                MOVX    A,@DPTR
+0216 FD                MOV     R5,A
+0217 A3                INC     DPTR
+0218 E0                MOVX    A,@DPTR
+0219 90000000    E     MOV     DPTR,#?_OverWriteScalerWithTable?BYTE+04H
+021D F0                MOVX    @DPTR,A
+021E 22                RET     
+021F         L?0201:
+021F 90000000    R     MOV     DPTR,#HActive
+0223 E0                MOVX    A,@DPTR
+0224 FE                MOV     R6,A
+0225 A3                INC     DPTR
+0226 E0                MOVX    A,@DPTR
+0227 FF                MOV     R7,A
+0228 22                RET     
+0229         L?0202:
+0229 E0                MOVX    A,@DPTR
+022A F8                MOV     R0,A
+022B A3                INC     DPTR
+022C E0                MOVX    A,@DPTR
+022D 90000000    E     MOV     DPTR,#?_FindScalerTable?BYTE+06H
+0231 F0                MOVX    @DPTR,A
+0232 22                RET     
+             ; FUNCTION Com0078 (END)
+
+             ; FUNCTION _DtvSetSyncPolarity (BEGIN)
+                                           ; SOURCE LINE # 112
+;---- Variable 'vPol' assigned to Register 'R5' ----
+;---- Variable 'hPol' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 113
+                                           ; SOURCE LINE # 116
+0000 110000      R     ACALL   L?0124
+0003 E0                MOVX    A,@DPTR
+0004 54F9              ANL     A,#0F9H
+0006 FE                MOV     R6,A
+;---- Variable 'value' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 117
+0007 EF                MOV     A,R7
+0008 6004              JZ      ?C0001
+000A EE                MOV     A,R6
+000B 4404              ORL     A,#04H
+000D FE                MOV     R6,A
+000E         ?C0001:
+                                           ; SOURCE LINE # 118
+000E ED                MOV     A,R5
+000F 6004              JZ      ?C0002
+0011 EE                MOV     A,R6
+0012 4402              ORL     A,#02H
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 38  
+
+0014 FE                MOV     R6,A
+0015         ?C0002:
+                                           ; SOURCE LINE # 119
+0015 AF06              MOV     R7,AR6
+0017 110000      R     ACALL   L?0124
+001A EF                MOV     A,R7
+001B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 120
+001C 22                RET     
+             ; FUNCTION _DtvSetSyncPolarity (END)
+
+             ; FUNCTION _DtvSetReverseBusOrder (BEGIN)
+                                           ; SOURCE LINE # 131
+;---- Variable 'fReverse' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 132
+                                           ; SOURCE LINE # 135
+0000 110000      R     ACALL   L?0197
+0003 110000      R     ACALL   L?0126
+0006 E0                MOVX    A,@DPTR
+0007 54F7              ANL     A,#0F7H
+0009 FE                MOV     R6,A
+;---- Variable 'value' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 136
+000A EF                MOV     A,R7
+000B 6004              JZ      ?C0004
+000D EE                MOV     A,R6
+000E 4408              ORL     A,#08H
+0010 FE                MOV     R6,A
+0011         ?C0004:
+                                           ; SOURCE LINE # 138
+0011 AF06              MOV     R7,AR6
+0013 110000      R     ACALL   L?0197
+0016 110000      R     ACALL   L?0126
+0019 EF                MOV     A,R7
+001A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 139
+001B 22                RET     
+             ; FUNCTION _DtvSetReverseBusOrder (END)
+
+             ; FUNCTION _DtvSetRouteFormat (BEGIN)
+                                           ; SOURCE LINE # 304
+;---- Variable 'format' assigned to Register 'R5' ----
+;---- Variable 'route' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 305
+                                           ; SOURCE LINE # 306
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 2452              ADD     A,#052H
+0007 110000      R     ACALL   L?0126
+000A 110000      R     ACALL   L?0177
+000D 2452              ADD     A,#052H
+000F 110000      R     ACALL   L?0126
+0012 EF                MOV     A,R7
+0013 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 307
+0014 759300      E     MOV     DPX,#?C?XDATASEG
+0017 E500        E     MOV     A,regTW88+01H
+0019 2453              ADD     A,#053H
+001B 110000      R     ACALL   L?0126
+001E E0                MOVX    A,@DPTR
+001F 54F0              ANL     A,#0F0H
+0021 4D                ORL     A,R5
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 39  
+
+0022 110000      R     ACALL   L?0178
+0025 2453              ADD     A,#053H
+0027 110000      R     ACALL   L?0126
+002A EF                MOV     A,R7
+002B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 308
+002C 22                RET     
+             ; FUNCTION _DtvSetRouteFormat (END)
+
+             ; FUNCTION _DtvSetFieldDetectionRegion (BEGIN)
+                                           ; SOURCE LINE # 333
+;---- Variable 'r054' assigned to Register 'R5' ----
+;---- Variable 'fOn' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 334
+                                           ; SOURCE LINE # 335
+0000 EF                MOV     A,R7
+0001 6016              JZ      ?C0007
+                                           ; SOURCE LINE # 336
+0003 110000      R     ACALL   L?0125
+0006 E0                MOVX    A,@DPTR
+0007 44A0              ORL     A,#0A0H
+0009 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 337
+000A AF05              MOV     R7,AR5
+000C 759300      E     MOV     DPX,#?C?XDATASEG
+000F E500        E     MOV     A,regTW88+01H
+0011 2454              ADD     A,#054H
+0013 110000      R     ACALL   L?0126
+0016 EF                MOV     A,R7
+0017 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 338
+0018 22                RET     
+0019         ?C0007:
+                                           ; SOURCE LINE # 339
+                                           ; SOURCE LINE # 340
+0019 110000      R     ACALL   L?0125
+001C E0                MOVX    A,@DPTR
+001D 547F              ANL     A,#07FH
+001F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 341
+                                           ; SOURCE LINE # 342
+0020         ?C0009:
+0020 22                RET     
+             ; FUNCTION _DtvSetFieldDetectionRegion (END)
+
+             ; FUNCTION _DtvFindFieldWindow (BEGIN)
+                                           ; SOURCE LINE # 353
+;---- Variable 'base' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 354
+                                           ; SOURCE LINE # 360
+0000 90000000    R     MOV     DPTR,#p
+0004 7400        R     MOV     A,#MBYTE DtvFieldWin
+0006 F0                MOVX    @DPTR,A
+0007 A3                INC     DPTR
+0008 7400        R     MOV     A,#HIGH DtvFieldWin+03CH
+000A F0                MOVX    @DPTR,A
+000B A3                INC     DPTR
+000C 7400        R     MOV     A,#LOW DtvFieldWin+03CH
+000E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 361
+000F 90000000    R     MOV     DPTR,#i
+0013 740F              MOV     A,#0FH
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 40  
+
+0015 F0                MOVX    @DPTR,A
+0016         ?C0010:
+                                           ; SOURCE LINE # 362
+                                           ; SOURCE LINE # 363
+0016 90000000    R     MOV     DPTR,#p
+001A 110000      R     ACALL   L?0131
+001D F9                MOV     R1,A
+001E 110000      E     ACALL   ?C?ILDPTR
+0021 C3                CLR     C
+0022 9F                SUBB    A,R7
+0023 E5F0              MOV     A,B
+0025 9E                SUBB    A,R6
+0026 400D              JC      ?C0011
+                                           ; SOURCE LINE # 364
+0028         ?C0012:
+                                           ; SOURCE LINE # 365
+0028 74FF              MOV     A,#0FFH
+002A 75F0FC            MOV     B,#0FCH
+                                           ; SOURCE LINE # 366
+002D 110000      R     ACALL   L?0191
+0030 14                DEC     A
+0031 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 367
+0032 E0                MOVX    A,@DPTR
+0033 70E1              JNZ     ?C0010
+0035         ?C0011:
+                                           ; SOURCE LINE # 368
+0035 90000000    R     MOV     DPTR,#i
+0039 E0                MOVX    A,@DPTR
+003A A3                INC     DPTR
+003B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 370
+003C 90000000    R     MOV     DPTR,#p
+0040 7400        R     MOV     A,#MBYTE DtvFieldWin
+0042 F0                MOVX    @DPTR,A
+0043 A3                INC     DPTR
+0044 7400        R     MOV     A,#HIGH DtvFieldWin
+0046 F0                MOVX    @DPTR,A
+0047 A3                INC     DPTR
+0048 7400        R     MOV     A,#LOW DtvFieldWin
+004A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 371
+004B E4                CLR     A
+004C 90000000    R     MOV     DPTR,#i
+0050 F0                MOVX    @DPTR,A
+0051         ?C0013:
+                                           ; SOURCE LINE # 372
+0051 90000000    R     MOV     DPTR,#p
+0055 110000      R     ACALL   L?0131
+0058 110000      R     ACALL   L?0135
+005B D3                SETB    C
+005C 9F                SUBB    A,R7
+005D E5F0              MOV     A,B
+005F 9E                SUBB    A,R6
+0060 500D              JNC     ?C0014
+                                           ; SOURCE LINE # 373
+0062         ?C0016:
+                                           ; SOURCE LINE # 374
+0062 E4                CLR     A
+0063 75F004            MOV     B,#04H
+                                           ; SOURCE LINE # 375
+0066 110000      R     ACALL   L?0191
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 41  
+
+0069 04                INC     A
+006A F0                MOVX    @DPTR,A
+006B E0                MOVX    A,@DPTR
+006C B410E2            CJNE    A,#010H,?C0013
+006F         ?C0014:
+                                           ; SOURCE LINE # 376
+006F 90000000    R     MOV     DPTR,#i
+0073 E0                MOVX    A,@DPTR
+0074 90000000    R     MOV     DPTR,#end
+0078 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 378
+0079 7B00        R     MOV     R3,#MBYTE ?SC_0
+007B 7A00        R     MOV     R2,#HIGH ?SC_0
+007D 7900        R     MOV     R1,#LOW ?SC_0
+007F EE                MOV     A,R6
+0080 110000      R     ACALL   L?0143
+0083 EF                MOV     A,R7
+0084 F0                MOVX    @DPTR,A
+0085 90000000    R     MOV     DPTR,#start
+0089 E0                MOVX    A,@DPTR
+008A 25E0              ADD     A,ACC
+008C 25E0              ADD     A,ACC
+008E 2400        R     ADD     A,#LOW DtvFieldWin
+0090 F582              MOV     DPL,A
+0092 E4                CLR     A
+0093 3400        R     ADDC    A,#HIGH DtvFieldWin
+0095 110000      R     ACALL   L?0199
+0098 110000      R     ACALL   L?0134
+009B 90000000    R     MOV     DPTR,#end
+009F E0                MOVX    A,@DPTR
+00A0 25E0              ADD     A,ACC
+00A2 25E0              ADD     A,ACC
+00A4 2400        R     ADD     A,#LOW DtvFieldWin+02H
+00A6 F582              MOV     DPL,A
+00A8 E4                CLR     A
+00A9 3400        R     ADDC    A,#HIGH DtvFieldWin+02H
+00AB 110000      R     ACALL   L?0199
+00AE 110000      R     ACALL   L?0176
+00B1 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 379
+00B4 90000000    R     MOV     DPTR,#end
+00B8 E0                MOVX    A,@DPTR
+00B9 C4                SWAP    A
+00BA 54F0              ANL     A,#0F0H
+00BC FF                MOV     R7,A
+00BD 90000000    R     MOV     DPTR,#start
+00C1 E0                MOVX    A,@DPTR
+00C2 4F                ORL     A,R7
+00C3 FF                MOV     R7,A
+                                           ; SOURCE LINE # 380
+00C4         ?C0017:
+00C4 22                RET     
+             ; FUNCTION _DtvFindFieldWindow (END)
+
+             ; FUNCTION _DtvSetDelay (BEGIN)
+                                           ; SOURCE LINE # 394
+;---- Variable 'vSync' assigned to Register 'R5' ----
+;---- Variable 'clock' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 395
+                                           ; SOURCE LINE # 396
+0000 110000      R     ACALL   L?0198
+0003 110000      R     ACALL   L?0126
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 42  
+
+0006 110000      R     ACALL   L?0177
+0009 2451              ADD     A,#051H
+000B 110000      R     ACALL   L?0126
+000E EF                MOV     A,R7
+000F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 397
+0010 AF05              MOV     R7,AR5
+0012 759300      E     MOV     DPX,#?C?XDATASEG
+0015 E500        E     MOV     A,regTW88+01H
+0017 2456              ADD     A,#056H
+0019 110000      R     ACALL   L?0126
+001C EF                MOV     A,R7
+001D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 398
+001E 22                RET     
+             ; FUNCTION _DtvSetDelay (END)
+
+             ; FUNCTION _HDMISetOutput (BEGIN)
+                                           ; SOURCE LINE # 626
+0000 90000000    R     MOV     DPTR,#HActive
+0004 EE                MOV     A,R6
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 EF                MOV     A,R7
+0008 F0                MOVX    @DPTR,A
+0009 A3                INC     DPTR
+000A EC                MOV     A,R4
+000B F0                MOVX    @DPTR,A
+000C A3                INC     DPTR
+000D ED                MOV     A,R5
+000E F0                MOVX    @DPTR,A
+000F A3                INC     DPTR
+0010 EB                MOV     A,R3
+0011 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 627
+                                           ; SOURCE LINE # 632
+0012 90000000    R     MOV     DPTR,#VActive
+0016 E0                MOVX    A,@DPTR
+0017 FE                MOV     R6,A
+0018 A3                INC     DPTR
+0019 E0                MOVX    A,@DPTR
+001A FF                MOV     R7,A
+001B 110000      E     ACALL   _ScalerSetVScale
+                                           ; SOURCE LINE # 633
+001E 110000      R     ACALL   L?0201
+0021 110000      E     ACALL   _ScalerSetHScale
+                                           ; SOURCE LINE # 636
+0024 110000      E     ACALL   ScalerCalcHDE
+0027 90000000    R     MOV     DPTR,#hDE
+002B EF                MOV     A,R7
+002C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 644
+002D 110000      E     ACALL   ScalerReadVScaleReg
+0030 90000000    R     MOV     DPTR,#VScale
+0034 EE                MOV     A,R6
+0035 F0                MOVX    @DPTR,A
+0036 A3                INC     DPTR
+0037 EF                MOV     A,R7
+0038 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 650
+0039 90000000    R     MOV     DPTR,#vDE
+003D E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 43  
+
+003E FF                MOV     R7,A
+003F E4                CLR     A
+0040 FC                MOV     R4,A
+0041 FD                MOV     R5,A
+0042 FE                MOV     R6,A
+                                           ; SOURCE LINE # 651
+0043 110000      R     ACALL   L?0153
+0046 110000      R     ACALL   L?0123
+0049 FF                MOV     R7,A
+004A 7801              MOV     R0,#01H
+004C 110000      E     ACALL   ?C?LSHL
+004F 90000000    R     MOV     DPTR,#dTemp
+0053 110000      E     ACALL   ?C?LSTXDATA
+                                           ; SOURCE LINE # 652
+0056 90000000    R     MOV     DPTR,#VActive
+005A E0                MOVX    A,@DPTR
+005B B40115            CJNE    A,#01H,?C0019
+005E A3                INC     DPTR
+005F E0                MOVX    A,@DPTR
+0060 B42010            CJNE    A,#020H,?C0019
+                                           ; SOURCE LINE # 653
+0063 90000000    R     MOV     DPTR,#dTemp
+0067 110000      R     ACALL   L?0123
+006A 2401              ADD     A,#01H
+006C 90000000    R     MOV     DPTR,#dTemp
+0070 110000      R     ACALL   L?0152
+0073         ?C0019:
+                                           ; SOURCE LINE # 654
+0073 90000000    R     MOV     DPTR,#dTemp
+0077 110000      R     ACALL   L?0123
+007A FF                MOV     R7,A
+007B E4                CLR     A
+007C FB                MOV     R3,A
+007D 7A20              MOV     R2,#020H
+007F F9                MOV     R1,A
+0080 F8                MOV     R0,A
+0081 110000      E     ACALL   ?C?LMUL
+                                           ; SOURCE LINE # 655
+0084 110000      R     ACALL   L?0153
+0087 110000      R     ACALL   L?0123
+008A FF                MOV     R7,A
+008B C006              PUSH    AR6
+008D C007              PUSH    AR7
+008F 90000000    R     MOV     DPTR,#VScale
+0093 110000      R     ACALL   L?0166
+0096 D007              POP     AR7
+0098 D006              POP     AR6
+009A 110000      E     ACALL   ?C?ULDIV
+                                           ; SOURCE LINE # 656
+009D 110000      R     ACALL   L?0154
+00A0 110000      R     ACALL   L?0123
+00A3 FF                MOV     R7,A
+00A4 7801              MOV     R0,#01H
+00A6 110000      E     ACALL   ?C?ULSHR
+                                           ; SOURCE LINE # 657
+00A9 110000      R     ACALL   L?0154
+00AC A3                INC     DPTR
+00AD A3                INC     DPTR
+00AE A3                INC     DPTR
+00AF E0                MOVX    A,@DPTR
+00B0 90000000    R     MOV     DPTR,#vDE
+00B4 F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 44  
+
+                                           ; SOURCE LINE # 665
+00B5 A3                INC     DPTR
+00B6 E0                MOVX    A,@DPTR
+00B7 FF                MOV     R7,A
+00B8 7E00              MOV     R6,#00H
+00BA 110000      E     ACALL   _ScalerWriteHDEReg
+                                           ; SOURCE LINE # 666
+00BD 90000000    R     MOV     DPTR,#vDE
+00C1 E0                MOVX    A,@DPTR
+00C2 FF                MOV     R7,A
+00C3 7E00              MOV     R6,#00H
+00C5 110000      E     ACALL   _ScalerWriteVDEReg
+                                           ; SOURCE LINE # 669
+00C8 110000      R     ACALL   L?0201
+00CB D3                SETB    C
+00CC 9420              SUBB    A,#020H
+00CE EE                MOV     A,R6
+00CF 9403              SUBB    A,#03H
+00D1 5009              JNC     ?C0020
+                                           ; SOURCE LINE # 670
+00D3 EF                MOV     A,R7
+00D4 2401              ADD     A,#01H
+00D6 FF                MOV     R7,A
+00D7 E4                CLR     A
+00D8 3E                ADDC    A,R6
+00D9 FE                MOV     R6,A
+00DA 8004              SJMP    ?C0115
+00DC         ?C0020:
+                                           ; SOURCE LINE # 672
+00DC 7F21              MOV     R7,#021H
+00DE 7E03              MOV     R6,#03H
+00E0         ?C0115:
+00E0 110000      E     ACALL   _ScalerSetLineBufferSize
+                                           ; SOURCE LINE # 673
+00E3         ?C0022:
+00E3 22                RET     
+             ; FUNCTION _HDMISetOutput (END)
+
+             ; FUNCTION CheckHdmiChipRegister (BEGIN)
+                                           ; SOURCE LINE # 700
+                                           ; SOURCE LINE # 701
+                                           ; SOURCE LINE # 729
+0000 110000      E     ACALL   HdmiCheckConnection
+0003 110000      R     ACALL   L?0192
+                                           ; SOURCE LINE # 730
+0006 6003              JZ      ?C0023
+                                           ; SOURCE LINE # 731
+0008 E0                MOVX    A,@DPTR
+0009 FF                MOV     R7,A
+000A 22                RET     
+000B         ?C0023:
+                                           ; SOURCE LINE # 732
+000B 110000      E     ACALL   HdmiCheckMode
+000E 110000      R     ACALL   L?0192
+                                           ; SOURCE LINE # 737
+0011 6008              JZ      ?C0025
+                                           ; SOURCE LINE # 738
+0013 110000      E     ACALL   CheckAviInfoFrame
+0016 110000      R     ACALL   L?0193
+                                           ; SOURCE LINE # 739
+0019 8005              SJMP    ?C0026
+001B         ?C0025:
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 45  
+
+                                           ; SOURCE LINE # 740
+                                           ; SOURCE LINE # 743
+001B E4                CLR     A
+001C FF                MOV     R7,A
+001D 110000      E     ACALL   _HdmiSetColorSpace
+                                           ; SOURCE LINE # 744
+0020         ?C0026:
+                                           ; SOURCE LINE # 746
+0020 110000      E     ACALL   HdmiDebugTimingValue
+                                           ; SOURCE LINE # 748
+0023 110000      E     ACALL   Meas_StartMeasure
+                                           ; SOURCE LINE # 749
+0026 7F32              MOV     R7,#032H
+0028 110000      E     ACALL   _Meas_IsMeasureDone
+002B 110000      R     ACALL   L?0193
+                                           ; SOURCE LINE # 750
+002E 600C              JZ      ?C0027
+                                           ; SOURCE LINE # 753
+0030 7B00        R     MOV     R3,#MBYTE ?SC_30
+0032 7A00        R     MOV     R2,#HIGH ?SC_30
+0034 7900        R     MOV     R1,#LOW ?SC_30
+0036 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 754
+0039 7F01              MOV     R7,#01H
+003B 22                RET     
+                                           ; SOURCE LINE # 755
+003C         ?C0027:
+                                           ; SOURCE LINE # 792
+003C 110000      E     ACALL   MeasGetHSyncRiseToFallWidth
+003F 90000000    R     MOV     DPTR,#hSync
+0043 EE                MOV     A,R6
+0044 F0                MOVX    @DPTR,A
+0045 A3                INC     DPTR
+0046 EF                MOV     A,R7
+0047 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 793
+0048 110000      E     ACALL   MeasGetVSyncRiseToFallWidth
+004B 90000000    R     MOV     DPTR,#vSync
+004F EE                MOV     A,R6
+0050 F0                MOVX    @DPTR,A
+0051 A3                INC     DPTR
+0052 EF                MOV     A,R7
+0053 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 797
+0054 7B00        R     MOV     R3,#MBYTE hCropStart
+0056 7A00        R     MOV     R2,#HIGH hCropStart
+0058 7900        R     MOV     R1,#LOW hCropStart
+005A 110000      E     ACALL   _MeasGetHActive
+005D 90000000    R     MOV     DPTR,#hActive
+0061 EE                MOV     A,R6
+0062 F0                MOVX    @DPTR,A
+0063 A3                INC     DPTR
+0064 EF                MOV     A,R7
+0065 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 798
+0066 7B00        R     MOV     R3,#MBYTE vCropStart
+0068 7A00        R     MOV     R2,#HIGH vCropStart
+006A 7900        R     MOV     R1,#LOW vCropStart
+006C 110000      E     ACALL   _MeasGetVActive
+006F 90000000    R     MOV     DPTR,#vActive
+0073 EE                MOV     A,R6
+0074 F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 46  
+
+0075 A3                INC     DPTR
+0076 EF                MOV     A,R7
+0077 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 799
+0078 110000      E     ACALL   MeasGetVFreq
+007B 90000000    R     MOV     DPTR,#vFreq
+007F EF                MOV     A,R7
+                                           ; SOURCE LINE # 800
+0080 110000      R     ACALL   L?0156
+0083 110000      E     ACALL   _PrintMeasValue
+                                           ; SOURCE LINE # 801
+0086 90000000    R     MOV     DPTR,#vFreq
+008A E0                MOVX    A,@DPTR
+008B B43B03            CJNE    A,#03BH,?C0028
+                                           ; SOURCE LINE # 802
+008E 743C              MOV     A,#03CH
+0090 F0                MOVX    @DPTR,A
+0091         ?C0028:
+                                           ; SOURCE LINE # 805
+0091 90000000    R     MOV     DPTR,#hActive
+0095 110000      R     ACALL   L?0164
+0098 D3                SETB    C
+0099 90000000    R     MOV     DPTR,#hSync+01H
+009D E0                MOVX    A,@DPTR
+009E 9F                SUBB    A,R7
+009F 90000000    R     MOV     DPTR,#hSync
+00A3 E0                MOVX    A,@DPTR
+00A4 9E                SUBB    A,R6
+00A5 4008              JC      ?C0029
+00A7 E4                CLR     A
+00A8 90000000    R     MOV     DPTR,#hPol
+00AC F0                MOVX    @DPTR,A
+00AD 8007              SJMP    ?C0030
+00AF         ?C0029:
+                                           ; SOURCE LINE # 806
+00AF 90000000    R     MOV     DPTR,#hPol
+00B3 7401              MOV     A,#01H
+00B5 F0                MOVX    @DPTR,A
+00B6         ?C0030:
+                                           ; SOURCE LINE # 807
+00B6 90000000    R     MOV     DPTR,#vActive
+00BA 110000      R     ACALL   L?0164
+00BD D3                SETB    C
+00BE 90000000    R     MOV     DPTR,#vSync+01H
+00C2 E0                MOVX    A,@DPTR
+00C3 9F                SUBB    A,R7
+00C4 90000000    R     MOV     DPTR,#vSync
+00C8 E0                MOVX    A,@DPTR
+00C9 9E                SUBB    A,R6
+00CA 4008              JC      ?C0031
+00CC E4                CLR     A
+00CD 90000000    R     MOV     DPTR,#vPol
+00D1 F0                MOVX    @DPTR,A
+00D2 8007              SJMP    ?C0032
+00D4         ?C0031:
+                                           ; SOURCE LINE # 808
+00D4 90000000    R     MOV     DPTR,#vPol
+00D8 7401              MOV     A,#01H
+00DA F0                MOVX    @DPTR,A
+00DB         ?C0032:
+                                           ; SOURCE LINE # 819
+00DB 110000      R     ACALL   L?0144
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 47  
+
+00DE A3                INC     DPTR
+00DF E0                MOVX    A,@DPTR
+00E0 FB                MOV     R3,A
+00E1 110000      E     ACALL   _Find_CEA861_VideoTable
+00E4 90000000    R     MOV     DPTR,#pCEA861
+00E8 110000      R     ACALL   L?0148
+                                           ; SOURCE LINE # 828
+00EB 4A                ORL     A,R2
+00EC 4B                ORL     A,R3
+00ED 7003              JNZ     $ + 5H
+00EF 010000      R     AJMP    ?C0033
+                                           ; SOURCE LINE # 829
+00F2 90000000    R     MOV     DPTR,#pCEA861
+00F6 110000      R     ACALL   L?0131
+00F9 F9                MOV     R1,A
+00FA 110000      E     ACALL   _PrintCEAVideoTimeTable
+                                           ; SOURCE LINE # 831
+00FD 90000000    R     MOV     DPTR,#pCEA861
+0101 110000      R     ACALL   L?0131
+0104 2401              ADD     A,#01H
+0106 110000      R     ACALL   L?0137
+0109 90000000    R     MOV     DPTR,#hActive
+                                           ; SOURCE LINE # 832
+010D 110000      R     ACALL   L?0150
+0110 240D              ADD     A,#0DH
+0112 110000      R     ACALL   L?0137
+0115 FF                MOV     R7,A
+0116 90000000    R     MOV     DPTR,#hCropStart
+011A E5F0              MOV     A,B
+011C F0                MOVX    @DPTR,A
+011D A3                INC     DPTR
+011E EF                MOV     A,R7
+011F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 833
+0120 90000000    R     MOV     DPTR,#hPol
+0124 E0                MOVX    A,@DPTR
+0125 6019              JZ      ?C0034
+                                           ; SOURCE LINE # 834
+0127 110000      R     ACALL   L?0151
+012A 240B              ADD     A,#0BH
+012C 110000      R     ACALL   L?0137
+012F FF                MOV     R7,A
+0130 AEF0              MOV     R6,B
+0132 90000000    R     MOV     DPTR,#hCropStart+01H
+0136 E0                MOVX    A,@DPTR
+0137 2F                ADD     A,R7
+0138 F0                MOVX    @DPTR,A
+0139 90000000    R     MOV     DPTR,#hCropStart
+013D E0                MOVX    A,@DPTR
+013E 3E                ADDC    A,R6
+013F F0                MOVX    @DPTR,A
+0140         ?C0034:
+                                           ; SOURCE LINE # 835
+0140 90000000    R     MOV     DPTR,#pCEA861
+0144 110000      R     ACALL   L?0131
+0147 2403              ADD     A,#03H
+0149 110000      R     ACALL   L?0137
+014C 90000000    R     MOV     DPTR,#vActive
+                                           ; SOURCE LINE # 836
+0150 110000      R     ACALL   L?0150
+0153 2413              ADD     A,#013H
+0155 110000      R     ACALL   L?0170
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 48  
+
+0158 FF                MOV     R7,A
+0159 90000000    R     MOV     DPTR,#vCropStart
+015D E4                CLR     A
+015E F0                MOVX    @DPTR,A
+015F A3                INC     DPTR
+0160 EF                MOV     A,R7
+0161 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 837
+0162 90000000    R     MOV     DPTR,#vPol
+0166 E0                MOVX    A,@DPTR
+0167 6018              JZ      ?C0035
+                                           ; SOURCE LINE # 838
+0169 110000      R     ACALL   L?0151
+016C 2412              ADD     A,#012H
+016E 110000      R     ACALL   L?0170
+0171 FF                MOV     R7,A
+0172 90000000    R     MOV     DPTR,#vCropStart+01H
+0176 E0                MOVX    A,@DPTR
+0177 2F                ADD     A,R7
+0178 F0                MOVX    @DPTR,A
+0179 90000000    R     MOV     DPTR,#vCropStart
+017D E0                MOVX    A,@DPTR
+017E 3400              ADDC    A,#00H
+0180 F0                MOVX    @DPTR,A
+0181         ?C0035:
+                                           ; SOURCE LINE # 839
+0181 7B00        R     MOV     R3,#MBYTE ?SC_51
+0183 7A00        R     MOV     R2,#HIGH ?SC_51
+0185 7900        R     MOV     R1,#LOW ?SC_51
+                                           ; SOURCE LINE # 840
+0187 801F              SJMP    ?C0116
+0189         ?C0033:
+                                           ; SOURCE LINE # 841
+                                           ; SOURCE LINE # 845
+0189 90000000    R     MOV     DPTR,#hCropStart+01H
+018D E0                MOVX    A,@DPTR
+018E 2404              ADD     A,#04H
+0190 F0                MOVX    @DPTR,A
+0191 90000000    R     MOV     DPTR,#hCropStart
+0195 E0                MOVX    A,@DPTR
+0196 3400              ADDC    A,#00H
+0198 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 846
+0199 90000000    R     MOV     DPTR,#vCropStart+01H
+019D E0                MOVX    A,@DPTR
+019E 24FF              ADD     A,#0FFH
+01A0 F0                MOVX    @DPTR,A
+01A1 90000000    R     MOV     DPTR,#vCropStart
+                                           ; SOURCE LINE # 847
+01A5 110000      R     ACALL   L?0155
+01A8         ?C0116:
+01A8 90000000    R     MOV     DPTR,#hCropStart
+01AC 110000      R     ACALL   L?0172
+01AF 110000      E     ACALL   _PrintMeasAdjValue
+                                           ; SOURCE LINE # 848
+01B2         ?C0036:
+                                           ; SOURCE LINE # 851
+01B2 90000000    R     MOV     DPTR,#hActive
+01B6 E0                MOVX    A,@DPTR
+01B7 FE                MOV     R6,A
+01B8 A3                INC     DPTR
+01B9 E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 49  
+
+01BA FF                MOV     R7,A
+01BB 64A0              XRL     A,#0A0H
+01BD 7003              JNZ     ?C0109
+01BF EE                MOV     A,R6
+01C0 6405              XRL     A,#05H
+01C2         ?C0109:
+01C2 702D              JNZ     ?C0037
+                                           ; SOURCE LINE # 852
+01C4 110000      R     ACALL   L?0146
+01C7 64F0              XRL     A,#0F0H
+01C9 4C                ORL     A,R4
+01CA 6006              JZ      ?C0039
+01CC BC0122            CJNE    R4,#01H,?C0037
+01CF BD201F            CJNE    R5,#020H,?C0037
+01D2         ?C0039:
+                                           ; SOURCE LINE # 853
+01D2 EE                MOV     A,R6
+01D3 110000      R     ACALL   L?0181
+01D6 90000000    R     MOV     DPTR,#hActive
+01DA EE                MOV     A,R6
+01DB F0                MOVX    @DPTR,A
+01DC FC                MOV     R4,A
+01DD A3                INC     DPTR
+01DE EF                MOV     A,R7
+01DF F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 854
+01E0 90000000    R     MOV     DPTR,#hCropStart
+                                           ; SOURCE LINE # 855
+01E4 110000      R     ACALL   L?0158
+01E7 90000000    R     MOV     DPTR,#hCropStart
+01EB 110000      R     ACALL   L?0132
+01EE 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 856
+                                           ; SOURCE LINE # 857
+01F1         ?C0037:
+                                           ; SOURCE LINE # 863
+01F1 E4                CLR     A
+01F2 FD                MOV     R5,A
+01F3 FF                MOV     R7,A
+01F4 110000      R     ACALL   _DtvSetSyncPolarity
+                                           ; SOURCE LINE # 866
+01F7 90000000    R     MOV     DPTR,#pCEA861
+01FB 110000      R     ACALL   L?0131
+01FE F9                MOV     R1,A
+01FF EA                MOV     A,R2
+0200 49                ORL     A,R1
+0201 4B                ORL     A,R3
+0202 602D              JZ      ?C0040
+                                           ; SOURCE LINE # 867
+0204 90000000    R     MOV     DPTR,#pCEA861
+0208 110000      R     ACALL   L?0169
+020B 30E023            JNB     ACC.0,?C0040
+                                           ; SOURCE LINE # 868
+020E 110000      R     ACALL   L?0151
+0211 2407              ADD     A,#07H
+0213 110000      R     ACALL   L?0137
+0216 110000      R     ACALL   L?0180
+0219 110000      R     ACALL   _DtvFindFieldWindow
+;---- Variable 'bTemp' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 869
+021C AD07              MOV     R5,AR7
+021E 7F01              MOV     R7,#01H
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 50  
+
+0220 110000      R     ACALL   _DtvSetFieldDetectionRegion
+                                           ; SOURCE LINE # 870
+0223 110000      E     ACALL   Meas_StartMeasure
+                                           ; SOURCE LINE # 871
+0226 7F32              MOV     R7,#032H
+0228 110000      E     ACALL   _Meas_IsMeasureDone
+                                           ; SOURCE LINE # 872
+022B 110000      R     ACALL   L?0157
+022E 110000      E     ACALL   _PrintMeasValue
+                                           ; SOURCE LINE # 873
+                                           ; SOURCE LINE # 874
+0231         ?C0040:
+                                           ; SOURCE LINE # 877
+0231 C3                CLR     C
+0232 90000000    R     MOV     DPTR,#hCropStart+01H
+0236 E0                MOVX    A,@DPTR
+0237 9401              SUBB    A,#01H
+0239 FF                MOV     R7,A
+023A 90000000    R     MOV     DPTR,#hCropStart
+023E E0                MOVX    A,@DPTR
+023F 9400              SUBB    A,#00H
+0241 FE                MOV     R6,A
+0242 C006              PUSH    AR6
+0244 C007              PUSH    AR7
+0246 C3                CLR     C
+0247 90000000    R     MOV     DPTR,#vCropStart+01H
+024B E0                MOVX    A,@DPTR
+024C 9401              SUBB    A,#01H
+024E FD                MOV     R5,A
+024F 90000000    R     MOV     DPTR,#vCropStart
+0253 E0                MOVX    A,@DPTR
+0254 9400              SUBB    A,#00H
+0256 FC                MOV     R4,A
+0257 90000000    R     MOV     DPTR,#hActive+01H
+025B E0                MOVX    A,@DPTR
+025C 2402              ADD     A,#02H
+025E FB                MOV     R3,A
+025F 90000000    R     MOV     DPTR,#hActive
+0263 E0                MOVX    A,@DPTR
+0264 90000000    R     MOV     DPTR,#vActive
+0268 110000      R     ACALL   L?0171
+026B D007              POP     AR7
+026D D006              POP     AR6
+026F 110000      E     ACALL   _InputSetCrop
+                                           ; SOURCE LINE # 878
+0272 110000      R     ACALL   L?0144
+0275 90000000    R     MOV     DPTR,#vCropStart
+0279 A3                INC     DPTR
+027A E0                MOVX    A,@DPTR
+027B FB                MOV     R3,A
+027C 110000      R     ACALL   _HDMISetOutput
+                                           ; SOURCE LINE # 883
+027F 110000      R     ACALL   L?0162
+0282 90000000    R     MOV     DPTR,#hActive
+0286 110000      R     ACALL   L?0187
+0289 A3                INC     DPTR
+028A E0                MOVX    A,@DPTR
+028B 90000000    E     MOV     DPTR,#?_FindScalerTable?BYTE+05H
+028F F0                MOVX    @DPTR,A
+0290 90000000    R     MOV     DPTR,#vCropStart
+0294 110000      R     ACALL   L?0202
+0297 90000000    R     MOV     DPTR,#vPol
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 51  
+
+029B E0                MOVX    A,@DPTR
+029C 90000000    E     MOV     DPTR,#?_FindScalerTable?BYTE+07H
+02A0 F0                MOVX    @DPTR,A
+02A1 110000      E     ACALL   _FindScalerTable
+02A4 90000000    R     MOV     DPTR,#pScaler
+02A8 110000      R     ACALL   L?0148
+                                           ; SOURCE LINE # 889
+02AB 90000000    R     MOV     DPTR,#pScaler
+02AF 110000      R     ACALL   L?0131
+02B2 4A                ORL     A,R2
+02B3 4B                ORL     A,R3
+02B4 6011              JZ      ?C0042
+                                           ; SOURCE LINE # 890
+02B6 90000000    R     MOV     DPTR,#pScaler
+02BA A3                INC     DPTR
+02BB A3                INC     DPTR
+02BC E0                MOVX    A,@DPTR
+02BD 90000000    R     MOV     DPTR,#hPol
+02C1 110000      R     ACALL   L?0200
+02C4 110000      E     ACALL   _OverWriteScalerWithTable
+02C7         ?C0042:
+                                           ; SOURCE LINE # 904
+02C7 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 905
+02C9         ?C0024:
+02C9 22                RET     
+             ; FUNCTION CheckHdmiChipRegister (END)
+
+             ; FUNCTION CheckAndSetHDMI (BEGIN)
+                                           ; SOURCE LINE # 914
+                                           ; SOURCE LINE # 915
+                                           ; SOURCE LINE # 916
+0000 7B00        R     MOV     R3,#MBYTE ?SC_89
+0002 7A00        R     MOV     R2,#HIGH ?SC_89
+0004 7900        R     MOV     R1,#LOW ?SC_89
+0006 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 919
+0009 110000      R     ACALL   CheckHdmiChipRegister
+                                           ; SOURCE LINE # 920
+000C         ?C0043:
+000C 22                RET     
+             ; FUNCTION CheckAndSetHDMI (END)
+
+             ; FUNCTION ChangeHDMI (BEGIN)
+                                           ; SOURCE LINE # 983
+                                           ; SOURCE LINE # 984
+                                           ; SOURCE LINE # 1017
+0000 110000      R     ACALL   L?0162
+0003 6405              XRL     A,#05H
+0005 6004              JZ      ?C0045
+0007 EF                MOV     A,R7
+0008 B40603            CJNE    A,#06H,?C0044
+000B         ?C0045:
+                                           ; SOURCE LINE # 1019
+000B 7F01              MOV     R7,#01H
+000D 22                RET     
+                                           ; SOURCE LINE # 1020
+000E         ?C0044:
+                                           ; SOURCE LINE # 1022
+000E 110000      E     ACALL   GetHdmiModeEE
+0011 EF                MOV     A,R7
+0012 90000000    E     MOV     DPTR,#InputMain
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 52  
+
+0016 6005              JZ      ?C0047
+0018 7406              MOV     A,#06H
+001A F0                MOVX    @DPTR,A
+001B 8003              SJMP    ?C0048
+001D         ?C0047:
+                                           ; SOURCE LINE # 1023
+001D 7405              MOV     A,#05H
+001F F0                MOVX    @DPTR,A
+0020         ?C0048:
+                                           ; SOURCE LINE # 1025
+0020 110000      E     ACALL   GetInputMainEE
+0023 110000      R     ACALL   L?0160
+0026 6E                XRL     A,R6
+0027 6003              JZ      ?C0049
+                                           ; SOURCE LINE # 1026
+0029 110000      E     ACALL   _SaveInputMainEE
+002C         ?C0049:
+                                           ; SOURCE LINE # 1032
+002C 110000      E     ACALL   InitInputAsDefault
+                                           ; SOURCE LINE # 1036
+002F 110000      E     ACALL   HdmiInitEp907MChip
+                                           ; SOURCE LINE # 1050
+0032 110000      R     ACALL   CheckAndSetHDMI
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 1054
+0035 EF                MOV     A,R7
+0036 7007              JNZ     ?C0050
+                                           ; SOURCE LINE # 1056
+0038 FF                MOV     R7,A
+0039 110000      E     ACALL   _VInput_enableOutput
+                                           ; SOURCE LINE # 1061
+003C 7F00              MOV     R7,#00H
+003E 22                RET     
+                                           ; SOURCE LINE # 1062
+003F         ?C0050:
+                                           ; SOURCE LINE # 1067
+003F E4                CLR     A
+0040 FF                MOV     R7,A
+0041 110000      E     ACALL   _VInput_gotoFreerun
+                                           ; SOURCE LINE # 1072
+0044 7F02              MOV     R7,#02H
+                                           ; SOURCE LINE # 1073
+0046         ?C0046:
+0046 22                RET     
+             ; FUNCTION ChangeHDMI (END)
+
+             ; FUNCTION CheckAndSetLVDSRx (BEGIN)
+                                           ; SOURCE LINE # 1087
+                                           ; SOURCE LINE # 1088
+                                           ; SOURCE LINE # 1089
+0000 7B00        R     MOV     R3,#MBYTE ?SC_113
+0002 7A00        R     MOV     R2,#HIGH ?SC_113
+0004 7900        R     MOV     R1,#LOW ?SC_113
+0006 110000      E     ACALL   _dPuts
+                                           ; SOURCE LINE # 1090
+0009 110000      R     ACALL   CheckAndSetDtvSignal
+                                           ; SOURCE LINE # 1091
+000C         ?C0051:
+000C 22                RET     
+             ; FUNCTION CheckAndSetLVDSRx (END)
+
+             ; FUNCTION ChangeLVDSRx (BEGIN)
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 53  
+
+                                           ; SOURCE LINE # 1093
+                                           ; SOURCE LINE # 1094
+                                           ; SOURCE LINE # 1097
+0000 90000000    E     MOV     DPTR,#InputMain
+0004 E0                MOVX    A,@DPTR
+0005 B40803            CJNE    A,#08H,?C0052
+                                           ; SOURCE LINE # 1099
+0008 7F01              MOV     R7,#01H
+000A 22                RET     
+                                           ; SOURCE LINE # 1100
+000B         ?C0052:
+                                           ; SOURCE LINE # 1101
+000B 90000000    E     MOV     DPTR,#InputMain
+000F 7408              MOV     A,#08H
+0011 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1103
+0012 110000      E     ACALL   GetInputMainEE
+0015 110000      R     ACALL   L?0160
+0018 6E                XRL     A,R6
+0019 6003              JZ      ?C0054
+                                           ; SOURCE LINE # 1104
+001B 110000      E     ACALL   _SaveInputMainEE
+001E         ?C0054:
+                                           ; SOURCE LINE # 1108
+001E 110000      E     ACALL   InitInputAsDefault
+                                           ; SOURCE LINE # 1114
+0021 110000      R     ACALL   CheckAndSetLVDSRx
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 1115
+0024 EF                MOV     A,R7
+0025 7007              JNZ     ?C0055
+                                           ; SOURCE LINE # 1117
+0027 FF                MOV     R7,A
+0028 110000      E     ACALL   _VInput_enableOutput
+                                           ; SOURCE LINE # 1118
+002B 7F00              MOV     R7,#00H
+002D 22                RET     
+                                           ; SOURCE LINE # 1119
+002E         ?C0055:
+                                           ; SOURCE LINE # 1125
+002E E4                CLR     A
+002F FF                MOV     R7,A
+0030 110000      E     ACALL   _VInput_gotoFreerun
+                                           ; SOURCE LINE # 1126
+0033 7F02              MOV     R7,#02H
+                                           ; SOURCE LINE # 1127
+0035         ?C0053:
+0035 22                RET     
+             ; FUNCTION ChangeLVDSRx (END)
+
+             ; FUNCTION CheckAndSetBT656Loop (BEGIN)
+                                           ; SOURCE LINE # 1152
+                                           ; SOURCE LINE # 1153
+                                           ; SOURCE LINE # 1167
+0000 7F64              MOV     R7,#064H
+0002 110000      E     ACALL   _DecoderCheckVDLOSS
+0005 EF                MOV     A,R7
+0006 6003              JZ      ?C0056
+                                           ; SOURCE LINE # 1168
+0008 7F01              MOV     R7,#01H
+000A 22                RET     
+                                           ; SOURCE LINE # 1169
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 54  
+
+000B         ?C0056:
+                                           ; SOURCE LINE # 1170
+000B 7F64              MOV     R7,#064H
+000D 110000      E     ACALL   _DecoderCheckSTD
+0010 90000000    R     MOV     DPTR,#mode
+0014 EF                MOV     A,R7
+0015 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1171
+0016 BF800C            CJNE    R7,#080H,?C0058
+                                           ; SOURCE LINE # 1172
+0019 7B00        R     MOV     R3,#MBYTE ?SC_137
+001B 7A00        R     MOV     R2,#HIGH ?SC_137
+001D 7900        R     MOV     R1,#LOW ?SC_137
+001F 110000      E     ACALL   _ePrintf
+                                           ; SOURCE LINE # 1173
+0022 7F02              MOV     R7,#02H
+0024 22                RET     
+                                           ; SOURCE LINE # 1174
+0025         ?C0058:
+                                           ; SOURCE LINE # 1175
+0025 90000000    R     MOV     DPTR,#mode
+0029 E0                MOVX    A,@DPTR
+002A C4                SWAP    A
+002B 540F              ANL     A,#0FH
+002D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1176
+002E 90000000    E     MOV     DPTR,#InputSubMode
+0032 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1177
+0033 C3                CLR     C
+0034 9407              SUBB    A,#07H
+0036 4003              JC      ?C0059
+                                           ; SOURCE LINE # 1178
+0038 7F03              MOV     R7,#03H
+003A 22                RET     
+003B         ?C0059:
+                                           ; SOURCE LINE # 1180
+003B 90000000    R     MOV     DPTR,#mode
+003F E0                MOVX    A,@DPTR
+0040 75F00B            MOV     B,#0BH
+0043 A4                MUL     AB
+0044 2400        E     ADD     A,#LOW TW8836_DEC_TABLE
+0046 F9                MOV     R1,A
+0047 7400        E     MOV     A,#HIGH TW8836_DEC_TABLE
+0049 35F0              ADDC    A,B
+004B FA                MOV     R2,A
+004C 90000000    R     MOV     DPTR,#pVideoTable
+0050 7400        E     MOV     A,#MBYTE TW8836_DEC_TABLE
+0052 110000      R     ACALL   L?0149
+                                           ; SOURCE LINE # 1185
+0055 90000000    R     MOV     DPTR,#mode
+0059 E0                MOVX    A,@DPTR
+005A FF                MOV     R7,A
+005B 600D              JZ      ?C0061
+005D 6403              XRL     A,#03H
+005F 6009              JZ      ?C0061
+0061 EF                MOV     A,R7
+0062 6404              XRL     A,#04H
+0064 6004              JZ      ?C0061
+0066 EF                MOV     A,R7
+0067 B4060D            CJNE    A,#06H,?C0060
+006A         ?C0061:
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 55  
+
+                                           ; SOURCE LINE # 1190
+006A 90000000    R     MOV     DPTR,#hDelay
+006E 740D              MOV     A,#0DH
+0070 F0                MOVX    @DPTR,A
+0071 A3                INC     DPTR
+0072 7415              MOV     A,#015H
+0074 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1192
+0075 802D              SJMP    ?C0062
+0077         ?C0060:
+                                           ; SOURCE LINE # 1193
+0077 EF                MOV     A,R7
+0078 6401              XRL     A,#01H
+007A 6009              JZ      ?C0064
+007C EF                MOV     A,R7
+007D 6402              XRL     A,#02H
+007F 6004              JZ      ?C0064
+0081 EF                MOV     A,R7
+0082 B4050D            CJNE    A,#05H,?C0063
+0085         ?C0064:
+                                           ; SOURCE LINE # 1198
+0085 90000000    R     MOV     DPTR,#hDelay
+0089 740B              MOV     A,#0BH
+008B F0                MOVX    @DPTR,A
+008C A3                INC     DPTR
+008D 7416              MOV     A,#016H
+008F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1200
+0090 8012              SJMP    ?C0062
+0092         ?C0063:
+                                           ; SOURCE LINE # 1201
+                                           ; SOURCE LINE # 1202
+0092 7B00        R     MOV     R3,#MBYTE ?SC_146
+0094 7A00        R     MOV     R2,#HIGH ?SC_146
+0096 7900        R     MOV     R1,#LOW ?SC_146
+0098 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+009C EF                MOV     A,R7
+009D F0                MOVX    @DPTR,A
+009E 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 1203
+00A1 7F03              MOV     R7,#03H
+00A3 22                RET     
+                                           ; SOURCE LINE # 1204
+00A4         ?C0062:
+                                           ; SOURCE LINE # 1207
+00A4 90000000    R     MOV     DPTR,#hDelay
+00A8 E0                MOVX    A,@DPTR
+00A9 FF                MOV     R7,A
+00AA 7E00              MOV     R6,#00H
+00AC 110000      R     ACALL   L?0129
+00AF F9                MOV     R1,A
+00B0 110000      E     ACALL   ?C?ILDPTR
+00B3 FD                MOV     R5,A
+00B4 ACF0              MOV     R4,B
+00B6 90000000    R     MOV     DPTR,#vDelay
+00BA E0                MOVX    A,@DPTR
+00BB FB                MOV     R3,A
+00BC 7A00              MOV     R2,#00H
+00BE C002              PUSH    AR2
+00C0 C003              PUSH    AR3
+00C2 110000      R     ACALL   L?0129
+00C5 110000      R     ACALL   L?0135
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 56  
+
+00C8 FB                MOV     R3,A
+00C9 90000000    E     MOV     DPTR,#?_DecoderSetOutputCrop?BYTE+06H
+00CD E5F0              MOV     A,B
+00CF F0                MOVX    @DPTR,A
+00D0 A3                INC     DPTR
+00D1 EB                MOV     A,R3
+00D2 F0                MOVX    @DPTR,A
+00D3 D003              POP     AR3
+00D5 D002              POP     AR2
+00D7 110000      E     ACALL   _DecoderSetOutputCrop
+                                           ; SOURCE LINE # 1212
+00DA 90000000    R     MOV     DPTR,#mode
+00DE E0                MOVX    A,@DPTR
+00DF FF                MOV     R7,A
+00E0 600D              JZ      ?C0067
+00E2 6403              XRL     A,#03H
+00E4 6009              JZ      ?C0067
+00E6 EF                MOV     A,R7
+00E7 6404              XRL     A,#04H
+00E9 6004              JZ      ?C0067
+00EB EF                MOV     A,R7
+00EC B40604            CJNE    A,#06H,?C0066
+00EF         ?C0067:
+                                           ; SOURCE LINE # 1213
+00EF E4                CLR     A
+00F0 FF                MOV     R7,A
+00F1 8002              SJMP    ?C0117
+00F3         ?C0066:
+                                           ; SOURCE LINE # 1215
+00F3 7F01              MOV     R7,#01H
+00F5         ?C0117:
+00F5 110000      E     ACALL   _BT656_InitExtEncoder
+00F8         ?C0068:
+                                           ; SOURCE LINE # 1220
+00F8 110000      E     ACALL   Meas_StartMeasure
+                                           ; SOURCE LINE # 1221
+00FB 7F32              MOV     R7,#032H
+00FD 110000      E     ACALL   _Meas_IsMeasureDone
+0100 EF                MOV     A,R7
+0101 606D              JZ      ?C0069
+                                           ; SOURCE LINE # 1224
+0103 110000      R     ACALL   L?0130
+0106 F9                MOV     R1,A
+0107 110000      E     ACALL   ?C?ILDPTR
+010A FF                MOV     R7,A
+010B AEF0              MOV     R6,B
+010D 110000      E     ACALL   _ScalerSetLineBufferSize
+                                           ; SOURCE LINE # 1226
+0110 110000      R     ACALL   L?0130
+0113 F9                MOV     R1,A
+0114 110000      E     ACALL   ?C?ILDPTR
+0117 FF                MOV     R7,A
+0118 AEF0              MOV     R6,B
+011A 110000      E     ACALL   _ScalerSetHScale
+                                           ; SOURCE LINE # 1227
+011D 110000      R     ACALL   L?0130
+0120 110000      R     ACALL   L?0136
+0123 FF                MOV     R7,A
+0124 AEF0              MOV     R6,B
+0126 110000      E     ACALL   _ScalerSetVScale
+                                           ; SOURCE LINE # 1228
+0129 90000000    R     MOV     DPTR,#vDelay
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 57  
+
+012D E0                MOVX    A,@DPTR
+012E FF                MOV     R7,A
+012F E4                CLR     A
+0130 FC                MOV     R4,A
+0131 FD                MOV     R5,A
+0132 FE                MOV     R6,A
+0133 A3                INC     DPTR
+                                           ; SOURCE LINE # 1229
+                                           ; SOURCE LINE # 1230
+0134 110000      R     ACALL   L?0121
+0137 FF                MOV     R7,A
+0138 C006              PUSH    AR6
+013A C007              PUSH    AR7
+013C 110000      R     ACALL   L?0130
+013F 110000      R     ACALL   L?0136
+0142 AEF0              MOV     R6,B
+0144 110000      R     ACALL   L?0168
+0147 D007              POP     AR7
+0149 D006              POP     AR6
+                                           ; SOURCE LINE # 1233
+014B 110000      R     ACALL   L?0182
+014E 6003              JZ      $ + 5H
+0150 010000      R     AJMP    ?C0118
+                                           ; SOURCE LINE # 1234
+0153 110000      R     ACALL   L?0122
+0156 C3                CLR     C
+0157 9404              SUBB    A,#04H
+0159 FF                MOV     R7,A
+015A EE                MOV     A,R6
+015B 9400              SUBB    A,#00H
+015D FE                MOV     R6,A
+015E ED                MOV     A,R5
+015F 9400              SUBB    A,#00H
+0161 FD                MOV     R5,A
+0162 EC                MOV     A,R4
+0163 9400              SUBB    A,#00H
+0165 FC                MOV     R4,A
+0166 90000000    R     MOV     DPTR,#dTemp
+016A 110000      E     ACALL   ?C?LSTXDATA
+016D         ?C0070:
+                                           ; SOURCE LINE # 1236
+                                           ; SOURCE LINE # 1238
+016D 010000      R     AJMP    ?C0118
+                                           ; SOURCE LINE # 1239
+0170         ?C0069:
+                                           ; SOURCE LINE # 1241
+0170 7B00        R     MOV     R3,#MBYTE MeasVStart
+0172 7A00        R     MOV     R2,#HIGH MeasVStart
+0174 7900        R     MOV     R1,#LOW MeasVStart
+0176 110000      E     ACALL   _MeasGetVActive
+0179 90000000    R     MOV     DPTR,#MeasVLen
+017D EE                MOV     A,R6
+017E F0                MOVX    @DPTR,A
+017F A3                INC     DPTR
+0180 EF                MOV     A,R7
+0181 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1242
+0182 7B00        R     MOV     R3,#MBYTE MeasHStart
+0184 7A00        R     MOV     R2,#HIGH MeasHStart
+0186 7900        R     MOV     R1,#LOW MeasHStart
+0188 110000      E     ACALL   _MeasGetHActive
+018B 90000000    R     MOV     DPTR,#MeasHLen
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 58  
+
+018F EE                MOV     A,R6
+0190 F0                MOVX    @DPTR,A
+0191 FA                MOV     R2,A
+0192 A3                INC     DPTR
+0193 EF                MOV     A,R7
+0194 F0                MOVX    @DPTR,A
+0195 FB                MOV     R3,A
+                                           ; SOURCE LINE # 1245
+0196 90000000    R     MOV     DPTR,#MeasHStart+01H
+019A E0                MOVX    A,@DPTR
+019B 2404              ADD     A,#04H
+019D FF                MOV     R7,A
+019E 90000000    R     MOV     DPTR,#MeasHStart
+01A2 E0                MOVX    A,@DPTR
+01A3 3400              ADDC    A,#00H
+01A5 FE                MOV     R6,A
+01A6 C007              PUSH    AR7
+01A8 90000000    R     MOV     DPTR,#MeasVStart+01H
+01AC E0                MOVX    A,@DPTR
+01AD 2401              ADD     A,#01H
+01AF FD                MOV     R5,A
+01B0 90000000    R     MOV     DPTR,#MeasVStart
+01B4 E0                MOVX    A,@DPTR
+01B5 3400              ADDC    A,#00H
+01B7 FC                MOV     R4,A
+01B8 90000000    R     MOV     DPTR,#MeasVLen
+01BC E0                MOVX    A,@DPTR
+01BD FF                MOV     R7,A
+01BE A3                INC     DPTR
+01BF E0                MOVX    A,@DPTR
+01C0 90000000    E     MOV     DPTR,#?_InputSetCrop?BYTE+06H
+01C4 CF                XCH     A,R7
+01C5 F0                MOVX    @DPTR,A
+01C6 A3                INC     DPTR
+01C7 EF                MOV     A,R7
+01C8 F0                MOVX    @DPTR,A
+01C9 D007              POP     AR7
+01CB 110000      E     ACALL   _InputSetCrop
+                                           ; SOURCE LINE # 1251
+01CE 759300      E     MOV     DPX,#?C?XDATASEG
+01D1 E500        E     MOV     A,regTW88+01H
+01D3 2441              ADD     A,#041H
+01D5 110000      R     ACALL   L?0126
+01D8 E0                MOVX    A,@DPTR
+;---- Variable 'bTemp' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 1252
+01D9 54FE              ANL     A,#0FEH
+                                           ; SOURCE LINE # 1253
+01DB 4410              ORL     A,#010H
+                                           ; SOURCE LINE # 1254
+01DD 110000      R     ACALL   L?0178
+01E0 2441              ADD     A,#041H
+01E2 110000      R     ACALL   L?0126
+01E5 EF                MOV     A,R7
+01E6 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1256
+01E7 110000      R     ACALL   L?0163
+01EA 110000      E     ACALL   _ScalerSetLineBufferSize
+                                           ; SOURCE LINE # 1257
+01ED 110000      R     ACALL   L?0163
+01F0 110000      E     ACALL   _ScalerSetHScale
+                                           ; SOURCE LINE # 1258
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 59  
+
+01F3 90000000    R     MOV     DPTR,#MeasVLen
+01F7 E0                MOVX    A,@DPTR
+01F8 FE                MOV     R6,A
+01F9 A3                INC     DPTR
+01FA E0                MOVX    A,@DPTR
+01FB FF                MOV     R7,A
+01FC 110000      E     ACALL   _ScalerSetVScale
+                                           ; SOURCE LINE # 1259
+01FF 110000      R     ACALL   L?0130
+0202 110000      R     ACALL   L?0136
+0205 FF                MOV     R7,A
+0206 AEF0              MOV     R6,B
+0208 110000      E     ACALL   _ScalerSetVScale
+                                           ; SOURCE LINE # 1261
+020B 90000000    R     MOV     DPTR,#MeasVStart+01H
+020F E0                MOVX    A,@DPTR
+0210 2401              ADD     A,#01H
+0212 FF                MOV     R7,A
+0213 90000000    R     MOV     DPTR,#MeasVStart
+0217 E0                MOVX    A,@DPTR
+0218 3400              ADDC    A,#00H
+021A FE                MOV     R6,A
+021B E4                CLR     A
+021C FC                MOV     R4,A
+021D FD                MOV     R5,A
+021E 90000000    R     MOV     DPTR,#dTemp
+                                           ; SOURCE LINE # 1262
+                                           ; SOURCE LINE # 1263
+0222 110000      R     ACALL   L?0121
+0225 FF                MOV     R7,A
+0226 C006              PUSH    AR6
+0228 C007              PUSH    AR7
+022A 90000000    R     MOV     DPTR,#MeasVLen
+022E 110000      R     ACALL   L?0166
+0231 D007              POP     AR7
+0233 D006              POP     AR6
+                                           ; SOURCE LINE # 1264
+0235 110000      R     ACALL   L?0182
+0238 B4010C            CJNE    A,#01H,?C0072
+                                           ; SOURCE LINE # 1265
+023B 110000      R     ACALL   L?0122
+023E 2406              ADD     A,#06H
+0240 90000000    R     MOV     DPTR,#dTemp
+0244 110000      R     ACALL   L?0152
+                                           ; SOURCE LINE # 1266
+                                           ; SOURCE LINE # 1267
+0247         ?C0072:
+                                           ; SOURCE LINE # 1268
+0247         ?C0118:
+0247 90000000    R     MOV     DPTR,#dTemp
+024B A3                INC     DPTR
+024C A3                INC     DPTR
+024D E0                MOVX    A,@DPTR
+024E FE                MOV     R6,A
+024F A3                INC     DPTR
+0250 E0                MOVX    A,@DPTR
+0251 FF                MOV     R7,A
+0252 110000      E     ACALL   _ScalerWriteVDEReg
+                                           ; SOURCE LINE # 1272
+0255 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 1273
+0257         ?C0057:
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 60  
+
+0257 22                RET     
+             ; FUNCTION CheckAndSetBT656Loop (END)
+
+             ; FUNCTION ChangeBT656Loop (BEGIN)
+                                           ; SOURCE LINE # 1287
+                                           ; SOURCE LINE # 1288
+                                           ; SOURCE LINE # 1291
+0000 90000000    E     MOV     DPTR,#InputMain
+0004 E0                MOVX    A,@DPTR
+0005 B40703            CJNE    A,#07H,?C0073
+                                           ; SOURCE LINE # 1293
+0008 7F01              MOV     R7,#01H
+000A 22                RET     
+                                           ; SOURCE LINE # 1294
+000B         ?C0073:
+                                           ; SOURCE LINE # 1295
+000B 90000000    E     MOV     DPTR,#InputMain
+000F 7407              MOV     A,#07H
+0011 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1297
+0012 110000      E     ACALL   GetInputMainEE
+0015 110000      R     ACALL   L?0161
+0018 6E                XRL     A,R6
+0019 6003              JZ      ?C0075
+                                           ; SOURCE LINE # 1298
+001B 110000      E     ACALL   _SaveInputMainEE
+001E         ?C0075:
+                                           ; SOURCE LINE # 1302
+001E 110000      E     ACALL   InitInputAsDefault
+                                           ; SOURCE LINE # 1304
+0021 7F5E              MOV     R7,#05EH
+0023 7E01              MOV     R6,#01H
+0025 110000      E     ACALL   _delay1ms
+                                           ; SOURCE LINE # 1309
+0028 110000      R     ACALL   CheckAndSetBT656Loop
+;---- Variable 'ret' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 1310
+002B EF                MOV     A,R7
+002C 7007              JNZ     ?C0076
+                                           ; SOURCE LINE # 1312
+002E FF                MOV     R7,A
+002F 110000      E     ACALL   _VInput_enableOutput
+                                           ; SOURCE LINE # 1313
+0032 7F00              MOV     R7,#00H
+0034 22                RET     
+                                           ; SOURCE LINE # 1314
+0035         ?C0076:
+                                           ; SOURCE LINE # 1320
+0035 E4                CLR     A
+0036 FF                MOV     R7,A
+0037 110000      E     ACALL   _VInput_gotoFreerun
+                                           ; SOURCE LINE # 1322
+003A 7F02              MOV     R7,#02H
+                                           ; SOURCE LINE # 1323
+003C         ?C0074:
+003C 22                RET     
+             ; FUNCTION ChangeBT656Loop (END)
+
+             ; FUNCTION CheckAndSetDtvSignal (BEGIN)
+                                           ; SOURCE LINE # 1329
+                                           ; SOURCE LINE # 1330
+                                           ; SOURCE LINE # 1350
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 61  
+
+0000 90000000    E     MOV     DPTR,#?_MeasSetWindow?BYTE+06H
+0004 740F              MOV     A,#0FH
+0006 F0                MOVX    @DPTR,A
+0007 A3                INC     DPTR
+0008 74FF              MOV     A,#0FFH
+000A F0                MOVX    @DPTR,A
+000B FB                MOV     R3,A
+000C 7A0F              MOV     R2,#0FH
+000E E4                CLR     A
+000F FD                MOV     R5,A
+0010 FC                MOV     R4,A
+0011 FF                MOV     R7,A
+0012 FE                MOV     R6,A
+0013 110000      E     ACALL   _MeasSetWindow
+                                           ; SOURCE LINE # 1351
+0016 759300      E     MOV     DPX,#?C?XDATASEG
+0019 E500        E     MOV     A,regTW88+01H
+001B 240A              ADD     A,#0AH
+001D 110000      R     ACALL   L?0140
+0020 4401              ORL     A,#01H
+0022 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1352
+0023 110000      R     ACALL   L?0139
+0026 54EF              ANL     A,#0EFH
+0028 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1355
+0029 E4                CLR     A
+002A 90000000    R     MOV     DPTR,#i
+002E F0                MOVX    @DPTR,A
+002F         ?C0077:
+                                           ; SOURCE LINE # 1356
+                                           ; SOURCE LINE # 1357
+002F 110000      R     ACALL   L?0189
+                                           ; SOURCE LINE # 1358
+0032 6014              JZ      ?C0078
+                                           ; SOURCE LINE # 1359
+0034         ?C0080:
+                                           ; SOURCE LINE # 1360
+0034 7F0A              MOV     R7,#0AH
+0036 7E00              MOV     R6,#00H
+0038 110000      E     ACALL   _delay1ms
+                                           ; SOURCE LINE # 1361
+003B 7B00        R     MOV     R3,#MBYTE ?SC_165
+003D 7A00        R     MOV     R2,#HIGH ?SC_165
+003F 7900        R     MOV     R1,#LOW ?SC_165
+                                           ; SOURCE LINE # 1362
+0041 110000      R     ACALL   L?0195
+0044 9405              SUBB    A,#05H
+0046 40E7              JC      ?C0077
+0048         ?C0078:
+                                           ; SOURCE LINE # 1363
+0048 90000000    R     MOV     DPTR,#ret
+004C E0                MOVX    A,@DPTR
+004D 600C              JZ      ?C0081
+                                           ; SOURCE LINE # 1365
+004F 7B00        R     MOV     R3,#MBYTE ?SC_30
+0051 7A00        R     MOV     R2,#HIGH ?SC_30
+0053 7900        R     MOV     R1,#LOW ?SC_30
+0055 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 1366
+0058 7F01              MOV     R7,#01H
+005A 22                RET     
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 62  
+
+                                           ; SOURCE LINE # 1367
+005B         ?C0081:
+                                           ; SOURCE LINE # 1369
+005B 110000      R     ACALL   L?0203
+005E 110000      R     ACALL   L?0183
+                                           ; SOURCE LINE # 1370
+0061 110000      R     ACALL   L?0204
+0064 90000000    R     MOV     DPTR,#wTemp1
+0068 EE                MOV     A,R6
+0069 F0                MOVX    @DPTR,A
+006A A3                INC     DPTR
+006B EF                MOV     A,R7
+006C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1371
+006D E4                CLR     A
+006E 90000000    R     MOV     DPTR,#i
+0072 F0                MOVX    @DPTR,A
+0073         ?C0083:
+                                           ; SOURCE LINE # 1372
+0073 7F0A              MOV     R7,#0AH
+0075 7E00              MOV     R6,#00H
+0077 110000      E     ACALL   _delay1ms
+                                           ; SOURCE LINE # 1373
+                                           ; SOURCE LINE # 1374
+007A 110000      R     ACALL   L?0189
+                                           ; SOURCE LINE # 1375
+007D 110000      R     ACALL   L?0203
+0080 EE                MOV     A,R6
+0081 110000      R     ACALL   L?0194
+                                           ; SOURCE LINE # 1376
+0084 110000      R     ACALL   L?0204
+0087 90000000    R     MOV     DPTR,#vActive
+008B EE                MOV     A,R6
+008C F0                MOVX    @DPTR,A
+008D A3                INC     DPTR
+008E EF                MOV     A,R7
+008F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1377
+0090 110000      R     ACALL   L?0185
+0093 90000000    R     MOV     DPTR,#wTemp0
+0097 E0                MOVX    A,@DPTR
+0098 B5061B            CJNE    A,AR6,?C0086
+009B A3                INC     DPTR
+009C E0                MOVX    A,@DPTR
+009D B50716            CJNE    A,AR7,?C0086
+00A0 90000000    R     MOV     DPTR,#vActive
+00A4 E0                MOVX    A,@DPTR
+00A5 FC                MOV     R4,A
+00A6 A3                INC     DPTR
+00A7 E0                MOVX    A,@DPTR
+00A8 FD                MOV     R5,A
+00A9 90000000    R     MOV     DPTR,#wTemp1
+00AD E0                MOVX    A,@DPTR
+00AE 6C                XRL     A,R4
+00AF 7003              JNZ     ?C0112
+00B1 A3                INC     DPTR
+00B2 E0                MOVX    A,@DPTR
+00B3 6D                XRL     A,R5
+00B4         ?C0112:
+00B4 6021              JZ      ?C0084
+                                           ; SOURCE LINE # 1378
+00B6         ?C0086:
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 63  
+
+                                           ; SOURCE LINE # 1379
+00B6 110000      R     ACALL   L?0183
+                                           ; SOURCE LINE # 1380
+00B9 90000000    R     MOV     DPTR,#vActive
+00BD E0                MOVX    A,@DPTR
+00BE FF                MOV     R7,A
+00BF A3                INC     DPTR
+00C0 E0                MOVX    A,@DPTR
+00C1 90000000    R     MOV     DPTR,#wTemp1
+00C5 CF                XCH     A,R7
+00C6 F0                MOVX    @DPTR,A
+00C7 A3                INC     DPTR
+00C8 EF                MOV     A,R7
+00C9 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1381
+00CA 7B00        R     MOV     R3,#MBYTE ?SC_167
+00CC 7A00        R     MOV     R2,#HIGH ?SC_167
+00CE 7900        R     MOV     R1,#LOW ?SC_167
+                                           ; SOURCE LINE # 1382
+00D0 110000      R     ACALL   L?0195
+00D3 9414              SUBB    A,#014H
+00D5 409C              JC      ?C0083
+00D7         ?C0084:
+                                           ; SOURCE LINE # 1384
+00D7 110000      R     ACALL   L?0196
+                                           ; SOURCE LINE # 1385
+00DA 110000      E     ACALL   MeasGetVSyncRiseToFallWidth
+00DD 90000000    R     MOV     DPTR,#vSync
+00E1 EE                MOV     A,R6
+                                           ; SOURCE LINE # 1386
+00E2 110000      R     ACALL   L?0165
+                                           ; SOURCE LINE # 1387
+00E5 110000      E     ACALL   MeasGetVPeriod
+00E8 90000000    R     MOV     DPTR,#vPeriod
+00EC EE                MOV     A,R6
+00ED F0                MOVX    @DPTR,A
+00EE A3                INC     DPTR
+00EF EF                MOV     A,R7
+00F0 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1388
+00F1 110000      E     ACALL   MeasGetVFreq
+00F4 90000000    R     MOV     DPTR,#vFreq
+00F8 EF                MOV     A,R7
+                                           ; SOURCE LINE # 1389
+00F9 110000      R     ACALL   L?0156
+00FC 110000      E     ACALL   _PrintMeasValue
+                                           ; SOURCE LINE # 1395
+00FF 90000000    R     MOV     DPTR,#hStart+01H
+0103 E0                MOVX    A,@DPTR
+0104 2404              ADD     A,#04H
+0106 F0                MOVX    @DPTR,A
+0107 90000000    R     MOV     DPTR,#hStart
+010B E0                MOVX    A,@DPTR
+010C 3400              ADDC    A,#00H
+010E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1396
+010F 90000000    R     MOV     DPTR,#vStart+01H
+0113 E0                MOVX    A,@DPTR
+0114 24FF              ADD     A,#0FFH
+0116 F0                MOVX    @DPTR,A
+0117 90000000    R     MOV     DPTR,#vStart
+                                           ; SOURCE LINE # 1397
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 64  
+
+011B 110000      R     ACALL   L?0155
+011E 90000000    R     MOV     DPTR,#hStart
+0122 110000      R     ACALL   L?0172
+0125 110000      E     ACALL   _PrintMeasAdjValue
+                                           ; SOURCE LINE # 1400
+0128 90000000    R     MOV     DPTR,#hActive
+012C 110000      R     ACALL   L?0145
+012F 90000000    R     MOV     DPTR,#vFreq
+0133 E0                MOVX    A,@DPTR
+0134 FB                MOV     R3,A
+0135 110000      E     ACALL   _Find_CEA861_VideoTable
+0138 90000000    R     MOV     DPTR,#pCEA861
+013C 110000      R     ACALL   L?0148
+                                           ; SOURCE LINE # 1401
+013F 4A                ORL     A,R2
+0140 4B                ORL     A,R3
+0141 601D              JZ      ?C0087
+                                           ; SOURCE LINE # 1402
+0143 90000000    R     MOV     DPTR,#pCEA861
+0147 110000      R     ACALL   L?0131
+014A F9                MOV     R1,A
+014B 110000      E     ACALL   _PrintCEAVideoTimeTable
+                                           ; SOURCE LINE # 1411
+014E 90000000    R     MOV     DPTR,#pCEA861
+0152 110000      R     ACALL   L?0131
+0155 2401              ADD     A,#01H
+0157 110000      R     ACALL   L?0137
+015A FF                MOV     R7,A
+015B E5F0              MOV     A,B
+015D 110000      R     ACALL   L?0194
+                                           ; SOURCE LINE # 1412
+0160         ?C0087:
+                                           ; SOURCE LINE # 1416
+0160 110000      R     ACALL   L?0185
+0163 D3                SETB    C
+0164 90000000    R     MOV     DPTR,#hSync+01H
+0168 E0                MOVX    A,@DPTR
+0169 9F                SUBB    A,R7
+016A 90000000    R     MOV     DPTR,#hSync
+016E E0                MOVX    A,@DPTR
+016F 9E                SUBB    A,R6
+0170 4008              JC      ?C0088
+0172 E4                CLR     A
+0173 90000000    R     MOV     DPTR,#hPol
+0177 F0                MOVX    @DPTR,A
+0178 8007              SJMP    ?C0089
+017A         ?C0088:
+                                           ; SOURCE LINE # 1417
+017A 90000000    R     MOV     DPTR,#hPol
+017E 7401              MOV     A,#01H
+0180 F0                MOVX    @DPTR,A
+0181         ?C0089:
+                                           ; SOURCE LINE # 1418
+0181 90000000    R     MOV     DPTR,#vActive
+0185 E0                MOVX    A,@DPTR
+0186 FE                MOV     R6,A
+0187 A3                INC     DPTR
+0188 E0                MOVX    A,@DPTR
+0189 FF                MOV     R7,A
+018A D3                SETB    C
+018B 90000000    R     MOV     DPTR,#vSync+01H
+018F E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 65  
+
+0190 9F                SUBB    A,R7
+0191 90000000    R     MOV     DPTR,#vSync
+0195 E0                MOVX    A,@DPTR
+0196 9E                SUBB    A,R6
+0197 4008              JC      ?C0090
+0199 E4                CLR     A
+019A 90000000    R     MOV     DPTR,#vPol
+019E F0                MOVX    @DPTR,A
+019F 8007              SJMP    ?C0091
+01A1         ?C0090:
+                                           ; SOURCE LINE # 1419
+01A1 90000000    R     MOV     DPTR,#vPol
+01A5 7401              MOV     A,#01H
+01A7 F0                MOVX    @DPTR,A
+01A8         ?C0091:
+                                           ; SOURCE LINE # 1424
+01A8 E4                CLR     A
+01A9 FD                MOV     R5,A
+01AA FF                MOV     R7,A
+01AB 110000      R     ACALL   _DtvSetSyncPolarity
+                                           ; SOURCE LINE # 1427
+01AE 90000000    R     MOV     DPTR,#pCEA861
+01B2 110000      R     ACALL   L?0131
+01B5 F9                MOV     R1,A
+01B6 EA                MOV     A,R2
+01B7 49                ORL     A,R1
+01B8 4B                ORL     A,R3
+01B9 6038              JZ      ?C0092
+                                           ; SOURCE LINE # 1428
+01BB 90000000    R     MOV     DPTR,#pCEA861
+01BF 110000      R     ACALL   L?0169
+01C2 30E02E            JNB     ACC.0,?C0092
+                                           ; SOURCE LINE # 1429
+01C5 90000000    R     MOV     DPTR,#pCEA861
+01C9 A3                INC     DPTR
+01CA E0                MOVX    A,@DPTR
+01CB FA                MOV     R2,A
+01CC A3                INC     DPTR
+01CD E0                MOVX    A,@DPTR
+01CE 2407              ADD     A,#07H
+01D0 110000      R     ACALL   L?0137
+01D3 110000      R     ACALL   L?0180
+01D6 110000      R     ACALL   _DtvFindFieldWindow
+01D9 90000000    R     MOV     DPTR,#i
+01DD EF                MOV     A,R7
+01DE F0                MOVX    @DPTR,A
+01DF FD                MOV     R5,A
+                                           ; SOURCE LINE # 1430
+01E0 7F01              MOV     R7,#01H
+01E2 110000      R     ACALL   _DtvSetFieldDetectionRegion
+                                           ; SOURCE LINE # 1431
+01E5 110000      E     ACALL   Meas_StartMeasure
+                                           ; SOURCE LINE # 1432
+01E8 7F32              MOV     R7,#032H
+01EA 110000      E     ACALL   _Meas_IsMeasureDone
+                                           ; SOURCE LINE # 1433
+01ED 110000      R     ACALL   L?0157
+01F0 110000      E     ACALL   _PrintMeasValue
+                                           ; SOURCE LINE # 1434
+                                           ; SOURCE LINE # 1435
+01F3         ?C0092:
+                                           ; SOURCE LINE # 1438
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 66  
+
+01F3 90000000    R     MOV     DPTR,#vPol
+01F7 E0                MOVX    A,@DPTR
+01F8 7033              JNZ     ?C0094
+                                           ; SOURCE LINE # 1439
+01FA 110000      E     ACALL   MeasGetVSyncRiseToFallWidth
+01FD 90000000    R     MOV     DPTR,#vPeriod
+0201 E0                MOVX    A,@DPTR
+0202 FC                MOV     R4,A
+0203 A3                INC     DPTR
+0204 E0                MOVX    A,@DPTR
+0205 FD                MOV     R5,A
+0206 C3                CLR     C
+0207 9F                SUBB    A,R7
+0208 FF                MOV     R7,A
+0209 EC                MOV     A,R4
+020A 9E                SUBB    A,R6
+020B FE                MOV     R6,A
+020C 90000000    R     MOV     DPTR,#vSync
+0210 F0                MOVX    @DPTR,A
+0211 A3                INC     DPTR
+0212 EF                MOV     A,R7
+0213 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1440
+0214 90000000    R     MOV     DPTR,#vStart
+0218 E0                MOVX    A,@DPTR
+0219 FB                MOV     R3,A
+021A A3                INC     DPTR
+021B E0                MOVX    A,@DPTR
+021C 90000000    R     MOV     DPTR,#vBPorch
+0220 CB                XCH     A,R3
+0221 F0                MOVX    @DPTR,A
+0222 A3                INC     DPTR
+0223 EB                MOV     A,R3
+0224 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1441
+0225 C3                CLR     C
+0226 ED                MOV     A,R5
+0227 9F                SUBB    A,R7
+0228 FF                MOV     R7,A
+0229 EC                MOV     A,R4
+022A 9E                SUBB    A,R6
+                                           ; SOURCE LINE # 1442
+022B 8039              SJMP    ?C0119
+022D         ?C0094:
+                                           ; SOURCE LINE # 1443
+                                           ; SOURCE LINE # 1444
+022D 110000      E     ACALL   MeasGetVSyncRiseToFallWidth
+0230 90000000    R     MOV     DPTR,#vSync
+0234 EE                MOV     A,R6
+0235 F0                MOVX    @DPTR,A
+0236 A3                INC     DPTR
+0237 EF                MOV     A,R7
+0238 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1445
+0239 90000000    R     MOV     DPTR,#vSync
+023D E0                MOVX    A,@DPTR
+023E FA                MOV     R2,A
+023F A3                INC     DPTR
+0240 E0                MOVX    A,@DPTR
+0241 FB                MOV     R3,A
+0242 C3                CLR     C
+0243 90000000    R     MOV     DPTR,#vStart+01H
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 67  
+
+0247 E0                MOVX    A,@DPTR
+0248 9B                SUBB    A,R3
+0249 FE                MOV     R6,A
+024A 90000000    R     MOV     DPTR,#vStart
+024E E0                MOVX    A,@DPTR
+024F 9A                SUBB    A,R2
+0250 90000000    R     MOV     DPTR,#vBPorch
+0254 F0                MOVX    @DPTR,A
+0255 A3                INC     DPTR
+0256 CE                XCH     A,R6
+0257 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1446
+0258 C3                CLR     C
+0259 90000000    R     MOV     DPTR,#vPeriod+01H
+025D E0                MOVX    A,@DPTR
+025E 9B                SUBB    A,R3
+025F FF                MOV     R7,A
+0260 90000000    R     MOV     DPTR,#vPeriod
+0264 E0                MOVX    A,@DPTR
+0265 9A                SUBB    A,R2
+0266         ?C0119:
+0266 FE                MOV     R6,A
+0267 90000000    R     MOV     DPTR,#vBPorch
+026B E0                MOVX    A,@DPTR
+026C FC                MOV     R4,A
+026D A3                INC     DPTR
+026E E0                MOVX    A,@DPTR
+026F 90000000    R     MOV     DPTR,#vActive
+0273 110000      R     ACALL   L?0128
+0276 90000000    R     MOV     DPTR,#vFPorch
+027A F0                MOVX    @DPTR,A
+027B A3                INC     DPTR
+027C EF                MOV     A,R7
+027D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1447
+027E         ?C0095:
+                                           ; SOURCE LINE # 1449
+027E 90000000    R     MOV     DPTR,#hPol
+0282 E0                MOVX    A,@DPTR
+0283 705E              JNZ     ?C0096
+                                           ; SOURCE LINE # 1450
+0285 90000000    R     MOV     DPTR,#hStart
+0289 E0                MOVX    A,@DPTR
+028A FF                MOV     R7,A
+028B A3                INC     DPTR
+028C E0                MOVX    A,@DPTR
+028D 90000000    R     MOV     DPTR,#hBPorch
+0291 CF                XCH     A,R7
+0292 F0                MOVX    @DPTR,A
+0293 A3                INC     DPTR
+0294 EF                MOV     A,R7
+0295 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1451
+0296 110000      E     ACALL   MeasGetHSyncRiseToHActiveEnd
+0299 C006              PUSH    AR6
+029B C007              PUSH    AR7
+029D 110000      E     ACALL   MeasGetHSyncRiseToFallWidth
+02A0 AC06              MOV     R4,AR6
+02A2 AD07              MOV     R5,AR7
+02A4 D007              POP     AR7
+02A6 D006              POP     AR6
+02A8 C3                CLR     C
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 68  
+
+02A9 ED                MOV     A,R5
+02AA 9F                SUBB    A,R7
+02AB FF                MOV     R7,A
+02AC EC                MOV     A,R4
+02AD 9E                SUBB    A,R6
+02AE 90000000    R     MOV     DPTR,#hFPorch
+                                           ; SOURCE LINE # 1452
+02B2 110000      R     ACALL   L?0138
+02B5 4410              ORL     A,#010H
+                                           ; SOURCE LINE # 1453
+                                           ; SOURCE LINE # 1454
+02B7 110000      R     ACALL   L?0159
+                                           ; SOURCE LINE # 1455
+02BA 110000      E     ACALL   MeasGetHSyncRiseToFallWidth
+02BD 90000000    R     MOV     DPTR,#hPeriod
+02C1 EE                MOV     A,R6
+02C2 F0                MOVX    @DPTR,A
+02C3 A3                INC     DPTR
+02C4 EF                MOV     A,R7
+02C5 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1456
+02C6 90000000    R     MOV     DPTR,#hFPorch
+02CA E0                MOVX    A,@DPTR
+02CB FC                MOV     R4,A
+02CC A3                INC     DPTR
+02CD E0                MOVX    A,@DPTR
+02CE 90000000    R     MOV     DPTR,#hBPorch
+02D2 110000      R     ACALL   L?0127
+02D5 90000000    R     MOV     DPTR,#hSync
+                                           ; SOURCE LINE # 1459
+02D9 110000      R     ACALL   L?0138
+02DC 54EF              ANL     A,#0EFH
+                                           ; SOURCE LINE # 1460
+                                           ; SOURCE LINE # 1461
+02DE 110000      R     ACALL   L?0159
+                                           ; SOURCE LINE # 1462
+02E1 8025              SJMP    ?C0097
+02E3         ?C0096:
+                                           ; SOURCE LINE # 1463
+                                           ; SOURCE LINE # 1464
+02E3 110000      R     ACALL   L?0196
+                                           ; SOURCE LINE # 1465
+02E6 110000      R     ACALL   L?0190
+02E9 9E                SUBB    A,R6
+02EA 90000000    R     MOV     DPTR,#hBPorch
+                                           ; SOURCE LINE # 1466
+02EE 110000      R     ACALL   L?0165
+                                           ; SOURCE LINE # 1467
+02F1 90000000    R     MOV     DPTR,#hBPorch
+02F5 E0                MOVX    A,@DPTR
+02F6 FC                MOV     R4,A
+02F7 A3                INC     DPTR
+02F8 E0                MOVX    A,@DPTR
+02F9 90000000    R     MOV     DPTR,#hSync
+02FD 110000      R     ACALL   L?0127
+0300 90000000    R     MOV     DPTR,#hFPorch
+0304 F0                MOVX    @DPTR,A
+0305 A3                INC     DPTR
+0306 EF                MOV     A,R7
+0307 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1468
+0308         ?C0097:
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 69  
+
+                                           ; SOURCE LINE # 1471
+0308 110000      E     ACALL   MeasGetHPeriodReg
+030B 110000      R     ACALL   L?0184
+                                           ; SOURCE LINE # 1472
+030E 110000      E     ACALL   Sspll2GetFreq
+                                           ; SOURCE LINE # 1473
+0311 110000      R     ACALL   L?0173
+0314 110000      R     ACALL   L?0123
+0317 FF                MOV     R7,A
+0318 110000      E     ACALL   _PclkGetFreq
+031B 90000000    R     MOV     DPTR,#pclk
+031F 110000      E     ACALL   ?C?LSTXDATA
+                                           ; SOURCE LINE # 1474
+0322 90000000    R     MOV     DPTR,#pclk
+0326 110000      R     ACALL   L?0123
+0329 FF                MOV     R7,A
+032A E4                CLR     A
+032B 7BE8              MOV     R3,#0E8H
+032D 7A03              MOV     R2,#03H
+032F F9                MOV     R1,A
+0330 F8                MOV     R0,A
+0331 110000      E     ACALL   ?C?ULDIV
+0334 90000000    R     MOV     DPTR,#pclk
+0338 110000      E     ACALL   ?C?LSTXDATA
+                                           ; SOURCE LINE # 1475
+033B 90000000    R     MOV     DPTR,#hPeriod
+033F E0                MOVX    A,@DPTR
+0340 FE                MOV     R6,A
+0341 A3                INC     DPTR
+0342 E0                MOVX    A,@DPTR
+0343 FF                MOV     R7,A
+0344 E4                CLR     A
+0345 FC                MOV     R4,A
+0346 FD                MOV     R5,A
+                                           ; SOURCE LINE # 1476
+0347 110000      R     ACALL   L?0173
+034A 110000      R     ACALL   L?0123
+034D FF                MOV     R7,A
+034E A3                INC     DPTR
+034F E0                MOVX    A,@DPTR
+0350 F8                MOV     R0,A
+0351 A3                INC     DPTR
+0352 E0                MOVX    A,@DPTR
+0353 F9                MOV     R1,A
+0354 110000      R     ACALL   L?0188
+0357 110000      E     ACALL   ?C?LMUL
+                                           ; SOURCE LINE # 1477
+035A 110000      R     ACALL   L?0174
+035D 110000      R     ACALL   L?0123
+0360 FF                MOV     R7,A
+0361 C006              PUSH    AR6
+0363 C007              PUSH    AR7
+0365 90000000    R     MOV     DPTR,#wTemp0
+0369 110000      R     ACALL   L?0167
+036C D007              POP     AR7
+036E D006              POP     AR6
+0370 110000      E     ACALL   ?C?ULDIV
+0373 90000000    R     MOV     DPTR,#dTemp
+0377 110000      E     ACALL   ?C?LSTXDATA
+                                           ; SOURCE LINE # 1480
+037A 7B00        R     MOV     R3,#MBYTE ?SC_169
+037C 7A00        R     MOV     R2,#HIGH ?SC_169
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 70  
+
+037E 7900        R     MOV     R1,#LOW ?SC_169
+0380 90000000    R     MOV     DPTR,#hActive
+0384 110000      R     ACALL   L?0142
+0387 EF                MOV     A,R7
+0388 F0                MOVX    @DPTR,A
+0389 90000000    R     MOV     DPTR,#vActive
+038D 110000      R     ACALL   L?0132
+0390 90000000    R     MOV     DPTR,#vFreq
+0394 E0                MOVX    A,@DPTR
+0395 90000000    E     MOV     DPTR,#?_Printf?BYTE+07H
+0399 F0                MOVX    @DPTR,A
+039A 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 1481
+039D 7B00        R     MOV     R3,#MBYTE ?SC_180
+039F 7A00        R     MOV     R2,#HIGH ?SC_180
+03A1 7900        R     MOV     R1,#LOW ?SC_180
+03A3 90000000    R     MOV     DPTR,#hStart
+03A7 110000      R     ACALL   L?0142
+03AA EF                MOV     A,R7
+03AB F0                MOVX    @DPTR,A
+03AC 90000000    R     MOV     DPTR,#vStart
+03B0 110000      R     ACALL   L?0133
+03B3 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 1483
+03B6 90000000    R     MOV     DPTR,#hPol
+03BA E0                MOVX    A,@DPTR
+03BB 6008              JZ      ?C0098
+03BD 7B00        R     MOV     R3,#MBYTE ?SC_205
+03BF 7A00        R     MOV     R2,#HIGH ?SC_205
+03C1 7900        R     MOV     R1,#LOW ?SC_205
+03C3 8006              SJMP    ?C0099
+03C5         ?C0098:
+03C5 7B00        R     MOV     R3,#MBYTE ?SC_208
+03C7 7A00        R     MOV     R2,#HIGH ?SC_208
+03C9 7900        R     MOV     R1,#LOW ?SC_208
+03CB         ?C0099:
+03CB 110000      R     ACALL   L?0147
+03CE 7B00        R     MOV     R3,#MBYTE ?SC_201
+03D0 7A00        R     MOV     R2,#HIGH ?SC_201
+03D2 7900        R     MOV     R1,#LOW ?SC_201
+03D4 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 1484
+03D7 90000000    R     MOV     DPTR,#vPol
+03DB E0                MOVX    A,@DPTR
+03DC 6008              JZ      ?C0100
+03DE 7B00        R     MOV     R3,#MBYTE ?SC_215
+03E0 7A00        R     MOV     R2,#HIGH ?SC_215
+03E2 7900        R     MOV     R1,#LOW ?SC_215
+03E4 8006              SJMP    ?C0101
+03E6         ?C0100:
+03E6 7B00        R     MOV     R3,#MBYTE ?SC_218
+03E8 7A00        R     MOV     R2,#HIGH ?SC_218
+03EA 7900        R     MOV     R1,#LOW ?SC_218
+03EC         ?C0101:
+03EC 110000      R     ACALL   L?0147
+03EF 7B00        R     MOV     R3,#MBYTE ?SC_211
+03F1 7A00        R     MOV     R2,#HIGH ?SC_211
+03F3 7900        R     MOV     R1,#LOW ?SC_211
+03F5 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 1486
+03F8 90000000    R     MOV     DPTR,#hPeriod
+03FC 110000      R     ACALL   L?0141
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 71  
+
+03FF EF                MOV     A,R7
+0400 F0                MOVX    @DPTR,A
+0401 90000000    R     MOV     DPTR,#hFPorch
+0405 110000      R     ACALL   L?0133
+0408 90000000    R     MOV     DPTR,#hSync
+040C 110000      R     ACALL   L?0175
+040F 90000000    R     MOV     DPTR,#hBPorch
+0413 110000      R     ACALL   L?0179
+                                           ; SOURCE LINE # 1488
+0416 90000000    R     MOV     DPTR,#vPeriod
+041A 110000      R     ACALL   L?0141
+041D EF                MOV     A,R7
+041E F0                MOVX    @DPTR,A
+041F 90000000    R     MOV     DPTR,#vFPorch
+0423 110000      R     ACALL   L?0133
+0426 90000000    R     MOV     DPTR,#vSync
+042A 110000      R     ACALL   L?0175
+042D 90000000    R     MOV     DPTR,#vBPorch
+0431 110000      R     ACALL   L?0179
+                                           ; SOURCE LINE # 1490
+0434 7B00        R     MOV     R3,#MBYTE ?SC_234
+0436 7A00        R     MOV     R2,#HIGH ?SC_234
+0438 7900        R     MOV     R1,#LOW ?SC_234
+043A 90000000    R     MOV     DPTR,#dTemp
+043E 110000      R     ACALL   L?0123
+0441 FF                MOV     R7,A
+0442 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0446 110000      E     ACALL   ?C?LSTXDATA
+0449 90000000    R     MOV     DPTR,#pclk
+044D 110000      R     ACALL   L?0123
+0450 FF                MOV     R7,A
+0451 90000000    E     MOV     DPTR,#?_Printf?BYTE+07H
+0455 110000      E     ACALL   ?C?LSTXDATA
+0458 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 1493
+045B 90000000    R     MOV     DPTR,#hPeriod
+045F E0                MOVX    A,@DPTR
+0460 FC                MOV     R4,A
+0461 A3                INC     DPTR
+0462 E0                MOVX    A,@DPTR
+0463 FD                MOV     R5,A
+0464 90000000    R     MOV     DPTR,#wTemp0
+0468 E0                MOVX    A,@DPTR
+0469 FE                MOV     R6,A
+046A A3                INC     DPTR
+046B E0                MOVX    A,@DPTR
+046C FF                MOV     R7,A
+046D 110000      E     ACALL   ?C?UIDIV
+0470 A3                INC     DPTR
+0471 EE                MOV     A,R6
+0472 F0                MOVX    @DPTR,A
+0473 A3                INC     DPTR
+0474 EF                MOV     A,R7
+0475 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1494
+0476 D3                SETB    C
+0477 9402              SUBB    A,#02H
+0479 EE                MOV     A,R6
+047A 9400              SUBB    A,#00H
+047C 90000000    R     MOV     DPTR,#i
+0480 4005              JC      ?C0102
+0482 7402              MOV     A,#02H
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 72  
+
+0484 F0                MOVX    @DPTR,A
+0485 8003              SJMP    ?C0103
+0487         ?C0102:
+                                           ; SOURCE LINE # 1495
+0487 7401              MOV     A,#01H
+0489 F0                MOVX    @DPTR,A
+048A         ?C0103:
+                                           ; SOURCE LINE # 1496
+048A 7B00        R     MOV     R3,#MBYTE ?SC_255
+048C 7A00        R     MOV     R2,#HIGH ?SC_255
+048E 7900        R     MOV     R1,#LOW ?SC_255
+0490 90000000    R     MOV     DPTR,#i
+0494 E0                MOVX    A,@DPTR
+0495 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0499 F0                MOVX    @DPTR,A
+049A 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 1499
+049D 110000      R     ACALL   L?0186
+04A0 64A0              XRL     A,#0A0H
+04A2 7003              JNZ     ?C0113
+04A4 EE                MOV     A,R6
+04A5 6405              XRL     A,#05H
+04A7         ?C0113:
+04A7 702D              JNZ     ?C0104
+                                           ; SOURCE LINE # 1500
+04A9 110000      R     ACALL   L?0146
+04AC 64F0              XRL     A,#0F0H
+04AE 4C                ORL     A,R4
+04AF 6006              JZ      ?C0106
+04B1 BC0122            CJNE    R4,#01H,?C0104
+04B4 BD201F            CJNE    R5,#020H,?C0104
+04B7         ?C0106:
+                                           ; SOURCE LINE # 1501
+04B7 EE                MOV     A,R6
+04B8 110000      R     ACALL   L?0181
+04BB 90000000    R     MOV     DPTR,#hActive
+04BF EE                MOV     A,R6
+04C0 F0                MOVX    @DPTR,A
+04C1 FC                MOV     R4,A
+04C2 A3                INC     DPTR
+04C3 EF                MOV     A,R7
+04C4 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1502
+04C5 90000000    R     MOV     DPTR,#hStart
+                                           ; SOURCE LINE # 1503
+04C9 110000      R     ACALL   L?0158
+04CC 90000000    R     MOV     DPTR,#hStart
+04D0 110000      R     ACALL   L?0133
+04D3 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 1504
+                                           ; SOURCE LINE # 1505
+04D6         ?C0104:
+                                           ; SOURCE LINE # 1509
+04D6 90000000    R     MOV     DPTR,#i
+04DA E0                MOVX    A,@DPTR
+04DB FF                MOV     R7,A
+04DC 110000      R     ACALL   L?0190
+04DF 9400              SUBB    A,#00H
+04E1 FE                MOV     R6,A
+04E2 C006              PUSH    AR6
+04E4 C007              PUSH    AR7
+04E6 90000000    R     MOV     DPTR,#vPol
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 73  
+
+04EA E0                MOVX    A,@DPTR
+04EB FF                MOV     R7,A
+04EC C3                CLR     C
+04ED 90000000    R     MOV     DPTR,#vStart+01H
+04F1 E0                MOVX    A,@DPTR
+04F2 9F                SUBB    A,R7
+04F3 FD                MOV     R5,A
+04F4 90000000    R     MOV     DPTR,#vStart
+04F8 E0                MOVX    A,@DPTR
+04F9 9400              SUBB    A,#00H
+04FB FC                MOV     R4,A
+04FC 90000000    R     MOV     DPTR,#hActive+01H
+0500 E0                MOVX    A,@DPTR
+0501 2402              ADD     A,#02H
+0503 FB                MOV     R3,A
+0504 90000000    R     MOV     DPTR,#hActive
+0508 E0                MOVX    A,@DPTR
+0509 90000000    R     MOV     DPTR,#vActive
+050D 110000      R     ACALL   L?0171
+0510 D007              POP     AR7
+0512 D006              POP     AR6
+0514 110000      E     ACALL   _InputSetCrop
+                                           ; SOURCE LINE # 1510
+0517 90000000    R     MOV     DPTR,#hActive
+051B 110000      R     ACALL   L?0145
+051E 90000000    R     MOV     DPTR,#vStart
+0522 A3                INC     DPTR
+0523 E0                MOVX    A,@DPTR
+0524 FB                MOV     R3,A
+0525 110000      R     ACALL   _HDMISetOutput
+                                           ; SOURCE LINE # 1515
+0528 110000      R     ACALL   L?0162
+052B 90000000    R     MOV     DPTR,#hActive
+052F 110000      R     ACALL   L?0187
+0532 90000000    R     MOV     DPTR,#vFreq
+0536 E0                MOVX    A,@DPTR
+0537 90000000    E     MOV     DPTR,#?_FindScalerTable?BYTE+05H
+053B F0                MOVX    @DPTR,A
+053C 90000000    R     MOV     DPTR,#vStart
+0540 110000      R     ACALL   L?0202
+0543 90000000    R     MOV     DPTR,#vPol
+0547 E0                MOVX    A,@DPTR
+0548 90000000    E     MOV     DPTR,#?_FindScalerTable?BYTE+07H
+054C F0                MOVX    @DPTR,A
+054D 110000      E     ACALL   _FindScalerTable
+0550 90000000    R     MOV     DPTR,#pScaler
+0554 110000      R     ACALL   L?0148
+                                           ; SOURCE LINE # 1516
+0557 90000000    R     MOV     DPTR,#pScaler
+055B 110000      R     ACALL   L?0131
+055E 4A                ORL     A,R2
+055F 4B                ORL     A,R3
+0560 600E              JZ      ?C0107
+                                           ; SOURCE LINE # 1517
+0562 90000000    R     MOV     DPTR,#pScaler
+0566 A3                INC     DPTR
+0567 A3                INC     DPTR
+0568 E0                MOVX    A,@DPTR
+0569 A3                INC     DPTR
+056A 110000      R     ACALL   L?0200
+056D 110000      E     ACALL   _OverWriteScalerWithTable
+0570         ?C0107:
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 74  
+
+                                           ; SOURCE LINE # 1520
+0570 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 1521
+0572         ?C0082:
+0572 22                RET     
+0573         L?0159:
+0573 F0                MOVX    @DPTR,A
+0574 110000      E     ACALL   Meas_StartMeasure
+0577 7F32              MOV     R7,#032H
+0579 110000      E     ACALL   _Meas_IsMeasureDone
+057C 22                RET     
+057D         L?0165:
+057D F0                MOVX    @DPTR,A
+057E A3                INC     DPTR
+057F EF                MOV     A,R7
+0580 F0                MOVX    @DPTR,A
+0581 110000      E     ACALL   MeasGetVsyncRisePos
+0584 90000000    R     MOV     DPTR,#hPeriod
+0588 EE                MOV     A,R6
+0589 F0                MOVX    @DPTR,A
+058A A3                INC     DPTR
+058B EF                MOV     A,R7
+058C F0                MOVX    @DPTR,A
+058D 22                RET     
+058E         L?0179:
+058E E0                MOVX    A,@DPTR
+058F FF                MOV     R7,A
+0590 A3                INC     DPTR
+0591 E0                MOVX    A,@DPTR
+0592 90000000    E     MOV     DPTR,#?_Printf?BYTE+09H
+0596 CF                XCH     A,R7
+0597 F0                MOVX    @DPTR,A
+0598 A3                INC     DPTR
+0599 EF                MOV     A,R7
+059A F0                MOVX    @DPTR,A
+059B 110000      E     ACALL   _Printf
+059E 22                RET     
+059F         L?0189:
+059F 110000      E     ACALL   Meas_StartMeasure
+05A2 7F32              MOV     R7,#032H
+05A4 110000      E     ACALL   _Meas_IsMeasureDone
+05A7 90000000    R     MOV     DPTR,#ret
+05AB EF                MOV     A,R7
+05AC F0                MOVX    @DPTR,A
+05AD 22                RET     
+05AE         L?0195:
+05AE 110000      E     ACALL   _Puts
+05B1 90000000    R     MOV     DPTR,#i
+05B5 E0                MOVX    A,@DPTR
+05B6 04                INC     A
+05B7 F0                MOVX    @DPTR,A
+05B8 E0                MOVX    A,@DPTR
+05B9 C3                CLR     C
+05BA 22                RET     
+05BB         L?0196:
+05BB 110000      E     ACALL   MeasGetHSyncRiseToFallWidth
+05BE 90000000    R     MOV     DPTR,#hSync
+05C2 EE                MOV     A,R6
+05C3 F0                MOVX    @DPTR,A
+05C4 A3                INC     DPTR
+05C5 EF                MOV     A,R7
+05C6 F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   DTV                                                               07/18/2018 10:44:38 PAGE 75  
+
+05C7 22                RET     
+05C8         L?0203:
+05C8 7B00        R     MOV     R3,#MBYTE hStart
+05CA 7A00        R     MOV     R2,#HIGH hStart
+05CC 7900        R     MOV     R1,#LOW hStart
+05CE 110000      E     ACALL   _MeasGetHActive
+05D1 22                RET     
+05D2         L?0204:
+05D2 7B00        R     MOV     R3,#MBYTE vStart
+05D4 7A00        R     MOV     R2,#HIGH vStart
+05D6 7900        R     MOV     R1,#LOW vStart
+05D8 110000      E     ACALL   _MeasGetVActive
+05DB 22                RET     
+             ; FUNCTION CheckAndSetDtvSignal (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   4180    ----
+   CONSTANT SIZE    =    332    ----
+   XDATA SIZE       =   ----     105
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  1 WARNING(S),  0 ERROR(S)

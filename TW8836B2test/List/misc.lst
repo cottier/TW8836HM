@@ -1,0 +1,1275 @@
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE MISC
+OBJECT MODULE PLACED IN .\Output\misc.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source36\misc.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\Output
+                    -\TW8836B_EVB11.ORC) BROWSE INCDIR(SiI-SW;SiI-SW\HAL;SiI-SW\DEBUG;SiI-SW\CEC;.\Source36\LIB) DEFINE(EVB_11,nullFn=//) DEB
+                    -UG CODE PRINT(.\List\misc.lst) TABS(2) OBJECT(.\Output\misc.obj)
+
+line level    source
+
+   1          /**
+   2           * @file
+   3           * misc.c 
+   4           * @author Harry Han
+   5           * @author YoungHwan Bae
+   6           * @author Brian Kang
+   7           * @version 1.0
+   8           * @section LICENSE
+   9           *  Copyright (C) 2011~2012 Intersil Corporation
+  10           * @section DESCRIPTION
+  11           *  main file
+  12           * @section DESCRIPTION
+  13           *  developer code
+  14           ******************************************************************************
+  15           */
+  16          /*
+  17          Disclaimer: THIS INFORMATION IS PROVIDED 'AS-IS' FOR EVALUATION PURPOSES ONLY.  
+  18          INTERSIL CORPORATION AND ITS SUBSIDIARIES ('INTERSIL') DISCLAIM ALL WARRANTIES, 
+  19          INCLUDING WITHOUT LIMITATION FITNESS FOR A PARTICULAR PURPOSE AND MERCHANTABILITY.  
+  20          Intersil provides evaluation platforms to help our customers to develop products. 
+  21          However, factors beyond Intersil's control could significantly affect Intersil 
+  22          product performance. 
+  23          It remains the customers' responsibility to verify the actual system performance.
+  24          */
+  25          
+  26          #include "Config.h"
+  27          #include "reg.h"
+  28          #include "typedefs.h"
+  29          #include "TW8836.h"
+  30          
+  31          #include "Global.h"
+  32          #include "CPU.h"
+  33          #include "Printf.h"
+  34          #include "Monitor.h"
+  35          
+  36          #include "I2C.h"
+  37          #include "SPI.h"
+  38          
+  39          #include "main.h"
+  40          #include "misc.h"
+  41          
+  42          #include "SOsd.h"
+  43          #include "FOsd.h"
+  44          #include "Scaler.h"
+  45          #include "InputCtrl.h"
+  46          #include "EEPROM.h"
+  47          #include "ImageCtrl.h"
+  48          #include "decoder.h"
+  49          #include "InputCtrl.h"
+  50          #include "aRGB.h"
+  51          #include "DTV.h"
+  52          #include "BT656.h"
+  53          //#include "OutputCtrl.h"
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 2   
+
+  54          #include "Settings.h"
+  55          #include "measure.h"
+  56          
+  57          #include "SOsdMenu.h"
+  58          
+  59          void dummy_misc_code(void)
+  60          {
+  61   1        Puts("dummy_misc_code");
+  62   1      }
+  63          
+  64          //=============================================================================
+  65          // I2CCMD routines
+  66          //=============================================================================
+  67          
+  68          #if defined(SUPPORT_I2CCMD_SERVER)
+  69          //-----------------------------------------------------------------------------
+  70          /**
+  71          * stop internal MCU
+  72          *
+  73          * To resume, write REG0D4[1]=1 by I2C
+  74          */
+  75          #ifdef USE_EXTMCU_ISP_I2CCMD
+              static void StopCPU(void)
+              {
+                Printf("\n\rGoto STOP mode");
+                Printf("\n\rTo resume, write REG0D4[1]=1 by I2C");
+                SFR_PCON |= 0x12;
+                //----- need nop to clean up the 8051 pipeline.
+                _nop_(); _nop_(); _nop_(); _nop_(); _nop_();
+                _nop_(); _nop_(); _nop_(); _nop_(); _nop_();
+                //----------------------------
+                //to reboot, 
+                //  write REG0D4[0]=1.
+                //----------------------------    
+              }
+              #endif
+  90          #endif
+  91          
+  92          #if defined(SUPPORT_I2CCMD_SERVER)
+  93          //-----------------------------------------------------------------------------
+  94          // I2CCMD proto type
+  95          //-----------------------------------------------------------------------------
+  96          static BYTE I2CCMD_Read(void);
+  97          static BYTE I2CCMD_Exec(void);
+  98          static BYTE I2CCMD_Sfr(void);
+  99          static BYTE I2CCmd_eeprom(void);
+ 100          static BYTE I2CCmd_key(void);
+ 101          static BYTE I2CCmd_Custom(void);
+ 102          
+ 103          
+ 104          //-----------------------------------------------------------------------------
+ 105          /**
+ 106           * I2CCMD main
+ 107           *
+ 108           * @ingroup I2CCMD
+ 109           * @see I2CCMD_Read
+ 110           * @see I2CCMD_Exec
+ 111           * @see I2CCMD_Sfr
+ 112           * @see I2CCmd_eeprom
+ 113           * @see I2CCmd_key
+ 114          */
+ 115          BYTE I2CCMD_exec_main(void)
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 3   
+
+ 116          {
+ 117   1        BYTE ret;
+ 118   1        //I2CCMD_REG0~I2CCMD_REG4
+ 119   1      
+ 120   1        Printf("\n\rI2CCMD %bx:%bx:%bx:%bx:%bx",
+ 121   1          ReadTW88(I2CCMD_REG0),
+ 122   1          ReadTW88(I2CCMD_REG1),
+ 123   1          ReadTW88(I2CCMD_REG2),
+ 124   1          ReadTW88(I2CCMD_REG3),
+ 125   1          ReadTW88(I2CCMD_REG4));
+ 126   1      
+ 127   1        switch(ReadTW88(I2CCMD_REG0)) {
+ 128   2        case 0:   ret = I2CCMD_Read();  break;
+ 129   2        case 1:   ret = I2CCMD_Exec();  break;
+ 130   2        case 2:   ret = I2CCMD_Sfr();   break;
+ 131   2        case 3:   ret = I2CCmd_eeprom();  break;
+ 132   2        case 4:   ret = I2CCmd_key();   break;
+ 133   2        case 5:   ret = I2CCmd_Custom();  break;
+ 134   2        default:  ret = ERR_FAIL;
+ 135   2        }
+ 136   1        if(ret!=ERR_SUCCESS) {  
+ 137   2          WriteTW88(REG009, 0xE0);
+ 138   2        }
+ 139   1        return ret;
+ 140   1      }
+ 141          //-----------------------------------------------------------------------------
+ 142          /**
+ 143           * I2CCMD read commad
+ 144           *
+ 145           * @ingroup I2CCMD
+ 146           * @see I2CCMD_exec_main
+ 147          */
+ 148          static BYTE I2CCMD_Read(void)
+ 149          {
+ 150   1        BYTE cmd;
+ 151   1        BYTE ret;
+ 152   1      
+ 153   1        ret = ERR_FAIL;
+ 154   1      
+ 155   1        cmd = ReadTW88(I2CCMD_REG1);
+ 156   1        if(cmd==0) {
+ 157   2          WriteTW88(I2CCMD_REG4,InputMain);
+ 158   2          ret = ERR_SUCCESS;
+ 159   2        }
+ 160   1        else if(cmd==1) {
+ 161   2          WriteTW88(I2CCMD_REG4,MenuGetLevel());
+ 162   2          ret = ERR_SUCCESS;
+ 163   2        }
+ 164   1        else if(cmd==2) {
+ 165   2          WriteTW88(I2CCMD_REG4,DebugLevel);
+ 166   2          ret = ERR_SUCCESS;
+ 167   2        }
+ 168   1        else if(cmd==3) {
+ 169   2          WriteTW88(I2CCMD_REG4,g_access);
+ 170   2          ret = ERR_SUCCESS;
+ 171   2        }
+ 172   1        else if(cmd==4) {
+ 173   2          WriteTW88(I2CCMD_REG4,g_access);
+ 174   2          if(SFR_WDCON & 0x02) WriteTW88(I2CCMD_REG4,0x01); //On
+ 175   2          else                 WriteTW88(I2CCMD_REG4,0x00); //Off
+ 176   2          ret = ERR_SUCCESS;
+ 177   2        }
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 4   
+
+ 178   1        else if(cmd==5) {
+ 179   2          WriteTW88(I2CCMD_REG3,(WORD)SPI_Buffer>>8);
+ 180   2          WriteTW88(I2CCMD_REG4,(BYTE)SPI_Buffer);
+ 181   2          ret = ERR_SUCCESS;
+ 182   2        }
+ 183   1        else if(cmd==6) {
+ 184   2          WriteTW88(I2CCMD_REG3,SPI_BUFFER_SIZE>>8);
+ 185   2          WriteTW88(I2CCMD_REG4,(BYTE)SPI_BUFFER_SIZE);
+ 186   2          ret = ERR_SUCCESS;
+ 187   2        }
+ 188   1      
+ 189   1        if(ret==ERR_SUCCESS)
+ 190   1          WriteTW88(REG009,0xD0); //Done
+ 191   1        else
+ 192   1          WriteTW88(REG009,0xF0); //FAIL
+ 193   1      
+ 194   1        return ret;
+ 195   1      }
+ 196          //-----------------------------------------------------------------------------
+ 197          /**
+ 198           * I2CCMD EXE commad
+ 199           *
+ 200           * @ingroup I2CCMD
+ 201           * @see I2CCMD_exec_main
+ 202          */
+ 203          static BYTE I2CCMD_Exec(void)
+ 204          {
+ 205   1        BYTE cmd;
+ 206   1        BYTE ret;
+ 207   1      
+ 208   1        ret = ERR_FAIL;
+ 209   1      
+ 210   1        cmd = ReadTW88(I2CCMD_REG1);
+ 211   1        if(cmd < 0x0F) {
+ 212   2          //if(MenuGetLevel())
+ 213   2          //  MenuEnd();
+ 214   2          //if(SpiOsdIsOn())
+ 215   2          //  SpiOsdEnable(OFF);
+ 216   2          if(getNoSignalLogoStatus())
+ 217   2            RemoveLogo();
+ 218   2      
+ 219   2          //Change input
+ 220   2          switch(cmd) {
+ 221   3          case INPUT_CVBS:  ChangeCVBS();   ret=ERR_SUCCESS;  break;
+ 222   3          case INPUT_SVIDEO:  ChangeSVIDEO();   ret=ERR_SUCCESS;  break;
+ 223   3      #ifdef SUPPORT_COMPONENT
+ 224   3          case INPUT_COMP:  ChangeComponent();  ret=ERR_SUCCESS;  break;
+ 225   3      #endif
+ 226   3      #ifdef SUPPORT_PC
+ 227   3          case INPUT_PC:    ChangePC();     ret=ERR_SUCCESS;  break;
+ 228   3      #endif
+ 229   3      #ifdef SUPPORT_DVI
+                  case INPUT_DVI:   ChangeDVI();    ret=ERR_SUCCESS;  break;
+              #endif
+ 232   3          case INPUT_HDMIPC:  
+ 233   3          case INPUT_HDMITV:  ChangeHDMI();   ret=ERR_SUCCESS;  break;
+ 234   3      #ifdef SUPPORT_BT656_LOOP
+ 235   3          case INPUT_BT656: ChangeBT656Loop();  ret=ERR_SUCCESS;  break;
+ 236   3      #endif
+ 237   3      #ifdef SUPPORT_LVDSRX
+ 238   3          case INPUT_LVDS:  ChangeLVDSRx();   ret=ERR_SUCCESS;  break;
+ 239   3      #endif
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 5   
+
+ 240   3          default: break;
+ 241   3          }   
+ 242   2        }
+ 243   1        else if(cmd==0x0F) {
+ 244   2          //if(MenuGetLevel())
+ 245   2          //  MenuEnd();
+ 246   2          //if(SpiOsdIsOn())
+ 247   2          //  SpiOsdEnable(OFF);
+ 248   2      
+ 249   2          InputModeNext();
+ 250   2          ret=ERR_SUCCESS;
+ 251   2        }
+ 252   1        else if(cmd==0x10) {
+ 253   2          ret = CheckAndSetInput(); 
+ 254   2        }
+ 255   1        //FYI: if master changes an access as 0, we can not support i2ccmd anymore.
+ 256   1        //else if(cmd==0x11) {
+ 257   1        //  g_access = ReadTW88(I2CCMD_REG2); 
+ 258   1        //  ret=ERR_SUCCESS;
+ 259   1        //}
+ 260   1        else if(cmd==0x12) {
+ 261   2          DebugLevel = ReadTW88(I2CCMD_REG2); 
+ 262   2          ret=ERR_SUCCESS;  
+ 263   2        }
+ 264   1        else if(cmd==0x80) {
+ 265   2          WriteTW88(REG0D4, ReadTW88(REG0D4) | 0x01);
+ 266   2        }
+ 267   1      #ifdef USE_EXTMCU_ISP_I2CCMD
+                else if(cmd==0x8A) {
+                  //Write Done flag frist. Because, I will stop myself.
+                  WriteTW88(REG009,0xD0); 
+                  StopCPU();
+                  return 0;
+                }
+              #endif
+ 275   1      #if defined(SUPPORT_WATCHDOG) || defined(DEBUG_WATCHDOG)
+ 276   1        else if(cmd==0x90) {
+ 277   2          DisableWatchdog();
+ 278   2          ret=ERR_SUCCESS;
+ 279   2        }
+ 280   1        else if(cmd==0x91) {
+ 281   2          EnableWatchdog(1); /* with default mode */
+ 282   2          ret=ERR_SUCCESS;
+ 283   2        }
+ 284   1      #endif
+ 285   1        if(ret==ERR_SUCCESS)
+ 286   1          WriteTW88(REG009,0xD0); //Done
+ 287   1        else
+ 288   1          WriteTW88(REG009,0xF0); //FAIL
+ 289   1      
+ 290   1        return ret;
+ 291   1      }
+ 292          
+ 293          //-----------------------------------------------------------------------------
+ 294          /**
+ 295           * I2CCMD SFR commad
+ 296           *
+ 297           * @ingroup I2CCMD
+ 298           * @see I2CCMD_exec_main
+ 299          */
+ 300          static BYTE I2CCMD_Sfr(void)
+ 301          {
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 6   
+
+ 302   1        BYTE index;
+ 303   1        BYTE value;
+ 304   1        BYTE ret;
+ 305   1      
+ 306   1        index = ReadTW88(I2CCMD_REG2);
+ 307   1      
+ 308   1        if(ReadTW88(I2CCMD_REG1)==1) {
+ 309   2          //write
+ 310   2          value = ReadTW88(I2CCMD_REG3);
+ 311   2          ret = WriteSFR(index, value);
+ 312   2        }
+ 313   1        else {
+ 314   2          //read
+ 315   2          ret = ReadSFR(index);
+ 316   2          WriteTW88(I2CCMD_REG4,ret); //result
+ 317   2        }
+ 318   1        WriteTW88(REG009,0xD0); //Done
+ 319   1      
+ 320   1        return ERR_SUCCESS;
+ 321   1      }
+ 322          //-----------------------------------------------------------------------------
+ 323          /**
+ 324           * I2CCMD eeprom commad
+ 325           *
+ 326           * @ingroup I2CCMD
+ 327           * @see I2CCMD_exec_main
+ 328          */
+ 329          static BYTE I2CCmd_eeprom(void)
+ 330          {
+ 331   1        WORD addr;
+ 332   1        BYTE value;
+ 333   1      
+ 334   1        addr = ReadTW88(I2CCMD_REG2); addr <<=8;
+ 335   1        addr |= ReadTW88(I2CCMD_REG3);
+ 336   1      
+ 337   1        if(ReadTW88(I2CCMD_REG1)==1) {
+ 338   2          //write
+ 339   2          value = ReadTW88(I2CCMD_REG4);
+ 340   2          EE_Write(addr,value);
+ 341   2        }
+ 342   1        else {
+ 343   2          //read
+ 344   2          value = EE_Read(addr);
+ 345   2          WriteTW88(I2CCMD_REG4,value);
+ 346   2        }
+ 347   1        WriteTW88(REG009,0xD0); //Done
+ 348   1      
+ 349   1        return ERR_SUCCESS;
+ 350   1      }
+ 351          
+ 352          //-----------------------------------------------------------------------------
+ 353          /**
+ 354           * I2CCMD Key commad
+ 355           *
+ 356           * @ingroup I2CCMD
+ 357           * @see I2CCMD_exec_main
+ 358          */
+ 359          static BYTE I2CCmd_key(void)
+ 360          {
+ 361   1        BYTE key;
+ 362   1        BYTE ret;
+ 363   1      
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 7   
+
+ 364   1        ret = ERR_FAIL;
+ 365   1        key = ReadTW88(I2CCMD_REG1);
+ 366   1      
+ 367   1        if(key <= NAVI_KEY_RIGHT) {
+ 368   2          if(MenuGetLevel()) {
+ 369   3            MenuKeyInput(key);
+ 370   3            ret = ERR_SUCCESS;
+ 371   3          }
+ 372   2        }
+ 373   1        else if(key==0x06) {
+ 374   2          if(MenuGetLevel()==0) {
+ 375   3            MenuStart();
+ 376   3            ret = ERR_SUCCESS;
+ 377   3          }
+ 378   2        }
+ 379   1        else if(key==0x07) {
+ 380   2          if(MenuGetLevel()) {
+ 381   3            MenuEnd();
+ 382   3            ret = ERR_SUCCESS;
+ 383   3          }
+ 384   2        }
+ 385   1        else 
+ 386   1          ret = ERR_FAIL;
+ 387   1      
+ 388   1        if(ret==ERR_SUCCESS)
+ 389   1          WriteTW88(REG009, 0xD0);  //done
+ 390   1      
+ 391   1        return ret;
+ 392   1      }
+ 393          
+ 394          static BYTE I2CCmd_Custom(void)
+ 395          {
+ 396   1        BYTE cmd;
+ 397   1        BYTE ret;
+ 398   1      
+ 399   1        //
+ 400   1        // add your command...
+ 401   1        //
+ 402   1        cmd = ReadTW88(I2CCMD_REG1);
+ 403   1        if(cmd==0) {
+ 404   2          ret = ERR_SUCCESS;
+ 405   2        }
+ 406   1        else
+ 407   1          ret = ERR_FAIL;
+ 408   1      
+ 409   1        if(ret==ERR_SUCCESS)
+ 410   1          WriteTW88(REG009,0xD0); //Done
+ 411   1        else
+ 412   1          WriteTW88(REG009,0xF0); //FAIL
+ 413   1      
+ 414   1        return ret;
+ 415   1      }
+ 416          
+ 417          #endif //..SUPPORT_I2CCMD_SERVER
+ 418          
+ 419          //-----------------------------------------------------------------------------
+ 420          // I2CCMD 
+ 421          //-----------------------------------------------------------------------------
+ 422          #if defined(SUPPORT_I2CCMD_SERVER)
+ 423          bit F_i2ccmd_exec=0;        /*!< I2CCMD flag */
+ 424          #endif
+ 425          
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 8   
+
+ 426          
+ 427          
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 9   
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com0067 (BEGIN)
+0000         L?0104:
+0000         L?0105:
+0000 F0                MOVX    @DPTR,A
+0001         L?0106:
+0001 759300      E     MOV     DPX,#?C?XDATASEG
+0004 E500        E     MOV     A,regTW88+01H
+0006 24FE              ADD     A,#0FEH
+0008         L?0107:
+0008 F582              MOV     DPL,A
+000A E500        E     MOV     A,regTW88
+000C 3404              ADDC    A,#04H
+000E F583              MOV     DPH,A
+0010 759300      E     MOV     DPX,#?C?XDATASEG
+0013 22                RET     
+0014         L?0108:
+0014         L?0109:
+0014 759300      E     MOV     DPX,#?C?XDATASEG
+0017 E500        E     MOV     A,regTW88+01H
+0019 2409              ADD     A,#09H
+001B         L?0110:
+001B F582              MOV     DPL,A
+001D E4                CLR     A
+001E 3500        E     ADDC    A,regTW88
+0020 F583              MOV     DPH,A
+0022 759300      E     MOV     DPX,#?C?XDATASEG
+0025 22                RET     
+0026         L?0111:
+0026 7401              MOV     A,#01H
+0028         L?0112:
+0028 F0                MOVX    @DPTR,A
+0029         L?0113:
+0029 759300      E     MOV     DPX,#?C?XDATASEG
+002C E500        E     MOV     A,regTW88+01H
+002E 24FB              ADD     A,#0FBH
+0030 22                RET     
+0031         L?0114:
+0031         L?0115:
+0031 759300      E     MOV     DPX,#?C?XDATASEG
+0034 E500        E     MOV     A,regTW88+01H
+0036 24FD              ADD     A,#0FDH
+0038 22                RET     
+0039         L?0116:
+0039         L?0117:
+0039 759300      E     MOV     DPX,#?C?XDATASEG
+003C E500        E     MOV     A,regTW88+01H
+003E 24FC              ADD     A,#0FCH
+0040 22                RET     
+0041         L?0118:
+0041 90000000    R     MOV     DPTR,#addr
+0045 E0                MOVX    A,@DPTR
+0046 FE                MOV     R6,A
+0047 A3                INC     DPTR
+0048 E0                MOVX    A,@DPTR
+0049 FF                MOV     R7,A
+004A 22                RET     
+             ; FUNCTION Com0067 (END)
+
+             ; FUNCTION dummy_misc_code (BEGIN)
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 10  
+
+                                           ; SOURCE LINE # 59
+                                           ; SOURCE LINE # 60
+                                           ; SOURCE LINE # 61
+0000 7B00        R     MOV     R3,#MBYTE ?SC_0
+0002 7A00        R     MOV     R2,#HIGH ?SC_0
+0004 7900        R     MOV     R1,#LOW ?SC_0
+0006 010000      E     AJMP    _Puts
+             ; FUNCTION dummy_misc_code (END)
+
+             ; FUNCTION I2CCMD_exec_main (BEGIN)
+                                           ; SOURCE LINE # 115
+                                           ; SOURCE LINE # 116
+                                           ; SOURCE LINE # 120
+0000 7B00        R     MOV     R3,#MBYTE ?SC_16
+0002 7A00        R     MOV     R2,#HIGH ?SC_16
+0004 7900        R     MOV     R1,#LOW ?SC_16
+0006 759300      E     MOV     DPX,#?C?XDATASEG
+0009 E500        E     MOV     A,regTW88+01H
+000B 24FA              ADD     A,#0FAH
+000D 110000      R     ACALL   L?0107
+0010 E0                MOVX    A,@DPTR
+0011 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0015 F0                MOVX    @DPTR,A
+0016 110000      R     ACALL   L?0113
+0019 110000      R     ACALL   L?0107
+001C E0                MOVX    A,@DPTR
+001D 90000000    E     MOV     DPTR,#?_Printf?BYTE+04H
+0021 F0                MOVX    @DPTR,A
+0022 110000      R     ACALL   L?0116
+0025 110000      R     ACALL   L?0107
+0028 E0                MOVX    A,@DPTR
+0029 90000000    E     MOV     DPTR,#?_Printf?BYTE+05H
+002D F0                MOVX    @DPTR,A
+002E 110000      R     ACALL   L?0114
+0031 110000      R     ACALL   L?0107
+0034 E0                MOVX    A,@DPTR
+0035 90000000    E     MOV     DPTR,#?_Printf?BYTE+06H
+0039 110000      R     ACALL   L?0104
+003C E0                MOVX    A,@DPTR
+003D 90000000    E     MOV     DPTR,#?_Printf?BYTE+07H
+0041 F0                MOVX    @DPTR,A
+0042 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 127
+0045 759300      E     MOV     DPX,#?C?XDATASEG
+0048 E500        E     MOV     A,regTW88+01H
+004A 24FA              ADD     A,#0FAH
+004C 110000      R     ACALL   L?0107
+004F E0                MOVX    A,@DPTR
+0050 14                DEC     A
+0051 6015              JZ      ?C0004
+0053 14                DEC     A
+0054 6017              JZ      ?C0005
+0056 14                DEC     A
+0057 6019              JZ      ?C0006
+0059 14                DEC     A
+005A 601B              JZ      ?C0007
+005C 14                DEC     A
+005D 601D              JZ      ?C0008
+005F 2405              ADD     A,#05H
+0061 7024              JNZ     ?C0009
+                                           ; SOURCE LINE # 128
+0063         ?C0003:
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 11  
+
+0063 110000      R     ACALL   I2CCMD_Read
+0066 8017              SJMP    ?C0085
+                                           ; SOURCE LINE # 129
+0068         ?C0004:
+0068 110000      R     ACALL   I2CCMD_Exec
+006B         ?C0081:
+006B 8012              SJMP    ?C0085
+                                           ; SOURCE LINE # 130
+006D         ?C0005:
+006D 110000      R     ACALL   I2CCMD_Sfr
+0070         ?C0082:
+0070 800D              SJMP    ?C0085
+                                           ; SOURCE LINE # 131
+0072         ?C0006:
+0072 110000      R     ACALL   I2CCmd_eeprom
+0075         ?C0083:
+0075 8008              SJMP    ?C0085
+                                           ; SOURCE LINE # 132
+0077         ?C0007:
+0077 110000      R     ACALL   I2CCmd_key
+007A         ?C0084:
+007A 8003              SJMP    ?C0085
+                                           ; SOURCE LINE # 133
+007C         ?C0008:
+007C 110000      R     ACALL   I2CCmd_Custom
+007F         ?C0085:
+007F 90000000    R     MOV     DPTR,#ret
+0083 EF                MOV     A,R7
+0084 F0                MOVX    @DPTR,A
+0085 8007              SJMP    ?C0002
+                                           ; SOURCE LINE # 134
+0087         ?C0009:
+0087 90000000    R     MOV     DPTR,#ret
+008B 7401              MOV     A,#01H
+008D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 135
+008E         ?C0002:
+                                           ; SOURCE LINE # 136
+008E 90000000    R     MOV     DPTR,#ret
+0092 E0                MOVX    A,@DPTR
+0093 FF                MOV     R7,A
+0094 6006              JZ      ?C0010
+                                           ; SOURCE LINE # 137
+0096 110000      R     ACALL   L?0108
+0099 74E0              MOV     A,#0E0H
+009B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 138
+009C         ?C0010:
+                                           ; SOURCE LINE # 139
+                                           ; SOURCE LINE # 140
+009C         ?C0011:
+009C 22                RET     
+             ; FUNCTION I2CCMD_exec_main (END)
+
+             ; FUNCTION I2CCMD_Read (BEGIN)
+                                           ; SOURCE LINE # 148
+                                           ; SOURCE LINE # 149
+                                           ; SOURCE LINE # 153
+;---- Variable 'ret' assigned to Register 'R7' ----
+0000 7F01              MOV     R7,#01H
+                                           ; SOURCE LINE # 155
+0002 110000      R     ACALL   L?0113
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 12  
+
+0005 110000      R     ACALL   L?0107
+0008 E0                MOVX    A,@DPTR
+0009 90000000    R     MOV     DPTR,#cmd
+000D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 156
+000E E0                MOVX    A,@DPTR
+000F FE                MOV     R6,A
+0010 7006              JNZ     ?C0012
+                                           ; SOURCE LINE # 157
+0012 90000000    E     MOV     DPTR,#InputMain
+                                           ; SOURCE LINE # 158
+                                           ; SOURCE LINE # 159
+0016 8016              SJMP    ?C0086
+0018         ?C0012:
+                                           ; SOURCE LINE # 160
+0018 EE                MOV     A,R6
+0019 B40105            CJNE    A,#01H,?C0014
+                                           ; SOURCE LINE # 161
+001C 110000      E     ACALL   MenuGetLevel
+                                           ; SOURCE LINE # 162
+                                           ; SOURCE LINE # 163
+001F 801A              SJMP    ?C0088
+0021         ?C0014:
+                                           ; SOURCE LINE # 164
+0021 90000000    R     MOV     DPTR,#cmd
+0025 E0                MOVX    A,@DPTR
+0026 FE                MOV     R6,A
+0027 B40208            CJNE    A,#02H,?C0016
+                                           ; SOURCE LINE # 165
+002A 90000000    E     MOV     DPTR,#DebugLevel
+002E         ?C0086:
+002E E0                MOVX    A,@DPTR
+002F FF                MOV     R7,A
+0030         ?C0087:
+                                           ; SOURCE LINE # 166
+                                           ; SOURCE LINE # 167
+0030 8009              SJMP    ?C0088
+0032         ?C0016:
+                                           ; SOURCE LINE # 168
+0032 EE                MOV     A,R6
+0033 B4030B            CJNE    A,#03H,?C0018
+                                           ; SOURCE LINE # 169
+0036 A200        E     MOV     C,g_access
+0038 E4                CLR     A
+0039 33                RLC     A
+003A FF                MOV     R7,A
+003B         ?C0088:
+003B 110000      R     ACALL   L?0106
+003E EF                MOV     A,R7
+                                           ; SOURCE LINE # 170
+                                           ; SOURCE LINE # 171
+003F 8053              SJMP    ?C0090
+0041         ?C0018:
+                                           ; SOURCE LINE # 172
+0041 90000000    R     MOV     DPTR,#cmd
+0045 E0                MOVX    A,@DPTR
+0046 FE                MOV     R6,A
+0047 6404              XRL     A,#04H
+0049 701F              JNZ     ?C0020
+                                           ; SOURCE LINE # 173
+004B A200        E     MOV     C,g_access
+004D 33                RLC     A
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 13  
+
+004E FD                MOV     R5,A
+004F 110000      R     ACALL   L?0106
+0052 ED                MOV     A,R5
+0053 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 174
+0054 E5D8              MOV     A,SFR_WDCON
+0056 30E108            JNB     ACC.1,?C0021
+0059 110000      R     ACALL   L?0106
+005C 7401              MOV     A,#01H
+005E F0                MOVX    @DPTR,A
+005F 8005              SJMP    ?C0022
+0061         ?C0021:
+                                           ; SOURCE LINE # 175
+0061 110000      R     ACALL   L?0106
+0064 E4                CLR     A
+0065 F0                MOVX    @DPTR,A
+0066         ?C0022:
+                                           ; SOURCE LINE # 176
+0066 E4                CLR     A
+0067 FF                MOV     R7,A
+                                           ; SOURCE LINE # 177
+0068 802D              SJMP    ?C0013
+006A         ?C0020:
+                                           ; SOURCE LINE # 178
+006A EE                MOV     A,R6
+006B 6405              XRL     A,#05H
+006D 7011              JNZ     ?C0024
+                                           ; SOURCE LINE # 179
+006F 7400        E     MOV     A,#HIGH SPI_Buffer
+0071 FF                MOV     R7,A
+0072 110000      R     ACALL   L?0114
+0075 110000      R     ACALL   L?0107
+0078 EF                MOV     A,R7
+                                           ; SOURCE LINE # 180
+0079 110000      R     ACALL   L?0104
+007C 7400        E     MOV     A,#LOW SPI_Buffer
+007E         ?C0089:
+                                           ; SOURCE LINE # 181
+                                           ; SOURCE LINE # 182
+007E 8014              SJMP    ?C0090
+0080         ?C0024:
+                                           ; SOURCE LINE # 183
+0080 90000000    R     MOV     DPTR,#cmd
+0084 E0                MOVX    A,@DPTR
+0085 B4060F            CJNE    A,#06H,?C0013
+                                           ; SOURCE LINE # 184
+0088 110000      R     ACALL   L?0115
+008B 110000      R     ACALL   L?0107
+008E E4                CLR     A
+                                           ; SOURCE LINE # 185
+008F 110000      R     ACALL   L?0105
+0092 7480              MOV     A,#080H
+0094         ?C0090:
+0094 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 186
+0095 E4                CLR     A
+0096 FF                MOV     R7,A
+                                           ; SOURCE LINE # 187
+0097         ?C0013:
+                                           ; SOURCE LINE # 189
+0097 EF                MOV     A,R7
+0098 7008              JNZ     ?C0027
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 14  
+
+                                           ; SOURCE LINE # 190
+009A 110000      R     ACALL   L?0108
+009D 74D0              MOV     A,#0D0H
+009F F0                MOVX    @DPTR,A
+00A0 8006              SJMP    ?C0028
+00A2         ?C0027:
+                                           ; SOURCE LINE # 192
+00A2 110000      R     ACALL   L?0109
+00A5 74F0              MOV     A,#0F0H
+00A7 F0                MOVX    @DPTR,A
+00A8         ?C0028:
+                                           ; SOURCE LINE # 194
+                                           ; SOURCE LINE # 195
+00A8         ?C0029:
+00A8 22                RET     
+             ; FUNCTION I2CCMD_Read (END)
+
+             ; FUNCTION I2CCMD_Exec (BEGIN)
+                                           ; SOURCE LINE # 203
+                                           ; SOURCE LINE # 204
+                                           ; SOURCE LINE # 208
+0000 90000000    R     MOV     DPTR,#ret
+                                           ; SOURCE LINE # 210
+0004 110000      R     ACALL   L?0111
+0007 110000      R     ACALL   L?0107
+000A E0                MOVX    A,@DPTR
+000B 90000000    R     MOV     DPTR,#cmd
+000F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 211
+0010 E0                MOVX    A,@DPTR
+0011 C3                CLR     C
+0012 940F              SUBB    A,#0FH
+0014 5060              JNC     ?C0030
+                                           ; SOURCE LINE # 216
+0016 110000      E     ACALL   getNoSignalLogoStatus
+0019 EF                MOV     A,R7
+001A 6003              JZ      ?C0031
+                                           ; SOURCE LINE # 217
+001C 110000      E     ACALL   RemoveLogo
+001F         ?C0031:
+                                           ; SOURCE LINE # 220
+001F 90000000    R     MOV     DPTR,#cmd
+0023 E0                MOVX    A,@DPTR
+0024 B40900            CJNE    A,#09H,?C0079
+0027         ?C0079:
+0027 4003              JC      $ + 5H
+0029 010000      R     AJMP    ?C0042
+002C 90000000    R     MOV     DPTR,#?C0080
+0030 F8                MOV     R0,A
+0031 28                ADD     A,R0
+0032 28                ADD     A,R0
+0033 73                JMP     @A+DPTR
+0034         ?C0080:
+0034 010000      R     AJMP    ?C0033
+0037 010000      R     AJMP    ?C0034
+003A 010000      R     AJMP    ?C0035
+003D 010000      R     AJMP    ?C0036
+0040 010000      R     AJMP    ?C0042
+0043 010000      R     AJMP    ?C0038
+0046 010000      R     AJMP    ?C0038
+0049 010000      R     AJMP    ?C0039
+004C 010000      R     AJMP    ?C0040
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 15  
+
+                                           ; SOURCE LINE # 221
+004F         ?C0033:
+004F 110000      E     ACALL   ChangeCVBS
+0052 010000      R     AJMP    ?C0100
+                                           ; SOURCE LINE # 222
+0055         ?C0034:
+0055 110000      E     ACALL   ChangeSVIDEO
+0058         ?C0091:
+0058 010000      R     AJMP    ?C0100
+                                           ; SOURCE LINE # 224
+005B         ?C0035:
+005B 110000      E     ACALL   ChangeComponent
+005E         ?C0092:
+005E 010000      R     AJMP    ?C0100
+                                           ; SOURCE LINE # 227
+0061         ?C0036:
+0061 110000      E     ACALL   ChangePC
+0064         ?C0093:
+0064 010000      R     AJMP    ?C0100
+                                           ; SOURCE LINE # 232
+                                           ; SOURCE LINE # 233
+0067         ?C0038:
+0067 110000      E     ACALL   ChangeHDMI
+006A         ?C0094:
+006A 807B              SJMP    ?C0100
+                                           ; SOURCE LINE # 235
+006C         ?C0039:
+006C 110000      E     ACALL   ChangeBT656Loop
+006F         ?C0095:
+006F 8076              SJMP    ?C0100
+                                           ; SOURCE LINE # 238
+0071         ?C0040:
+0071 110000      E     ACALL   ChangeLVDSRx
+0074         ?C0096:
+0074 8071              SJMP    ?C0100
+                                           ; SOURCE LINE # 240
+                                           ; SOURCE LINE # 241
+                                           ; SOURCE LINE # 242
+0076         ?C0030:
+                                           ; SOURCE LINE # 243
+0076 90000000    R     MOV     DPTR,#cmd
+007A E0                MOVX    A,@DPTR
+007B B40F05            CJNE    A,#0FH,?C0043
+                                           ; SOURCE LINE # 249
+007E 110000      E     ACALL   InputModeNext
+                                           ; SOURCE LINE # 250
+0081         ?C0097:
+                                           ; SOURCE LINE # 251
+0081 8064              SJMP    ?C0100
+0083         ?C0043:
+                                           ; SOURCE LINE # 252
+0083 90000000    R     MOV     DPTR,#cmd
+0087 E0                MOVX    A,@DPTR
+0088 B41017            CJNE    A,#010H,?C0045
+                                           ; SOURCE LINE # 253
+008B 90000000    E     MOV     DPTR,#CheckAndSetInput
+008F E0                MOVX    A,@DPTR
+0090 FB                MOV     R3,A
+0091 A3                INC     DPTR
+0092 E0                MOVX    A,@DPTR
+0093 FA                MOV     R2,A
+0094 A3                INC     DPTR
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 16  
+
+0095 E0                MOVX    A,@DPTR
+0096 F9                MOV     R1,A
+0097 110000      E     ACALL   ?C?ICALL390
+009A 90000000    R     MOV     DPTR,#ret
+009E EF                MOV     A,R7
+009F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 254
+00A0 804B              SJMP    ?C0042
+00A2         ?C0045:
+                                           ; SOURCE LINE # 260
+00A2 90000000    R     MOV     DPTR,#cmd
+00A6 E0                MOVX    A,@DPTR
+00A7 FF                MOV     R7,A
+00A8 B4120E            CJNE    A,#012H,?C0047
+                                           ; SOURCE LINE # 261
+00AB 110000      R     ACALL   L?0116
+00AE 110000      R     ACALL   L?0107
+00B1 E0                MOVX    A,@DPTR
+00B2 90000000    E     MOV     DPTR,#DebugLevel
+00B6 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 262
+00B7         ?C0098:
+                                           ; SOURCE LINE # 263
+00B7 802E              SJMP    ?C0100
+00B9         ?C0047:
+                                           ; SOURCE LINE # 264
+00B9 EF                MOV     A,R7
+00BA B48010            CJNE    A,#080H,?C0049
+                                           ; SOURCE LINE # 265
+00BD 759300      E     MOV     DPX,#?C?XDATASEG
+00C0 E500        E     MOV     A,regTW88+01H
+00C2 24D4              ADD     A,#0D4H
+00C4 110000      R     ACALL   L?0110
+00C7 E0                MOVX    A,@DPTR
+00C8 4401              ORL     A,#01H
+00CA F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 266
+00CB 8020              SJMP    ?C0042
+00CD         ?C0049:
+                                           ; SOURCE LINE # 276
+00CD 90000000    R     MOV     DPTR,#cmd
+00D1 E0                MOVX    A,@DPTR
+00D2 B49005            CJNE    A,#090H,?C0051
+                                           ; SOURCE LINE # 277
+00D5 110000      E     ACALL   DisableWatchdog
+                                           ; SOURCE LINE # 278
+00D8         ?C0099:
+                                           ; SOURCE LINE # 279
+00D8 800D              SJMP    ?C0100
+00DA         ?C0051:
+                                           ; SOURCE LINE # 280
+00DA 90000000    R     MOV     DPTR,#cmd
+00DE E0                MOVX    A,@DPTR
+00DF B4910B            CJNE    A,#091H,?C0042
+                                           ; SOURCE LINE # 281
+00E2 7F01              MOV     R7,#01H
+00E4 110000      E     ACALL   _EnableWatchdog
+                                           ; SOURCE LINE # 282
+00E7         ?C0100:
+00E7 E4                CLR     A
+00E8 90000000    R     MOV     DPTR,#ret
+00EC F0                MOVX    @DPTR,A
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 17  
+
+                                           ; SOURCE LINE # 283
+00ED         ?C0042:
+                                           ; SOURCE LINE # 285
+00ED 90000000    R     MOV     DPTR,#ret
+00F1 E0                MOVX    A,@DPTR
+00F2 FF                MOV     R7,A
+00F3 7008              JNZ     ?C0054
+                                           ; SOURCE LINE # 286
+00F5 110000      R     ACALL   L?0109
+00F8 74D0              MOV     A,#0D0H
+00FA F0                MOVX    @DPTR,A
+00FB 8006              SJMP    ?C0055
+00FD         ?C0054:
+                                           ; SOURCE LINE # 288
+00FD 110000      R     ACALL   L?0109
+0100 74F0              MOV     A,#0F0H
+0102 F0                MOVX    @DPTR,A
+0103         ?C0055:
+                                           ; SOURCE LINE # 290
+                                           ; SOURCE LINE # 291
+0103         ?C0056:
+0103 22                RET     
+             ; FUNCTION I2CCMD_Exec (END)
+
+             ; FUNCTION I2CCMD_Sfr (BEGIN)
+                                           ; SOURCE LINE # 300
+                                           ; SOURCE LINE # 301
+                                           ; SOURCE LINE # 306
+0000 110000      R     ACALL   L?0117
+0003 110000      R     ACALL   L?0107
+0006 E0                MOVX    A,@DPTR
+0007 90000000    R     MOV     DPTR,#index
+000B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 308
+000C 110000      R     ACALL   L?0113
+000F 110000      R     ACALL   L?0107
+0012 E0                MOVX    A,@DPTR
+0013 B4011B            CJNE    A,#01H,?C0057
+                                           ; SOURCE LINE # 310
+0016 110000      R     ACALL   L?0115
+0019 110000      R     ACALL   L?0107
+001C E0                MOVX    A,@DPTR
+;---- Variable 'value' assigned to Register 'R6' ----
+001D FE                MOV     R6,A
+                                           ; SOURCE LINE # 311
+001E 90000000    R     MOV     DPTR,#index
+0022 E0                MOVX    A,@DPTR
+0023 FF                MOV     R7,A
+0024 AD06              MOV     R5,AR6
+0026 110000      E     ACALL   _WriteSFR
+0029 90000000    R     MOV     DPTR,#ret
+002D EF                MOV     A,R7
+002E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 312
+002F 8014              SJMP    ?C0058
+0031         ?C0057:
+                                           ; SOURCE LINE # 313
+                                           ; SOURCE LINE # 315
+0031 90000000    R     MOV     DPTR,#index
+0035 E0                MOVX    A,@DPTR
+0036 FF                MOV     R7,A
+0037 110000      E     ACALL   _ReadSFR
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 18  
+
+003A 90000000    R     MOV     DPTR,#ret
+003E EF                MOV     A,R7
+003F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 316
+0040 110000      R     ACALL   L?0106
+0043 EF                MOV     A,R7
+0044 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 317
+0045         ?C0058:
+                                           ; SOURCE LINE # 318
+0045 110000      R     ACALL   L?0109
+0048 74D0              MOV     A,#0D0H
+004A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 320
+004B 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 321
+004D         ?C0059:
+004D 22                RET     
+             ; FUNCTION I2CCMD_Sfr (END)
+
+             ; FUNCTION I2CCmd_eeprom (BEGIN)
+                                           ; SOURCE LINE # 329
+                                           ; SOURCE LINE # 330
+                                           ; SOURCE LINE # 334
+0000 110000      R     ACALL   L?0117
+0003 110000      R     ACALL   L?0107
+0006 E0                MOVX    A,@DPTR
+0007 FF                MOV     R7,A
+0008 90000000    R     MOV     DPTR,#addr
+000C E4                CLR     A
+000D F0                MOVX    @DPTR,A
+000E A3                INC     DPTR
+000F EF                MOV     A,R7
+0010 F0                MOVX    @DPTR,A
+0011 E0                MOVX    A,@DPTR
+0012 7F00              MOV     R7,#00H
+0014 FE                MOV     R6,A
+0015 90000000    R     MOV     DPTR,#addr
+0019 F0                MOVX    @DPTR,A
+001A A3                INC     DPTR
+001B EF                MOV     A,R7
+001C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 335
+001D 110000      R     ACALL   L?0115
+0020 110000      R     ACALL   L?0107
+0023 E0                MOVX    A,@DPTR
+0024 FD                MOV     R5,A
+0025 ED                MOV     A,R5
+0026 FF                MOV     R7,A
+0027 90000000    R     MOV     DPTR,#addr
+002B EE                MOV     A,R6
+002C F0                MOVX    @DPTR,A
+002D A3                INC     DPTR
+002E EF                MOV     A,R7
+                                           ; SOURCE LINE # 337
+002F 110000      R     ACALL   L?0112
+0032 110000      R     ACALL   L?0107
+0035 E0                MOVX    A,@DPTR
+0036 B40114            CJNE    A,#01H,?C0060
+                                           ; SOURCE LINE # 339
+0039 110000      R     ACALL   L?0106
+003C E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 19  
+
+003D 90000000    R     MOV     DPTR,#value
+0041 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 340
+0042 110000      R     ACALL   L?0118
+0045 A3                INC     DPTR
+0046 E0                MOVX    A,@DPTR
+0047 FD                MOV     R5,A
+0048 110000      E     ACALL   _E3P_Write
+                                           ; SOURCE LINE # 341
+004B 8011              SJMP    ?C0061
+004D         ?C0060:
+                                           ; SOURCE LINE # 342
+                                           ; SOURCE LINE # 344
+004D 110000      R     ACALL   L?0118
+0050 110000      E     ACALL   _E3P_Read
+0053 90000000    R     MOV     DPTR,#value
+0057 EF                MOV     A,R7
+0058 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 345
+0059 110000      R     ACALL   L?0106
+005C EF                MOV     A,R7
+005D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 346
+005E         ?C0061:
+                                           ; SOURCE LINE # 347
+005E 110000      R     ACALL   L?0109
+0061 74D0              MOV     A,#0D0H
+0063 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 349
+0064 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 350
+0066         ?C0062:
+0066 22                RET     
+             ; FUNCTION I2CCmd_eeprom (END)
+
+             ; FUNCTION I2CCmd_key (BEGIN)
+                                           ; SOURCE LINE # 359
+                                           ; SOURCE LINE # 360
+                                           ; SOURCE LINE # 364
+0000 90000000    R     MOV     DPTR,#ret
+                                           ; SOURCE LINE # 365
+0004 110000      R     ACALL   L?0111
+0007 110000      R     ACALL   L?0107
+000A E0                MOVX    A,@DPTR
+000B 90000000    R     MOV     DPTR,#key
+000F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 367
+0010 E0                MOVX    A,@DPTR
+0011 D3                SETB    C
+0012 9405              SUBB    A,#05H
+0014 5011              JNC     ?C0063
+                                           ; SOURCE LINE # 368
+0016 110000      E     ACALL   MenuGetLevel
+0019 EF                MOV     A,R7
+001A 603E              JZ      ?C0065
+                                           ; SOURCE LINE # 369
+001C 90000000    R     MOV     DPTR,#key
+0020 E0                MOVX    A,@DPTR
+0021 FF                MOV     R7,A
+0022 110000      E     ACALL   _MenuKeyInput
+                                           ; SOURCE LINE # 370
+                                           ; SOURCE LINE # 371
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 20  
+
+                                           ; SOURCE LINE # 372
+0025 8024              SJMP    ?C0102
+0027         ?C0063:
+                                           ; SOURCE LINE # 373
+0027 90000000    R     MOV     DPTR,#key
+002B E0                MOVX    A,@DPTR
+002C B4060B            CJNE    A,#06H,?C0066
+                                           ; SOURCE LINE # 374
+002F 110000      E     ACALL   MenuGetLevel
+0032 EF                MOV     A,R7
+0033 7025              JNZ     ?C0065
+                                           ; SOURCE LINE # 375
+0035 110000      E     ACALL   MenuStart
+                                           ; SOURCE LINE # 376
+0038         ?C0101:
+                                           ; SOURCE LINE # 377
+                                           ; SOURCE LINE # 378
+0038 8011              SJMP    ?C0102
+003A         ?C0066:
+                                           ; SOURCE LINE # 379
+003A 90000000    R     MOV     DPTR,#key
+003E E0                MOVX    A,@DPTR
+003F B40711            CJNE    A,#07H,?C0069
+                                           ; SOURCE LINE # 380
+0042 110000      E     ACALL   MenuGetLevel
+0045 EF                MOV     A,R7
+0046 6012              JZ      ?C0065
+                                           ; SOURCE LINE # 381
+0048 110000      E     ACALL   MenuEnd
+                                           ; SOURCE LINE # 382
+004B         ?C0102:
+004B E4                CLR     A
+004C 90000000    R     MOV     DPTR,#ret
+0050 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 383
+                                           ; SOURCE LINE # 384
+0051 8007              SJMP    ?C0065
+0053         ?C0069:
+                                           ; SOURCE LINE # 386
+0053 90000000    R     MOV     DPTR,#ret
+0057 7401              MOV     A,#01H
+0059 F0                MOVX    @DPTR,A
+005A         ?C0065:
+                                           ; SOURCE LINE # 388
+005A 90000000    R     MOV     DPTR,#ret
+005E E0                MOVX    A,@DPTR
+005F FF                MOV     R7,A
+0060 7006              JNZ     ?C0072
+                                           ; SOURCE LINE # 389
+0062 110000      R     ACALL   L?0109
+0065 74D0              MOV     A,#0D0H
+0067 F0                MOVX    @DPTR,A
+0068         ?C0072:
+                                           ; SOURCE LINE # 391
+                                           ; SOURCE LINE # 392
+0068         ?C0073:
+0068 22                RET     
+             ; FUNCTION I2CCmd_key (END)
+
+             ; FUNCTION I2CCmd_Custom (BEGIN)
+                                           ; SOURCE LINE # 394
+;---- Variable 'ret' assigned to Register 'R7' ----
+C51 COMPILER V9.56.0.0   MISC                                                              07/18/2018 10:44:38 PAGE 21  
+
+                                           ; SOURCE LINE # 395
+                                           ; SOURCE LINE # 402
+0000 110000      R     ACALL   L?0113
+0003 110000      R     ACALL   L?0107
+0006 E0                MOVX    A,@DPTR
+;---- Variable 'cmd' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 403
+0007 7F01              MOV     R7,#01H
+0009 7001              JNZ     ?C0074
+                                           ; SOURCE LINE # 404
+000B FF                MOV     R7,A
+                                           ; SOURCE LINE # 405
+000C         ?C0074:
+                                           ; SOURCE LINE # 407
+000C         ?C0075:
+                                           ; SOURCE LINE # 409
+000C EF                MOV     A,R7
+000D 7008              JNZ     ?C0076
+                                           ; SOURCE LINE # 410
+000F 110000      R     ACALL   L?0109
+0012 74D0              MOV     A,#0D0H
+0014 F0                MOVX    @DPTR,A
+0015 8006              SJMP    ?C0077
+0017         ?C0076:
+                                           ; SOURCE LINE # 412
+0017 110000      R     ACALL   L?0109
+001A 74F0              MOV     A,#0F0H
+001C F0                MOVX    @DPTR,A
+001D         ?C0077:
+                                           ; SOURCE LINE # 414
+                                           ; SOURCE LINE # 415
+001D         ?C0078:
+001D 22                RET     
+             ; FUNCTION I2CCmd_Custom (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    986    ----
+   CONSTANT SIZE    =     45    ----
+   XDATA SIZE       =   ----      11
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

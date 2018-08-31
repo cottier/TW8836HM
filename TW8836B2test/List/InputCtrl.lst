@@ -1,0 +1,2701 @@
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE INPUTCTRL
+OBJECT MODULE PLACED IN .\Output\InputCtrl.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source36\InputCtrl.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.\O
+                    -utput\TW8836B_EVB11.ORC) BROWSE INCDIR(SiI-SW;SiI-SW\HAL;SiI-SW\DEBUG;SiI-SW\CEC;.\Source36\LIB) DEFINE(EVB_11,nullFn=//
+                    -) DEBUG CODE PRINT(.\List\InputCtrl.lst) TABS(2) OBJECT(.\Output\InputCtrl.obj)
+
+line level    source
+
+   1          /**
+   2           * @file
+   3           * InputCtrl.c 
+   4           * @author Brian Kang
+   5           * @version 1.0
+   6           * @section LICENSE
+   7           *  Copyright (C) 2011~2012 Intersil Corporation
+   8           * @section DESCRIPTION
+   9           *  see video input control 
+  10           *
+  11          */
+  12          /*
+  13          Disclaimer: THIS INFORMATION IS PROVIDED 'AS-IS' FOR EVALUATION PURPOSES ONLY.  
+  14          INTERSIL CORPORATION AND ITS SUBSIDIARIES ('INTERSIL') DISCLAIM ALL WARRANTIES, 
+  15          INCLUDING WITHOUT LIMITATION FITNESS FOR A PARTICULAR PURPOSE AND MERCHANTABILITY.  
+  16          Intersil provides evaluation platforms to help our customers to develop products. 
+  17          However, factors beyond Intersil's control could significantly affect Intersil 
+  18          product performance. 
+  19          It remains the customers' responsibility to verify the actual system performance.
+  20          */
+  21          /*
+  22          * video input control 
+  23          *
+  24          * +-----+ LoSpeed  +-----+  +---------+   +-+           +------+
+  25          * |     | Decoder  |     |=>| decoder |==>| |==========>|      |
+  26          * |     | =======> |     |  +---------+   |I|           |      |
+  27          * |     |          |     |                |n|           |      |
+  28          * |     | HiSpeed  |AMux |                | |           |      |
+  29          * |     | ARGB     |     |  +---------+   |M|           |      |
+  30          * |INPUT| =======> |     |=>|  ARGB   |==>|U|==========>|Scaler|
+  31          * |     |          +-----+  +---------+   |X|           |      |
+  32          * |     | Digital                         | |           |      |
+  33          * |     | DTV                             | |  +-----+  |      |
+  34          * |     | ===============================>| |=>| DTV |=>|      |
+  35          * +-----+                                 +-+  +-----+  +------+
+  36          *                                          |    +--------+
+  37          *                                          +==> |Measure |
+  38          *                                               +--------+
+  39          */
+  40          
+  41          #include "Config.h"
+  42          #include "reg.h"
+  43          #include "typedefs.h"
+  44          #include "TW8836.h"
+  45          
+  46          #include "Global.h"
+  47          #include "CPU.h"
+  48          #include "Printf.h"
+  49          #include "util.h"
+  50          #include "Monitor.h"
+  51          
+  52          #include "I2C.h"
+  53          #include "spi.h"
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 2   
+
+  54          
+  55          #include "main.h"
+  56          #include "SOsd.h"
+  57          #include "FOsd.h"
+  58          #include "decoder.h"
+  59          #include "Scaler.h"
+  60          #include "InputCtrl.h"
+  61          #include "EEPROM.h"
+  62          #include "ImageCtrl.h"
+  63          #include "Settings.h"
+  64          #include "measure.h"
+  65          #include "aRGB.h"
+  66          #include "dtv.h"
+  67          #include "InputCtrl.h"
+  68          //#include "OutputCtrl.h"
+  69          #include "SOsdMenu.h"
+  70          
+  71          #ifdef SUPPORT_HDMI_TW8837
+              #include "hdmi_TW8837.H"
+              #endif
+  74          #ifdef SUPPORT_HDMI_EP907M
+  75          #include "hdmi_EP907M.H"
+  76          #endif
+  77          
+  78          #include "BT656.h"
+  79          /*
+  80          
+  81          SDTV 480i/60M
+  82             576i/50  
+  83             480p SMPTE 267M-1995
+  84          HDTV 1080i/60M
+  85             1080i/50
+  86             720p/60M
+  87             720p/50
+  88             1080p = SMPTE 274M-1995 1080p/24 & 1080p/24M
+  89                                     1080p/50 1080p/60M
+  90          
+  91          
+  92                scan lines   field1 field2   half
+  93          480i/60M  525      23~262 285~524  142x
+  94          576i/50   625      23~310 335~622
+  95          1080i   1125
+  96          720p    750
+  97          
+  98          standard
+  99          480i/60M  SMPTE 170M-1994.
+ 100                ITU-R BT.601-4
+ 101                SMPTE 125M-1995
+ 102                SMPTE 259M-1997
+ 103          */
+ 104          
+ 105          //=============================================================================
+ 106          // INPUT CONTROL
+ 107          //=============================================================================
+ 108          // Input Module
+ 109          // start from 0x040
+ 110          //0x040~0x049
+ 111          //R040[1:0] Input Select    0:InternalDecoder,1:ARGB/YUV(YPbPr),2:DTV(BT656)
+ 112          //R041[0] Input data format 0:YCbCr 1:RGB
+ 113          //=============================================================================
+ 114          
+ 115          XDATA BYTE  InputMain;
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 3   
+
+ 116          XDATA BYTE  InputBT656;
+ 117          XDATA BYTE  InputSubMode;
+ 118          
+ 119          //-----------------------------------------------------------------------------
+ 120          /**
+ 121          * Get InputMain value
+ 122          *
+ 123          * friend function.
+ 124          * Other bank, specially Menu Bank(Bank2) needs this InputMain global variable.
+ 125          */
+ 126          BYTE GetInputMain(void)
+ 127          {
+ 128   1        return InputMain;
+ 129   1      }
+ 130          //-----------------------------------------------------------------------------
+ 131          /**
+ 132          * Set InputMain value
+ 133          *
+ 134          * @see GetInputMain
+ 135          */
+ 136          void SetInputMain(BYTE input)
+ 137          {
+ 138   1        InputMain = input;
+ 139   1        //update EE
+ 140   1      }
+ 141          
+ 142          #define VBLANK_WAIT_VALUE 0xFFFE 
+ 143          
+ 144          //-----------------------------------------------------------------------------
+ 145          /**
+ 146          * wait Vertical Blank
+ 147          *
+ 148          * You can use this function after you turn off the PD_SSPLL(REG0FC[7]).
+ 149          * 0xFFFE value uses max 40ms on Cache + 72MHz.
+ 150          */
+ 151          void WaitVBlank(BYTE cnt)
+ 152          {
+ 153   1        XDATA BYTE i;
+ 154   1        WORD loop;
+ 155   1      
+ 156   1        for ( i=0; i<cnt; i++ ) {
+ 157   2          WriteTW88(REG002, 0xff );
+ 158   2          loop = 0;
+ 159   2          while (!( ReadTW88(REG002 ) & 0x40 ) ) {
+ 160   3            // wait VBlank
+ 161   3            loop++;
+ 162   3            if(loop > VBLANK_WAIT_VALUE  ) {
+ 163   4              wPrintf("\n\rERR:WaitVBlank");
+ 164   4              break;
+ 165   4            }
+ 166   3          }   
+ 167   2        }
+ 168   1      }
+ 169          
+ 170          //-----------------------------------------------------------------------------
+ 171          /**
+ 172          * wait Vertical Blank
+ 173          *
+ 174          * @see WaitVBlank
+ 175          */
+ 176          void WaitOneVBlank(void)
+ 177          {
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 4   
+
+ 178   1        WORD loop;
+ 179   1        //volatile BYTE vdata; if you want to chech REG002, use volatile.
+ 180   1      
+ 181   1        WriteTW88(REG002, 0xff );
+ 182   1        loop = 0;
+ 183   1        while (!( ReadTW88(REG002 ) & 0x40 ) ) {
+ 184   2          // wait VBlank
+ 185   2          loop++;
+ 186   2          if(loop > VBLANK_WAIT_VALUE  ) {
+ 187   3            wPrintf("\n\rERR:WaitVBlank");
+ 188   3            break;
+ 189   3          }
+ 190   2        }
+ 191   1      }
+ 192          
+ 193          //-----------------------------------------------------------------------------
+ 194          //class:Input
+ 195          /**
+ 196          * Set input path & color domain
+ 197          *
+ 198          * register
+ 199          # REG040[7:6]
+ 200          * REG040[5]
+ 201          * REG040[4] input clock polarity. 1:inversion
+ 202          * REG040[3] Enable DTVDE on PIN63 for DTV
+ 203          * REG040[2] Enable 2nd DTVCLK on PIN62 (for BT656Decoder)
+ 204          * REG040[1:0] Input Selection
+ 205          *   00:Decoder, 01:aRGB  10:DTV 11:LVDSRX
+ 206          * REG041[0]
+ 207          *   0:YCbCr  1:RGB
+ 208          *
+ 209          * REG070[5] Process as RGB
+ 210          *
+ 211          * @param path: input mode
+ 212          *   - 0:InternalDecoder
+ 213          *   - 1:AnalogRGB/Component. PC or Component
+ 214          *   - 2:DTV
+ 215          *   - 3:LVDS-RX 
+ 216          *   - 0x06: BT656. DTV+2nd DTVCLK. (SW)                                 
+ 217          * @param format: data format.
+ 218          *   - 0:YUV 1:RGB
+ 219          *
+ 220          */
+ 221          //scaler_set_input_source
+ 222          void InputSetSource(BYTE path, BYTE format)
+ 223          {
+ 224   1        BYTE r040, r041;
+ 225   1      
+ 226   1        r040 = ReadTW88(REG040_INPUT_CTRL_I) & ~0x17; //clear [2] also.
+ 227   1        r041 = ReadTW88(REG041_INPUT_CTRL_II) & ~0x3F;
+ 228   1        r040 |= path;
+ 229   1        r041 |= format;
+ 230   1      
+ 231   1        if(path==INPUT_PATH_DECODER) {    //InternalDecoder
+ 232   2                          //It is an ImplicitDE, but donot need a IMPDE flag.
+ 233   2          r041 |= 0x0C;         //input sync detion edge control. falling edge
+ 234   2        }
+ 235   1        else if(path==INPUT_PATH_VADC) {  //ARGB(PC or Component)
+ 236   2                          //It is an ImplicitDE, but donot need a IMPDE flag.
+ 237   2          r040 |= 0x10;         //invert clock
+ 238   2          if(InputMain==INPUT_COMP) {
+ 239   3            r041 |= 0x20;       //progressive
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 5   
+
+ 240   3            r041 |= 0x10;       //implicit DE mode.(Component, don't care)
+ 241   3            r041 |= 0x0C;       //input sync detion edge control. falling edge
+ 242   3            r041 |= 0x02;       //input field inversion
+ 243   3          }
+ 244   2          else {
+ 245   3            //r041 |= 0x20;       //progressive
+ 246   3            r041 |= 0x10;       //implicit DE mode.(Component, don't care)
+ 247   3            //r041 |= 0x0C;       //input sync detion edge control. falling edge
+ 248   3          }
+ 249   2        }
+ 250   1        else if(path==INPUT_PATH_DTV) {   //DTV
+ 251   2                          //clock normal
+ 252   2          r040 |= 0x08;         //INT_4 pin is turn into dtvde pin
+ 253   2          //r041 |= 0x20;         // progressive
+ 254   2          r041 |= 0x10;         //implicit DE mode
+ 255   2          //r041 |= 0x0C;         //input sync detion edge control. falling edge
+ 256   2        }
+ 257   1        else if(path==INPUT_PATH_LVDS) {  //LVDS_RX
+ 258   2          r040 |= 0x08;         //INT_4 pin is turn into dtvde pin
+ 259   2      #if 1 //Errara150407
+ 260   2          r040 |= 0x10;         //use Invert Clock for LVDS-RX
+ 261   2      #endif
+ 262   2          r041 |= 0x10;         //implicit DE mode
+ 263   2        }
+ 264   1        else if(path==INPUT_PATH_BT656) {
+ 265   2          //target r040:0x06 r041:0x00
+ 266   2        }
+ 267   1        //dPrintf("\n\rInputSetSource r040:%bx r041:%bx",r040,r041);
+ 268   1        WriteTW88(REG040_INPUT_CTRL_I,r040);
+ 269   1        WriteTW88(REG041_INPUT_CTRL_II,r041);
+ 270   1      }
+ 271          
+ 272          void InputSetClockPolarity(BYTE fInv)
+ 273          {
+ 274   1        BYTE bTemp;
+ 275   1        bTemp = ReadTW88(REG040);
+ 276   1        if(fInv) WriteTW88(REG040, bTemp |  0x10);
+ 277   1        else   WriteTW88(REG040, bTemp & ~0x10);
+ 278   1      }
+ 279          
+ 280          
+ 281          //-----------------------------------------------------------------------------
+ 282          //class:Input
+ 283          #ifdef SUPPORT_ARGB
+ 284          void InputSetProgressiveField(BYTE fOn)
+ 285          {
+ 286   1        if(fOn) WriteTW88(REG041_INPUT_CTRL_II, ReadTW88(REG041_INPUT_CTRL_II) | 0x20);     //On Field for Prog
+ 287   1        else  WriteTW88(REG041_INPUT_CTRL_II, ReadTW88(REG041_INPUT_CTRL_II) & ~0x20);  //Off Field for Prog
+ 288   1      }
+ 289          #endif
+ 290          
+ 291          //-----------------------------------------------------------------------------
+ 292          //class:Input
+ 293          //scaler_set_input_polarity
+ 294          void InputSetPolarity(BYTE V,BYTE H, BYTE F)
+ 295          {
+ 296   1        BYTE r041;
+ 297   1      
+ 298   1        r041 = ReadTW88(REG041_INPUT_CTRL_II ) & ~0x0E;
+ 299   1        if(V) r041 |= 0x08;
+ 300   1        if(H) r041 |= 0x04;
+ 301   1        if(F) r041 |= 0x02;
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 6   
+
+ 302   1        WriteTW88(REG041_INPUT_CTRL_II, r041);
+ 303   1      }
+ 304          #ifdef UNCALLED_SEGMENT
+              //-----------------------------------------------------------------------------
+              //class:Input
+              //scaler_get_input_polarity_verti
+              //BYTE InputGetVPolarity(void)
+              //{
+              //  BYTE r041;
+              //
+              //  r041 = ReadTW88(REG041_INPUT_CTRL_II );
+              //  if(r041 & 0x08) return ON;    //detect falling edge
+              //  else      return OFF;   //detect rising edge
+              //}
+              //-----------------------------------------------------------------------------
+              //class:Input
+              //scaler_get_input_polarity_horiz
+              //BYTE InputGetHPolarity(void)
+              //{
+              //  BYTE r041;
+              //
+              //  r041 = ReadTW88(REG041_INPUT_CTRL_II );
+              //  if(r041 & 0x04) return ON;    //detect falling edge
+              //  else      return OFF;   //detect rising edge
+              //}
+              //-----------------------------------------------------------------------------
+              //class:Input
+              //scaler_get_input_polarity_field
+              //BYTE InputGetFieldPolarity(void)
+              //{
+              //  BYTE r041;
+              //
+              //  r041 = ReadTW88(REG041_INPUT_CTRL_II );
+              //  if(r041 & 0x02) return ON;    //input field inversion
+              //  else      return OFF;   //
+              //}
+              #endif
+ 339          
+ 340          #if defined(SUPPORT_COMPONENT)
+ 341          //-----------------------------------------------------------------------------
+ 342          //class:Input
+ 343          /**
+ 344          * set Field Polarity
+ 345          *
+ 346          * R041[1] input field control. 1:inversion
+ 347          *
+ 348          * 480i & 576i need a "1" on TW8836
+ 349          */
+ 350          //scaler_set_input_field_pol
+ 351          void InputSetFieldPolarity(BYTE fInv)
+ 352          {
+ 353   1        BYTE r041;
+ 354   1      
+ 355   1        r041 = ReadTW88(REG041_INPUT_CTRL_II );
+ 356   1        if(fInv)  WriteTW88(REG041_INPUT_CTRL_II, r041 | 0x02);
+ 357   1        else    WriteTW88(REG041_INPUT_CTRL_II, r041 & ~0x02);
+ 358   1      }
+ 359          #endif
+ 360          
+ 361          #ifdef UNCALLED_SEGMENT
+              //-----------------------------------------------------------------------------
+              //class:Input
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 7   
+
+              /*
+              * R041[0] Input data format selection 1:RGB
+              */
+              //scaler_get_color_domain
+              BYTE InputGetColorDomain(void)
+              {
+                BYTE r041;
+              
+                r041 = ReadTW88(REG041_INPUT_CTRL_II );
+                if(r041 & 0x01) return ON;    //RGB color
+                else      return OFF;   //YUV color
+              }
+              #endif
+ 377          
+ 378          //-----------------------------------------------------------------------------
+ 379          //class:Input
+ 380          /**
+ 381          * set input crop
+ 382          *
+ 383          * input cropping for implicit DE.
+ 384          * NOTE:InternalDecoder is not an implicit DE.
+ 385          *
+ 386          * register
+ 387          * REG040[7:6]REG045[7:0]  HCropStart
+ 388          *        REG043[7:0]  VCropStart
+ 389          * REG042[6:4]REG044[7:0]  VCropLength
+ 390          * REG042[3:0]REG046[7:0]  HCropLength
+ 391          */
+ 392          //scaler_set_inputcrop
+ 393          void InputSetCrop( WORD x, WORD y, WORD w, WORD h )
+ 394          {
+ 395   1        WriteTW88(REG040_INPUT_CTRL_I, (ReadTW88(REG040_INPUT_CTRL_I) & 0x3F) | ((x & 0x300)>>2) );
+ 396   1        WriteTW88(REG045, (BYTE)x);
+ 397   1        WriteTW88(REG043, (BYTE)y);
+ 398   1      
+ 399   1        WriteTW88(REG042, ((h&0xF00) >> 4)|(w >>8) );
+ 400   1        WriteTW88(REG044, (BYTE)h);
+ 401   1        WriteTW88(REG046, (BYTE)w);
+ 402   1        //dPrintf("\n\rInput Crop Window: x = %d, y = %d, w = %d, h = %d", x, y, w, h );
+ 403   1      }
+ 404          
+ 405          
+ 406          #ifdef SUPPORT_PC
+ 407          //-----------------------------------------------------------------------------
+ 408          //class:Input
+ 409          /**
+ 410          * set Horizontal Start at InputCrop
+ 411          */
+ 412          //scaler_set_inputcrop_hstart
+ 413          void InputSetHStart( WORD x)
+ 414          {
+ 415   1        WriteTW88(REG040, (ReadTW88(REG040) & 0x3F) | ((x & 0xF00)>>2) );
+ 416   1        WriteTW88(REG045, (BYTE)x);
+ 417   1        //dPrintf("\n\rInput Crop Window: x = %d", x);
+ 418   1      }
+ 419          #endif
+ 420          //-----------------------------------------------------------------------------
+ 421          //class:Input
+ 422          /**
+ 423          * get Horizontal Start at InputCrop
+ 424          */
+ 425          //scaler_get_inputcrop_hstart
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 8   
+
+ 426          WORD InputGetHStart(void)
+ 427          {
+ 428   1        WORD wValue;
+ 429   1      
+ 430   1        wValue = ReadTW88(REG040) & 0xC0;
+ 431   1        wValue <<= 2;
+ 432   1        wValue |=  ReadTW88(REG045);
+ 433   1        return wValue;
+ 434   1      }
+ 435          
+ 436          #if 0
+              //-----------------------------------------------------------------------------
+              //class:Input
+              //scaler_set_inputcrop_vstart
+              void InputSetVStart( WORD y)
+              {
+                WriteTW88(REG043, (BYTE)y);
+                //dPrintf("\n\rInput Crop Window: y = %d", y);
+              }
+              #endif
+ 446          //-----------------------------------------------------------------------------
+ 447          //class:Input
+ 448          #ifdef DEBUG_SCALER_OVERWRITE_TABLE
+              //scaler_get_inputcrop_vstart
+              WORD InputGetVStart(void)
+              {
+                WORD wValue;
+              
+                wValue = ReadTW88(REG043 );
+                return wValue;
+              }
+              #endif
+ 458          
+ 459          #if 1
+ 460          //-----------------------------------------------------------------------------
+ 461          //class:Input
+ 462          //scaler_get_inputcrop_hactive()
+ 463          WORD InputGetHLen(void)
+ 464          {
+ 465   1        WORD len;
+ 466   1        len =ReadTW88(REG042) & 0x0F;
+ 467   1        len <<=8;
+ 468   1        len |= ReadTW88(REG046);
+ 469   1        return len;
+ 470   1      }
+ 471          //-----------------------------------------------------------------------------
+ 472          //class:Input
+ 473          //scaler_get_inputcrop_vactive()
+ 474          WORD InputGetVLen(void)
+ 475          {
+ 476   1        WORD len;
+ 477   1        len =ReadTW88(REG042) & 0x70;
+ 478   1        len <<=4;
+ 479   1        len |= ReadTW88(REG044);
+ 480   1        return len;
+ 481   1      }
+ 482          #endif
+ 483          
+ 484          
+ 485          //-----------------------------------------------------------------------------
+ 486          //class:BT656Input
+ 487          //register
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 9   
+
+ 488          //  R047[7] BT656 input control 0:External input, 1:Internal pattern generator
+ 489          void BT656DecSetFreerun(BYTE fOn)
+ 490          {
+ 491   1        if(fOn) WriteTW88(REG047,ReadTW88(REG047) | 0x80);
+ 492   1        else  WriteTW88(REG047,ReadTW88(REG047) & ~0x80);
+ 493   1      }
+ 494          //-----------------------------------------------------------------------------
+ 495          //class:BT656Input
+ 496          /**
+ 497          * set Freerun and invert clock flag on BT656
+ 498          *
+ 499          * R047[7]
+ 500          * R047[5]
+ 501          */
+ 502          #if 0
+              void BT656DecSetFreerunClk(BYTE fFreerun, BYTE fInvClk)
+              {
+                BYTE value;
+                value = ReadTW88(REG047);
+                if(fFreerun)  value |= 0x80;
+                else      value &= ~0x80;
+                
+                if(fInvClk)   value |= 0x20;
+                else      value &= ~0x20;
+                WriteTW88(REG047, value);
+              }
+              #endif
+ 515          void Bt656DecSetClkPol(BYTE fInvClk)
+ 516          {
+ 517   1        BYTE value;
+ 518   1        value = ReadTW88(REG047);
+ 519   1        if(fInvClk)   value |= 0x20;
+ 520   1        else      value &= ~0x20;
+ 521   1        WriteTW88(REG047, value);
+ 522   1      }
+ 523          
+ 524          
+ 525          //=====================================================
+ 526          // LVDS Rx
+ 527          //=====================================================
+ 528          void LvdsRxEnable(BYTE fOn)
+ 529          {
+ 530   1        BYTE bTemp;
+ 531   1        bTemp = ReadTW88(REG648);
+ 532   1        if(fOn) bTemp |=  0x02;
+ 533   1        else    bTemp &= ~0x02;
+ 534   1        WriteTW88(REG648, bTemp);
+ 535   1      }
+ 536          void LvdsRxPowerDown(BYTE fOn)
+ 537          {
+ 538   1        BYTE bTemp;
+ 539   1        bTemp = ReadTW88(REG64C);
+ 540   1        if(fOn) bTemp &= ~0x40; //power down
+ 541   1        else    bTemp |=  0x40; //normal
+ 542   1        WriteTW88(REG64C, bTemp);
+ 543   1      }
+ 544          void InitLvdsRx(void)
+ 545          {
+ 546   1        WriteTW88(REG648, 0x07);
+ 547   1        WriteTW88(REG649, 0x01);
+ 548   1        WriteTW88(REG64A, 0x00);
+ 549   1        WriteTW88(REG64B, 0x34);
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 10  
+
+ 550   1        WriteTW88(REG64C, 0x40);
+ 551   1        WriteTW88(REG64D, 0x17);
+ 552   1        WriteTW88(REG64E, 0x00);
+ 553   1      }
+ 554          
+ 555          
+ 556          
+ 557          //-----------------------------------------------------------------------------
+ 558          /**
+ 559          * Change Video Input.
+ 560          *
+ 561          * @param mode
+ 562          * - INPUT_CVBS : ChangeCVBS
+ 563          * - INPUT_SVIDEO: ChangeCVBS
+ 564          * - INPUT_COMP : ChangeCOMPONENT
+ 565          * - INPUT_PC :  ChangePC
+ 566          * - INPUT_DVI : ChangeDVI
+ 567          *   - INPUT_HDMIPC:
+ 568          * - INPUT_HDMITV: ChangeHDMI
+ 569          * - INPUT_BT656: ChangeBT656
+ 570          * @see ChangeCVBS
+ 571          *
+ 572          * NOTE: DO NOT TURN ON SPIOSD when you change input.
+ 573          *
+ 574          */
+ 575          void ChangeInput( BYTE mode )
+ 576          {
+ 577   1        Printf("\n\rChangeInput:");
+ 578   1        PrintfInput(mode,0);
+ 579   1      
+ 580   1        if(getNoSignalLogoStatus())
+ 581   1          RemoveLogo();
+ 582   1      
+ 583   1      
+ 584   1        switch ( mode ) {
+ 585   2      #ifdef SUPPORT_CVBS
+ 586   2          case INPUT_CVBS:  ChangeCVBS();   break;
+ 587   2      #endif
+ 588   2      #ifdef SUPPORT_SVIDEO
+ 589   2          case INPUT_SVIDEO:  ChangeSVIDEO();   break;
+ 590   2      #endif
+ 591   2      #ifdef SUPPORT_COMPONENT           
+ 592   2          case INPUT_COMP:  ChangeComponent();  break;
+ 593   2      #endif
+ 594   2      #ifdef SUPPORT_PC
+ 595   2          case INPUT_PC:    ChangePC();     break;
+ 596   2      #endif
+ 597   2      #ifdef SUPPORT_DVI
+                  case INPUT_DVI:   ChangeDVI();    break;
+              #endif
+ 600   2      #if defined(SUPPORT_HDMI)
+ 601   2          case INPUT_HDMIPC:
+ 602   2          case INPUT_HDMITV:  ChangeHDMI();     break;
+ 603   2      #endif
+ 604   2      #ifdef SUPPORT_BT656_LOOP
+ 605   2          case INPUT_BT656: ChangeBT656Loop();  break;
+ 606   2      #endif
+ 607   2      #ifdef SUPPORT_LVDSRX
+ 608   2          case INPUT_LVDS:  ChangeLVDSRx();   break;
+ 609   2      #endif
+ 610   2          default:
+ 611   2            ChangeCVBS();
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 11  
+
+ 612   2            break;
+ 613   2        }
+ 614   1      }
+ 615          //-----------------------------------------------------------------------------
+ 616          /**
+ 617          * move to next video input
+ 618          */
+ 619          void  InputModeNext( void )
+ 620          {
+ 621   1        BYTE next_input;
+ 622   1      
+ 623   1      #if defined(SUPPORT_HDMI)
+ 624   1        if(InputMain==INPUT_HDMIPC)
+ 625   1          next_input = InputMain + 2;
+ 626   1        else
+ 627   1      #endif
+ 628   1        next_input = InputMain + 1;
+ 629   1      
+ 630   1        do {
+ 631   2          if(next_input == INPUT_TOTAL)
+ 632   2            next_input = INPUT_CVBS;  
+ 633   2      #ifndef SUPPORT_CVBS
+                  if(next_input==INPUT_CVBS)    next_input++; 
+              #endif
+ 636   2      #ifndef SUPPORT_SVIDEO
+                  if(next_input==INPUT_SVIDEO)  next_input++; 
+              #endif
+ 639   2      #ifndef SUPPORT_COMPONENT
+                  if(next_input==INPUT_COMP)    next_input++; 
+              #endif
+ 642   2      #ifndef SUPPORT_PC
+                  if(next_input==INPUT_PC)    next_input++; 
+              #endif
+ 645   2      #ifndef SUPPORT_DVI
+ 646   2          if(next_input==INPUT_DVI)   next_input++; 
+ 647   2      #endif
+ 648   2      #if defined(SUPPORT_HDMI)
+ 649   2          if(next_input==INPUT_HDMIPC)
+ 650   2            next_input+=2;  
+ 651   2          else if(next_input==INPUT_HDMITV)
+ 652   2            next_input++;
+ 653   2      #endif
+ 654   2      #ifndef SUPPORT_BT656_LOOP
+                  if(next_input==INPUT_COMP)    next_input++; 
+              #endif
+ 657   2      #if defined(SUPPORT_HDMI)
+ 658   2          if(next_input==INPUT_HDMIPC) {
+ 659   3            if(GetHdmiModeEE())  next_input = INPUT_HDMITV;
+ 660   3          }
+ 661   2      #endif
+ 662   2      #ifndef SUPPORT_LVDSRX
+                  if(next_input==INPUT_LVDS)
+                    next_input++; 
+              #endif
+ 666   2        } while(next_input==INPUT_TOTAL);
+ 667   1      
+ 668   1        ChangeInput(next_input);
+ 669   1      }
+ 670          
+ 671          
+ 672          //=============================================================================
+ 673          // Input Control routine
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 12  
+
+ 674          //=============================================================================
+ 675          
+ 676          //extern CODE BYTE DataInitNTSC[];
+ 677          
+ 678          
+ 679          //-----------------------------------------------------------------------------
+ 680          /**
+ 681          * prepare video input register after FW download the default init values.
+ 682          *
+ 683          * select input path
+ 684          * turnoff freerun manual & turnon freerun auto.
+ 685          * assign default freerun Htotal&Vtotal
+ 686          *
+ 687          * @see I2CDeviceInitialize
+ 688          */
+ 689          //extern void TEMP_init_BT656(void);
+ 690              
+ 691          void InitInputAsDefault(void)
+ 692          {
+ 693   1        //---------------------------------
+ 694   1        //step1:
+ 695   1        //Before FW starts the ChangeInput, 
+ 696   1        //    link ISR & turnoff signal interrupt & NoSignal task,
+ 697   1        //    turn off LCD.
+ 698   1        FOsdIndexMsgPrint(FOSD_STR5_INPUTMAIN);   //prepare InputMain string
+ 699   1      
+ 700   1        LinkCheckAndSetInput();           //link CheckAndSetInput
+ 701   1        Interrupt_enableVideoDetect(OFF);     //turnoff Video Signal Interrupt
+ 702   1        TaskNoSignal_setCmd(TASK_CMD_DONE);     //turnoff NoSignal Task
+ 703   1        LedBackLight(OFF);              //turnoff LedBackLight
+ 704   1      
+ 705   1        //---------------------------------
+ 706   1        //step2:
+ 707   1        //recover default value
+ 708   1        //  Download the recover register values.
+ 709   1        //  set sspll
+ 710   1        //  select MCU/SPI Clock
+ 711   1        Init8836AsDefault(InputMain,0);
+ 712   1      
+ 713   1        //---------------------------------
+ 714   1        //step3:
+ 715   1        //  InputSource=>InMux=>Decoder=>aRGB=>BT656=>DTV=>Scaler=>Measure
+ 716   1        //-------------------
+ 717   1      
+ 718   1        //InputSource  (InMux)
+ 719   1        switch(InputMain) {
+ 720   2        case INPUT_CVBS:
+ 721   2        case INPUT_SVIDEO:
+ 722   2          InputSetSource(INPUT_PATH_DECODER,INPUT_FORMAT_YCBCR);
+ 723   2          break;
+ 724   2        case INPUT_COMP:
+ 725   2          InputSetSource(INPUT_PATH_VADC,INPUT_FORMAT_YCBCR);   
+ 726   2          break;
+ 727   2        case INPUT_PC:
+ 728   2          InputSetSource(INPUT_PATH_VADC,INPUT_FORMAT_RGB);   
+ 729   2          break;
+ 730   2        case INPUT_DVI:
+ 731   2          InputSetSource(INPUT_PATH_DTV,INPUT_FORMAT_RGB);    
+ 732   2          break;
+ 733   2        case INPUT_HDMIPC:
+ 734   2        case INPUT_HDMITV:
+ 735   2          InputSetSource(INPUT_PATH_DTV,INPUT_FORMAT_RGB);    
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 13  
+
+ 736   2          break;
+ 737   2        case INPUT_BT656:
+ 738   2          InputSetSource(INPUT_PATH_BT656,INPUT_FORMAT_YCBCR);   
+ 739   2          break;
+ 740   2        case INPUT_LVDS:
+ 741   2          InputSetSource(INPUT_PATH_LVDS,INPUT_FORMAT_RGB);  
+ 742   2          break;
+ 743   2        }
+ 744   1      
+ 745   1        //Analog Mux
+ 746   1        AMuxSetInput(InputMain);
+ 747   1      
+ 748   1        //Decoder freerun 
+ 749   1        DecoderFreerun(DECODER_FREERUN_AUTO);
+ 750   1      
+ 751   1        //aRGB(VAdc)
+ 752   1        aRGB_SetDefaultFor();
+ 753   1      
+ 754   1        //BT656 Output
+ 755   1      #ifdef SUPPORT_UART1
+                BT656EncOutputEnable(OFF,0);
+              #elif defined(SUPPORT_RCD)
+                //enable only when you selectINPUT_BT656.
+                //you have to select other input to activate RCD.
+                if(InputMain==INPUT_BT656)
+                  BT656EncOutputEnable(ON,0);
+                else
+                  BT656EncOutputEnable(OFF,0);
+                BT656_A_Output(0 /*BT656_A_OUT_DEC_I*/,0,0); //BK150417
+              #else
+ 766   1        BT656EncOutputEnable(ON,0);
+ 767   1        BT656_A_Output(0 /*BT656_A_OUT_DEC_I*/,0,0); //BK141216
+ 768   1      #endif
+ 769   1      
+ 770   1        //DTV BT656Dec Freerun & clock
+ 771   1        BT656DecSetFreerun(OFF);
+ 772   1        switch(InputMain) {
+ 773   2        case INPUT_CVBS:
+ 774   2        case INPUT_SVIDEO:
+ 775   2        case INPUT_COMP:
+ 776   2        case INPUT_PC:
+ 777   2          break;
+ 778   2        case INPUT_DVI:
+ 779   2        case INPUT_HDMIPC:
+ 780   2        case INPUT_HDMITV:
+ 781   2        case INPUT_LVDS:
+ 782   2          Bt656DecSetClkPol(OFF); //normal_clk
+ 783   2          break;
+ 784   2        case INPUT_BT656:
+ 785   2          Bt656DecSetClkPol(ON); //invert_clk
+ 786   2          break;
+ 787   2        }
+ 788   1      
+ 789   1        //DTV
+ 790   1        switch(InputMain) {
+ 791   2        case INPUT_CVBS:
+ 792   2        case INPUT_SVIDEO:
+ 793   2        case INPUT_COMP:
+ 794   2        case INPUT_PC:
+ 795   2          break;
+ 796   2      #ifdef SUPPORT_DVI
+                case INPUT_DVI:
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 14  
+
+                  DtvSetDelay(1/*clock*/,4/*vSync*/);
+              
+                  DtvSetFieldDetectionRegion(ON,0x11);  // set Det field by WIN
+                  DtvSetSyncPolarity(0,0);
+                  DtvSetRouteFormat(DTV_ROUTE_YPbPr,DTV_FORMAT_RGB565);
+                  break;
+              #endif
+ 805   2        case INPUT_HDMIPC:
+ 806   2        case INPUT_HDMITV:
+ 807   2      #if defined(SUPPORT_HDMI)
+ 808   2      #ifdef SUPPORT_HDMI_24BIT
+ 809   2          DtvSetRouteFormat(DTV_ROUTE_BGR,DTV_FORMAT_RGB); //RGB24.
+ 810   2      #else
+                  DtvSetRouteFormat(DTV_ROUTE_565_MSB_B_LSB_R_REVERSED,DTV_FORMAT_RGB565);
+              #endif
+ 813   2          //BK121213. TW8836 EVB10 has reversed ORDER..
+ 814   2          DtvSetReverseBusOrder(1);
+ 815   2      
+ 816   2          DtvSetDelay(1/*clock*/,4/*vSync*/);  /* clock 0:better, 1:worse on 480i,576i*/
+ 817   2      
+ 818   2          DtvSetFieldDetectionRegion(ON,0x11);  // set Det field by WIN
+ 819   2      #endif  //..SUPPORT_HDMI
+ 820   2          break;
+ 821   2      
+ 822   2        case INPUT_LVDS:
+ 823   2      #if defined(SUPPORT_LVDSRX)
+ 824   2          /* LVDS-Rx chip (SN65LVDS93A) uses 24 input pins */
+ 825   2          DtvSetRouteFormat(DTV_ROUTE_BGR,DTV_FORMAT_RGB); //RGB24.
+ 826   2      
+ 827   2          //BK121213. TW8836 EVB10 has reversed ORDER..
+ 828   2          DtvSetReverseBusOrder(1);
+ 829   2      
+ 830   2          DtvSetDelay(1/*clock*/,4/*vSync*/);    
+ 831   2      
+ 832   2          DtvSetFieldDetectionRegion(ON,0x11);  // set Det field by WIN
+ 833   2      #endif  //..SUPPORT_LVDSRX
+ 834   2          break;
+ 835   2      
+ 836   2        case INPUT_BT656:
+ 837   2      #ifdef SUPPORT_BT656_LOOP
+ 838   2          DtvSetRouteFormat(DTV_ROUTE_PbYPr,DTV_FORMAT_INTERLACED_ITU656);
+ 839   2          DtvSetReverseBusOrder(1);
+ 840   2      #endif
+ 841   2          break;
+ 842   2      
+ 843   2        }
+ 844   1      
+ 845   1        //LVDSRx
+ 846   1        switch(InputMain) {
+ 847   2        case INPUT_CVBS:
+ 848   2        case INPUT_SVIDEO:
+ 849   2        case INPUT_COMP:
+ 850   2        case INPUT_PC:
+ 851   2        case INPUT_DVI:
+ 852   2        case INPUT_HDMIPC:
+ 853   2        case INPUT_HDMITV:
+ 854   2          EnableExtLvdsTxChip(OFF); //GPIO EXPANDER IO[4]
+ 855   2          LvdsRxEnable(OFF);
+ 856   2          LvdsRxPowerDown(ON);
+ 857   2          break;
+ 858   2        case INPUT_LVDS:
+ 859   2          EnableExtLvdsTxChip(ON);  //GPIO EXPANDER IO[4]
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 15  
+
+ 860   2          InitLvdsRx();
+ 861   2          break;
+ 862   2        }
+ 863   1      
+ 864   1        //scaler
+ 865   1        ScalerSetFreerunAutoManual(ON,ON);
+ 866   1        ScalerWriteFreerunTotal(FREERUN_DEFAULT_HTOTAL, FREERUN_DEFAULT_VTOTAL);
+ 867   1      
+ 868   1      
+ 869   1        //measure
+ 870   1        MeasSetWindow( 0, 0, 0xfff, 0xfff );//set dummy window. 1600x600
+ 871   1        WriteTW88(REG508, 0x08 );     // field:Both. Note:DO not turn on the start
+ 872   1        WriteTW88(REG50B, 0x40 );     // Threshold active detection 
+ 873   1      
+ 874   1        switch(InputMain) {
+ 875   2        case INPUT_CVBS:
+ 876   2        case INPUT_SVIDEO:
+ 877   2        case INPUT_COMP:
+ 878   2        case INPUT_PC:
+ 879   2          MeasEnableDeMeasure(OFF);   // Disable DE Measure
+ 880   2          break;
+ 881   2        case INPUT_DVI:
+ 882   2        case INPUT_HDMIPC:
+ 883   2        case INPUT_HDMITV:
+ 884   2        case INPUT_LVDS:
+ 885   2        case INPUT_BT656:
+ 886   2          MeasEnableDeMeasure(ON);    //Enable DE Measure
+ 887   2          MeasSetErrTolerance(4);     //tolerance set to 32
+ 888   2          MeasEnableChangedDetection(ON); //set EN. Changed Detection
+ 889   2          break;
+ 890   2        }
+ 891   1      
+ 892   1        //image effect
+ 893   1        SetImage(InputMain);  //set saved image effect(contrast,....)
+ 894   1      
+ 895   1        //---------------------------
+ 896   1        //BT656 Output
+ 897   1        //---------------------------
+ 898   1      
+ 899   1      }
+ 900          
+ 901          
+ 902          //-----------------------------------------------------------------------------
+ 903          /**
+ 904          * enable video Output 
+ 905          *
+ 906          * call when CheckAndSet[Input] is successed.
+ 907          */
+ 908          extern BYTE SW_Video_Status;
+ 909          void VInput_enableOutput(BYTE fRecheck)
+ 910          {
+ 911   1        Printf("\n\rVInput_enableOutput(%bd)",fRecheck);
+ 912   1      
+ 913   1        if(fRecheck) {
+ 914   2          //dPrintf("====Found Recheck:%d",VH_Loss_Changed);
+ 915   2          // do not turn on here. We need a retry.
+ 916   2        }
+ 917   1        else {
+ 918   2          ScalerSetFreerunAutoManual(ON,OFF);
+ 919   2          ScalerSetMuteAutoManual(ON,OFF);
+ 920   2          ScalerSetFreerunValue();    //calculate freerun value
+ 921   2      
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 16  
+
+ 922   2          SpiOsdSetDeValue();
+ 923   2          FOsdSetDeValue();
+ 924   2          LedBackLight(ON);       //TurnOn Display
+ 925   2        }
+ 926   1        TaskNoSignal_setCmd(TASK_CMD_DONE);
+ 927   1        
+ 928   1        Interrupt_enableVideoDetect(ON);
+ 929   1      
+ 930   1        //BK130204. enable sync on HDMI. if it is a PC mode, we need a sync.
+ 931   1        if(InputMain == INPUT_DVI
+ 932   1        //|| InputMain == INPUT_HDMIPC
+ 933   1        //|| InputMain == INPUT_HDMITV
+ 934   1        || InputMain == INPUT_BT656
+ 935   1        //|| InputMain == INPUT_LVDS 
+ 936   1        ) { 
+ 937   2          //digital input.
+ 938   2          ; //SKIP
+ 939   2        }
+ 940   1        else
+ 941   1          Interrupt_enableSyncDetect(ON);
+ 942   1      
+ 943   1        //BK130102
+ 944   1        if(InputMain == INPUT_LVDS )  
+ 945   1          SW_Video_Status = 1;
+ 946   1      
+ 947   1      #ifdef PANEL_AUO_B133EW01
+                //FW does not have overwrite, so I need it.
+                AdjustSSPLL_with_HTotal();
+              #endif
+ 951   1      
+ 952   1      }
+ 953          
+ 954          
+ 955          //-----------------------------------------------------------------------------
+ 956          /**
+ 957          * goto Freerun move
+ 958          *
+ 959          * call when CheckAndSet[Input] is failed.
+ 960          * oldname: VInputGotoFreerun
+ 961          * input
+ 962          * reason
+ 963          *   0: No Signal
+ 964          *   1: No STD
+ 965          *   2: Out of range
+ 966          */
+ 967          void VInput_gotoFreerun(BYTE reason)
+ 968          {
+ 969   1        //dPrintf("\n\rVInput_gotoFreerun(%bd)",reason);
+ 970   1        //Freerun
+ 971   1        if(InputMain == INPUT_BT656) {
+ 972   2        }
+ 973   1        else {
+ 974   2          DecoderFreerun(DECODER_FREERUN_60HZ);
+ 975   2        }
+ 976   1      
+ 977   1        ScalerCheckAndSetFreerunManual();
+ 978   1      
+ 979   1        if(InputMain == INPUT_HDMIPC 
+ 980   1        || InputMain == INPUT_HDMITV
+ 981   1        || InputMain == INPUT_BT656
+ 982   1        || InputMain == INPUT_LVDS) {
+ 983   2        }
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 17  
+
+ 984   1        else {
+ 985   2          ScalerSetMuteManual( ON );
+ 986   2        }
+ 987   1        // Prepare NoSignal Task...
+ 988   1        if(reason==0 && MenuGetLevel()==0) { //0:NoSignal 1:NO STD,...
+ 989   2          if(g_access) {
+ 990   3            FOsdSetDeValue();
+ 991   3            FOsdIndexMsgPrint(FOSD_STR2_NOSIGNAL);
+ 992   3            tic_task = 0;
+ 993   3      
+ 994   3            TaskNoSignal_setCmd(TASK_CMD_WAIT_VIDEO);
+ 995   3          }
+ 996   2        }
+ 997   1      
+ 998   1        if(InputMain == INPUT_PC) {
+ 999   2          //BK111019. I need a default RGB_START,RGB_vDE value for position menu.
+1000   2          RGB_hStart = InputGetHStart();
+1001   2          RGB_vDE = ScalerReadVDEReg();
+1002   2        }
+1003   1      
+1004   1        LedBackLight(ON);
+1005   1      
+1006   1        Interrupt_enableVideoDetect(ON);
+1007   1      }
+1008          
+1009          #if defined(SUPPORT_FAST_INPUT_TOGGLE)
+              
+              //TW8836 has a limited XDATA memory, 2048Bytes.
+              //to reduce XDATA memory, Firwmware uses a REG_BUFF_INFO structure and a real XDATA buffer.
+              BYTE Fast_CVBS_Toggle_Buff[11];
+              BYTE Fast_DTV_Toggle_Buff[11];
+              CODE struct REG_BUFF_INFO_s Fast_VIDEO_Toggle_info[] = {
+                {REG040,    0},
+                {REG041,  1},
+                {REG205,  2}, //Y-Scale
+                {REG206,  3}, 
+                {REG215,  4}, //OutputVDE
+                {REG20C,  5}, //BuffLen
+                {REG20E,  6},
+                {REG203,  7}, //X-Scaleup
+                {REG204,  8},
+                {REG209,  9}, //X-ScaleDown
+                {REG20A,  10},
+                {0x000,     0}     //EndOfArray..
+              };
+              
+              
+              /*
+              example
+                to HDMI
+                WriteTW88Buff2Reg(Fast_VIDEO_Toggle_info,Fast_DTV_Toggle_Buff);
+                to CVBS
+                WriteTW88Buff2Reg(Fast_VIDEO_Toggle_info,Fast_CVBS_Toggle_Buff);
+              
+              NOTE::    DO NOT USE SPIOSD.
+                  If you need SPIOSD, turn off SPIOSD, execute it, wait, and then turn on SPIOSD
+                  for example
+                      turn off SPIOSD
+                      ChangeFastInputMain();
+                      WaitVBlank(3)
+                      turn on SPIOSD.
+              */
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 18  
+
+              void ChangeFastInputMain(void)
+              {
+                BYTE r201,r21C,r21E;
+                BYTE *buff;
+              
+                r201 = ReadTW88(REG201);
+                r21C = ReadTW88(REG21C);
+                r21E = ReadTW88(REG21E);
+              
+                if(InputMain==INPUT_CVBS)
+                  buff=Fast_CVBS_Toggle_Buff;
+                else
+                  buff=Fast_DTV_Toggle_Buff;
+              
+                WriteTW88(REG21E, r21E | 0x01); //OnMUTE
+                WaitVBlank(1);
+                WriteTW88(REG201, r201 | 0x04); //FixedHTotal
+                WriteTW88(REG21C, r21C | 0x01); //FixedVTotal
+              
+                WriteTW88Buff2Reg(Fast_VIDEO_Toggle_info,buff);
+              
+                WriteTW88(REG201, r201);    //Remove FixedVTotal
+                  WriteTW88(REG21C, r21C);    //Remove FixedHTotal
+                WriteTW88(REG21E, r21E);    //OffMute
+               }
+               #endif
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 19  
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com00A9 (BEGIN)
+0000         L?0170:
+0000 FF                MOV     R7,A
+0001 759300      E     MOV     DPX,#?C?XDATASEG
+0004 E500        E     MOV     A,regTW88+01H
+0006 2440              ADD     A,#040H
+0008 F582              MOV     DPL,A
+000A E4                CLR     A
+000B 3500        E     ADDC    A,regTW88
+000D F583              MOV     DPH,A
+000F 759300      E     MOV     DPX,#?C?XDATASEG
+0012 E0                MOVX    A,@DPTR
+0013 543F              ANL     A,#03FH
+0015 4F                ORL     A,R7
+0016 FF                MOV     R7,A
+0017         L?0171:
+0017 759300      E     MOV     DPX,#?C?XDATASEG
+001A E500        E     MOV     A,regTW88+01H
+001C 2440              ADD     A,#040H
+001E         L?0172:
+001E F582              MOV     DPL,A
+0020 E4                CLR     A
+0021 3500        E     ADDC    A,regTW88
+0023 F583              MOV     DPH,A
+0025 759300      E     MOV     DPX,#?C?XDATASEG
+0028 22                RET     
+0029         L?0173:
+0029         L?0174:
+0029 759300      E     MOV     DPX,#?C?XDATASEG
+002C E500        E     MOV     A,regTW88+01H
+002E 2448              ADD     A,#048H
+0030         L?0175:
+0030 F582              MOV     DPL,A
+0032 E500        E     MOV     A,regTW88
+0034 3406              ADDC    A,#06H
+0036 F583              MOV     DPH,A
+0038 759300      E     MOV     DPX,#?C?XDATASEG
+003B 22                RET     
+003C         L?0176:
+003C         L?0177:
+003C 759300      E     MOV     DPX,#?C?XDATASEG
+003F E500        E     MOV     A,regTW88+01H
+0041 2441              ADD     A,#041H
+0043 22                RET     
+0044         L?0178:
+0044         L?0179:
+0044 850082      E     MOV     DPL,regTW88+01H
+0047 850083      E     MOV     DPH,regTW88
+004A 759300      E     MOV     DPX,#?C?XDATASEG
+004D A3                INC     DPTR
+004E A3                INC     DPTR
+004F 22                RET     
+0050         L?0180:
+0050         L?0181:
+0050 F0                MOVX    @DPTR,A
+0051 759300      E     MOV     DPX,#?C?XDATASEG
+0054 E500        E     MOV     A,regTW88+01H
+0056 22                RET     
+0057         L?0182:
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 20  
+
+0057         L?0183:
+0057 90000000    R     MOV     DPTR,#InputMain
+005B E0                MOVX    A,@DPTR
+005C FF                MOV     R7,A
+005D 22                RET     
+005E         L?0184:
+005E         L?0185:
+005E A3                INC     DPTR
+005F E0                MOVX    A,@DPTR
+0060         L?0186:
+0060 FF                MOV     R7,A
+0061 759300      E     MOV     DPX,#?C?XDATASEG
+0064 E500        E     MOV     A,regTW88+01H
+0066 22                RET     
+0067         L?0187:
+0067         L?0188:
+0067 759300      E     MOV     DPX,#?C?XDATASEG
+006A E500        E     MOV     A,regTW88+01H
+006C 2447              ADD     A,#047H
+006E 22                RET     
+006F         L?0189:
+006F F582              MOV     DPL,A
+0071 E500        E     MOV     A,regTW88
+0073 3405              ADDC    A,#05H
+0075 F583              MOV     DPH,A
+0077 759300      E     MOV     DPX,#?C?XDATASEG
+007A 22                RET     
+             ; FUNCTION Com00A9 (END)
+
+             ; FUNCTION GetInputMain (BEGIN)
+                                           ; SOURCE LINE # 126
+                                           ; SOURCE LINE # 127
+                                           ; SOURCE LINE # 128
+0000 110000      R     ACALL   L?0182
+                                           ; SOURCE LINE # 129
+0003         ?C0001:
+0003 22                RET     
+             ; FUNCTION GetInputMain (END)
+
+             ; FUNCTION _SetInputMain (BEGIN)
+                                           ; SOURCE LINE # 136
+;---- Variable 'input' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 137
+                                           ; SOURCE LINE # 138
+0000 90000000    R     MOV     DPTR,#InputMain
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 140
+0006 22                RET     
+             ; FUNCTION _SetInputMain (END)
+
+             ; FUNCTION _WaitVBlank (BEGIN)
+                                           ; SOURCE LINE # 151
+0000 90000000    R     MOV     DPTR,#cnt
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 152
+                                           ; SOURCE LINE # 156
+0006 E4                CLR     A
+0007 A3                INC     DPTR
+0008 F0                MOVX    @DPTR,A
+0009         ?C0003:
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 21  
+
+0009 90000000    R     MOV     DPTR,#cnt
+000D E0                MOVX    A,@DPTR
+000E FF                MOV     R7,A
+000F A3                INC     DPTR
+0010 E0                MOVX    A,@DPTR
+0011 C3                CLR     C
+0012 9F                SUBB    A,R7
+0013 5030              JNC     ?C0009
+                                           ; SOURCE LINE # 157
+0015 110000      R     ACALL   L?0178
+0018 74FF              MOV     A,#0FFH
+001A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 158
+;---- Variable 'loop' assigned to Register 'R6/R7' ----
+001B E4                CLR     A
+001C FF                MOV     R7,A
+001D FE                MOV     R6,A
+001E         ?C0006:
+                                           ; SOURCE LINE # 159
+001E 110000      R     ACALL   L?0178
+0021 E0                MOVX    A,@DPTR
+0022 20E617            JB      ACC.6,?C0005
+                                           ; SOURCE LINE # 161
+0025 0F                INC     R7
+0026 BF0001            CJNE    R7,#00H,?C0147
+0029 0E                INC     R6
+002A         ?C0147:
+                                           ; SOURCE LINE # 162
+002A D3                SETB    C
+002B EF                MOV     A,R7
+002C 94FE              SUBB    A,#0FEH
+002E EE                MOV     A,R6
+002F 94FF              SUBB    A,#0FFH
+0031 40EB              JC      ?C0006
+                                           ; SOURCE LINE # 163
+0033 7B00        R     MOV     R3,#MBYTE ?SC_0
+0035 7A00        R     MOV     R2,#HIGH ?SC_0
+0037 7900        R     MOV     R1,#LOW ?SC_0
+0039 110000      E     ACALL   _wPrintf
+                                           ; SOURCE LINE # 164
+                                           ; SOURCE LINE # 165
+                                           ; SOURCE LINE # 166
+                                           ; SOURCE LINE # 167
+003C         ?C0005:
+003C 90000000    R     MOV     DPTR,#i
+0040 E0                MOVX    A,@DPTR
+0041 04                INC     A
+0042 F0                MOVX    @DPTR,A
+0043 80C4              SJMP    ?C0003
+                                           ; SOURCE LINE # 168
+0045         ?C0009:
+0045 22                RET     
+             ; FUNCTION _WaitVBlank (END)
+
+             ; FUNCTION WaitOneVBlank (BEGIN)
+                                           ; SOURCE LINE # 176
+                                           ; SOURCE LINE # 177
+                                           ; SOURCE LINE # 181
+0000 110000      R     ACALL   L?0179
+0003 74FF              MOV     A,#0FFH
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 182
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 22  
+
+;---- Variable 'loop' assigned to Register 'R6/R7' ----
+0006 E4                CLR     A
+0007 FF                MOV     R7,A
+0008 FE                MOV     R6,A
+0009         ?C0010:
+                                           ; SOURCE LINE # 183
+0009 110000      R     ACALL   L?0179
+000C E0                MOVX    A,@DPTR
+000D 20E617            JB      ACC.6,?C0013
+                                           ; SOURCE LINE # 185
+0010 0F                INC     R7
+0011 BF0001            CJNE    R7,#00H,?C0148
+0014 0E                INC     R6
+0015         ?C0148:
+                                           ; SOURCE LINE # 186
+0015 D3                SETB    C
+0016 EF                MOV     A,R7
+0017 94FE              SUBB    A,#0FEH
+0019 EE                MOV     A,R6
+001A 94FF              SUBB    A,#0FFH
+001C 40EB              JC      ?C0010
+                                           ; SOURCE LINE # 187
+001E 7B00        R     MOV     R3,#MBYTE ?SC_0
+0020 7A00        R     MOV     R2,#HIGH ?SC_0
+0022 7900        R     MOV     R1,#LOW ?SC_0
+0024 110000      E     ACALL   _wPrintf
+                                           ; SOURCE LINE # 188
+                                           ; SOURCE LINE # 189
+                                           ; SOURCE LINE # 190
+                                           ; SOURCE LINE # 191
+0027         ?C0013:
+0027 22                RET     
+             ; FUNCTION WaitOneVBlank (END)
+
+             ; FUNCTION _InputSetSource (BEGIN)
+                                           ; SOURCE LINE # 222
+;---- Variable 'path' assigned to Register 'R7' ----
+;---- Variable 'format' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 223
+                                           ; SOURCE LINE # 226
+0000 110000      R     ACALL   L?0171
+0003 E0                MOVX    A,@DPTR
+0004 54E8              ANL     A,#0E8H
+0006 FE                MOV     R6,A
+;---- Variable 'r040' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 227
+0007 110000      R     ACALL   L?0176
+000A 110000      R     ACALL   L?0172
+000D E0                MOVX    A,@DPTR
+000E 54C0              ANL     A,#0C0H
+0010 FC                MOV     R4,A
+;---- Variable 'r041' assigned to Register 'R4' ----
+                                           ; SOURCE LINE # 228
+0011 EE                MOV     A,R6
+0012 4F                ORL     A,R7
+0013 FE                MOV     R6,A
+                                           ; SOURCE LINE # 229
+0014 EC                MOV     A,R4
+0015 4D                ORL     A,R5
+0016 FC                MOV     R4,A
+                                           ; SOURCE LINE # 231
+0017 EF                MOV     A,R7
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 23  
+
+0018 7006              JNZ     ?C0014
+                                           ; SOURCE LINE # 233
+001A EC                MOV     A,R4
+001B 440C              ORL     A,#0CH
+001D FC                MOV     R4,A
+                                           ; SOURCE LINE # 234
+001E 803B              SJMP    ?C0015
+0020         ?C0014:
+                                           ; SOURCE LINE # 235
+0020 EF                MOV     A,R7
+0021 6401              XRL     A,#01H
+0023 701A              JNZ     ?C0016
+                                           ; SOURCE LINE # 237
+0025 EE                MOV     A,R6
+0026 4410              ORL     A,#010H
+0028 FE                MOV     R6,A
+                                           ; SOURCE LINE # 238
+0029 90000000    R     MOV     DPTR,#InputMain
+002D E0                MOVX    A,@DPTR
+002E B4020C            CJNE    A,#02H,?C0017
+                                           ; SOURCE LINE # 239
+0031 EC                MOV     A,R4
+0032 4420              ORL     A,#020H
+                                           ; SOURCE LINE # 240
+0034 4410              ORL     A,#010H
+                                           ; SOURCE LINE # 241
+0036 440C              ORL     A,#0CH
+                                           ; SOURCE LINE # 242
+0038 4402              ORL     A,#02H
+003A FC                MOV     R4,A
+                                           ; SOURCE LINE # 243
+003B 801E              SJMP    ?C0015
+003D         ?C0017:
+                                           ; SOURCE LINE # 244
+                                           ; SOURCE LINE # 246
+                                           ; SOURCE LINE # 248
+                                           ; SOURCE LINE # 249
+003D 8008              SJMP    ?C0156
+003F         ?C0016:
+                                           ; SOURCE LINE # 250
+003F EF                MOV     A,R7
+0040 B4020A            CJNE    A,#02H,?C0020
+                                           ; SOURCE LINE # 252
+0043 EE                MOV     A,R6
+0044 4408              ORL     A,#08H
+0046 FE                MOV     R6,A
+                                           ; SOURCE LINE # 254
+0047         ?C0156:
+0047 EC                MOV     A,R4
+0048 4410              ORL     A,#010H
+004A FC                MOV     R4,A
+                                           ; SOURCE LINE # 256
+004B 800E              SJMP    ?C0015
+004D         ?C0020:
+                                           ; SOURCE LINE # 257
+004D EF                MOV     A,R7
+004E B4030A            CJNE    A,#03H,?C0022
+                                           ; SOURCE LINE # 258
+0051 EE                MOV     A,R6
+0052 4408              ORL     A,#08H
+                                           ; SOURCE LINE # 260
+0054 4410              ORL     A,#010H
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 24  
+
+0056 FE                MOV     R6,A
+                                           ; SOURCE LINE # 262
+0057 EC                MOV     A,R4
+0058 4410              ORL     A,#010H
+005A FC                MOV     R4,A
+                                           ; SOURCE LINE # 263
+005B         ?C0022:
+                                           ; SOURCE LINE # 264
+                                           ; SOURCE LINE # 266
+005B         ?C0015:
+                                           ; SOURCE LINE # 268
+005B AF06              MOV     R7,AR6
+005D 110000      R     ACALL   L?0171
+0060 EF                MOV     A,R7
+0061 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 269
+0062 AF04              MOV     R7,AR4
+0064 110000      R     ACALL   L?0176
+0067 110000      R     ACALL   L?0172
+006A EF                MOV     A,R7
+006B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 270
+006C 22                RET     
+             ; FUNCTION _InputSetSource (END)
+
+             ; FUNCTION _InputSetClockPolarity (BEGIN)
+                                           ; SOURCE LINE # 272
+;---- Variable 'fInv' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 273
+                                           ; SOURCE LINE # 275
+0000 110000      R     ACALL   L?0171
+0003 E0                MOVX    A,@DPTR
+0004 FE                MOV     R6,A
+;---- Variable 'bTemp' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 276
+0005 EF                MOV     A,R7
+0006 6005              JZ      ?C0026
+0008 EE                MOV     A,R6
+0009 4410              ORL     A,#010H
+000B 8005              SJMP    ?C0157
+000D         ?C0026:
+                                           ; SOURCE LINE # 277
+000D AF06              MOV     R7,AR6
+000F EE                MOV     A,R6
+0010 54EF              ANL     A,#0EFH
+0012         ?C0157:
+0012 FF                MOV     R7,A
+0013 110000      R     ACALL   L?0171
+0016 EF                MOV     A,R7
+0017 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 278
+0018         ?C0028:
+0018 22                RET     
+             ; FUNCTION _InputSetClockPolarity (END)
+
+             ; FUNCTION _InputSetProgressiveField (BEGIN)
+                                           ; SOURCE LINE # 284
+;---- Variable 'fOn' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 285
+                                           ; SOURCE LINE # 286
+0000 EF                MOV     A,R7
+0001 600B              JZ      ?C0029
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 25  
+
+0003 110000      R     ACALL   L?0177
+0006 110000      R     ACALL   L?0172
+0009 E0                MOVX    A,@DPTR
+000A 4420              ORL     A,#020H
+000C F0                MOVX    @DPTR,A
+000D 22                RET     
+000E         ?C0029:
+                                           ; SOURCE LINE # 287
+000E 110000      R     ACALL   L?0177
+0011 110000      R     ACALL   L?0172
+0014 E0                MOVX    A,@DPTR
+0015 54DF              ANL     A,#0DFH
+0017 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 288
+0018         ?C0031:
+0018 22                RET     
+             ; FUNCTION _InputSetProgressiveField (END)
+
+             ; FUNCTION _InputSetPolarity (BEGIN)
+                                           ; SOURCE LINE # 294
+;---- Variable 'V' assigned to Register 'R7' ----
+;---- Variable 'F' assigned to Register 'R3' ----
+;---- Variable 'H' assigned to Register 'R5' ----
+                                           ; SOURCE LINE # 295
+                                           ; SOURCE LINE # 298
+0000 110000      R     ACALL   L?0177
+0003 110000      R     ACALL   L?0172
+0006 E0                MOVX    A,@DPTR
+0007 54F1              ANL     A,#0F1H
+0009 FE                MOV     R6,A
+;---- Variable 'r041' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 299
+000A EF                MOV     A,R7
+000B 6004              JZ      ?C0032
+000D EE                MOV     A,R6
+000E 4408              ORL     A,#08H
+0010 FE                MOV     R6,A
+0011         ?C0032:
+                                           ; SOURCE LINE # 300
+0011 ED                MOV     A,R5
+0012 6004              JZ      ?C0033
+0014 EE                MOV     A,R6
+0015 4404              ORL     A,#04H
+0017 FE                MOV     R6,A
+0018         ?C0033:
+                                           ; SOURCE LINE # 301
+0018 EB                MOV     A,R3
+0019 6004              JZ      ?C0034
+001B EE                MOV     A,R6
+001C 4402              ORL     A,#02H
+001E FE                MOV     R6,A
+001F         ?C0034:
+                                           ; SOURCE LINE # 302
+001F AF06              MOV     R7,AR6
+0021 110000      R     ACALL   L?0177
+0024 110000      R     ACALL   L?0172
+0027 EF                MOV     A,R7
+0028 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 303
+0029 22                RET     
+             ; FUNCTION _InputSetPolarity (END)
+
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 26  
+
+             ; FUNCTION _InputSetFieldPolarity (BEGIN)
+                                           ; SOURCE LINE # 351
+;---- Variable 'fInv' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 352
+                                           ; SOURCE LINE # 355
+0000 110000      R     ACALL   L?0177
+0003 110000      R     ACALL   L?0172
+0006 E0                MOVX    A,@DPTR
+0007 FE                MOV     R6,A
+;---- Variable 'r041' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 356
+0008 EF                MOV     A,R7
+0009 6005              JZ      ?C0036
+000B EE                MOV     A,R6
+000C 4402              ORL     A,#02H
+000E 8005              SJMP    ?C0158
+0010         ?C0036:
+                                           ; SOURCE LINE # 357
+0010 AF06              MOV     R7,AR6
+0012 EE                MOV     A,R6
+0013 54FD              ANL     A,#0FDH
+0015         ?C0158:
+0015 FF                MOV     R7,A
+0016 110000      R     ACALL   L?0177
+0019 110000      R     ACALL   L?0172
+001C EF                MOV     A,R7
+001D F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 358
+001E         ?C0038:
+001E 22                RET     
+             ; FUNCTION _InputSetFieldPolarity (END)
+
+             ; FUNCTION _InputSetCrop (BEGIN)
+                                           ; SOURCE LINE # 393
+0000 90000000    R     MOV     DPTR,#y
+0004 EC                MOV     A,R4
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 ED                MOV     A,R5
+0008 F0                MOVX    @DPTR,A
+0009 90000000    R     MOV     DPTR,#x
+000D EE                MOV     A,R6
+000E F0                MOVX    @DPTR,A
+000F A3                INC     DPTR
+0010 EF                MOV     A,R7
+0011 F0                MOVX    @DPTR,A
+;---- Variable 'w' assigned to Register 'R2/R3' ----
+                                           ; SOURCE LINE # 394
+                                           ; SOURCE LINE # 395
+0012 EE                MOV     A,R6
+0013 5403              ANL     A,#03H
+0015 FE                MOV     R6,A
+0016 E4                CLR     A
+0017 7802              MOV     R0,#02H
+0019         ?C0149:
+0019 CE                XCH     A,R6
+001A C3                CLR     C
+001B 13                RRC     A
+001C CE                XCH     A,R6
+001D 13                RRC     A
+001E D8F9              DJNZ    R0,?C0149
+0020 110000      R     ACALL   L?0170
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 27  
+
+0023 EF                MOV     A,R7
+0024 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 396
+0025 90000000    R     MOV     DPTR,#x
+0029 110000      R     ACALL   L?0184
+002C 2445              ADD     A,#045H
+002E 110000      R     ACALL   L?0172
+0031 EF                MOV     A,R7
+0032 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 397
+0033 90000000    R     MOV     DPTR,#y
+0037 110000      R     ACALL   L?0184
+003A 2443              ADD     A,#043H
+003C 110000      R     ACALL   L?0172
+003F EF                MOV     A,R7
+0040 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 399
+0041 90000000    R     MOV     DPTR,#h
+0045 E0                MOVX    A,@DPTR
+0046 540F              ANL     A,#0FH
+0048 C4                SWAP    A
+0049 F8                MOV     R0,A
+004A 54F0              ANL     A,#0F0H
+004C C8                XCH     A,R0
+004D E4                CLR     A
+004E C4                SWAP    A
+004F 540F              ANL     A,#0FH
+0051 48                ORL     A,R0
+0052 FD                MOV     R5,A
+0053 EA                MOV     A,R2
+0054 4D                ORL     A,R5
+0055 110000      R     ACALL   L?0186
+0058 2442              ADD     A,#042H
+005A 110000      R     ACALL   L?0172
+005D EF                MOV     A,R7
+005E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 400
+005F 90000000    R     MOV     DPTR,#h
+0063 110000      R     ACALL   L?0185
+0066 2444              ADD     A,#044H
+0068 110000      R     ACALL   L?0172
+006B EF                MOV     A,R7
+006C F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 401
+006D AF03              MOV     R7,AR3
+006F 759300      E     MOV     DPX,#?C?XDATASEG
+0072 E500        E     MOV     A,regTW88+01H
+0074 2446              ADD     A,#046H
+0076 110000      R     ACALL   L?0172
+0079 EF                MOV     A,R7
+007A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 403
+007B 22                RET     
+             ; FUNCTION _InputSetCrop (END)
+
+             ; FUNCTION _InputSetHStart (BEGIN)
+                                           ; SOURCE LINE # 413
+;---- Variable 'x' assigned to Register 'R4/R5' ----
+0000 AD07              MOV     R5,AR7
+0002 AC06              MOV     R4,AR6
+                                           ; SOURCE LINE # 414
+                                           ; SOURCE LINE # 415
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 28  
+
+0004 EC                MOV     A,R4
+0005 540F              ANL     A,#0FH
+0007 FE                MOV     R6,A
+0008 E4                CLR     A
+0009 7802              MOV     R0,#02H
+000B         ?C0150:
+000B CE                XCH     A,R6
+000C C3                CLR     C
+000D 13                RRC     A
+000E CE                XCH     A,R6
+000F 13                RRC     A
+0010 D8F9              DJNZ    R0,?C0150
+0012 110000      R     ACALL   L?0170
+0015 EF                MOV     A,R7
+0016 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 416
+0017 AF05              MOV     R7,AR5
+0019 759300      E     MOV     DPX,#?C?XDATASEG
+001C E500        E     MOV     A,regTW88+01H
+001E 2445              ADD     A,#045H
+0020 110000      R     ACALL   L?0172
+0023 EF                MOV     A,R7
+0024 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 418
+0025 22                RET     
+             ; FUNCTION _InputSetHStart (END)
+
+             ; FUNCTION InputGetHStart (BEGIN)
+                                           ; SOURCE LINE # 426
+                                           ; SOURCE LINE # 427
+                                           ; SOURCE LINE # 430
+0000 110000      R     ACALL   L?0171
+0003 E0                MOVX    A,@DPTR
+0004 54C0              ANL     A,#0C0H
+0006 FF                MOV     R7,A
+0007 7E00              MOV     R6,#00H
+;---- Variable 'wValue' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 431
+0009 7802              MOV     R0,#02H
+000B         ?C0151:
+000B C3                CLR     C
+000C 33                RLC     A
+000D CE                XCH     A,R6
+000E 33                RLC     A
+000F CE                XCH     A,R6
+0010 D8F9              DJNZ    R0,?C0151
+0012 FF                MOV     R7,A
+                                           ; SOURCE LINE # 432
+0013 759300      E     MOV     DPX,#?C?XDATASEG
+0016 E500        E     MOV     A,regTW88+01H
+0018 2445              ADD     A,#045H
+001A 110000      R     ACALL   L?0172
+001D E0                MOVX    A,@DPTR
+001E FD                MOV     R5,A
+001F EF                MOV     A,R7
+0020 4D                ORL     A,R5
+0021 FF                MOV     R7,A
+                                           ; SOURCE LINE # 433
+                                           ; SOURCE LINE # 434
+0022         ?C0041:
+0022 22                RET     
+             ; FUNCTION InputGetHStart (END)
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 29  
+
+
+             ; FUNCTION InputGetHLen (BEGIN)
+                                           ; SOURCE LINE # 463
+                                           ; SOURCE LINE # 464
+                                           ; SOURCE LINE # 466
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 2442              ADD     A,#042H
+0007 110000      R     ACALL   L?0172
+000A E0                MOVX    A,@DPTR
+000B 540F              ANL     A,#0FH
+;---- Variable 'len' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 467
+000D FE                MOV     R6,A
+                                           ; SOURCE LINE # 468
+000E 759300      E     MOV     DPX,#?C?XDATASEG
+0011 E500        E     MOV     A,regTW88+01H
+0013 2446              ADD     A,#046H
+0015 110000      R     ACALL   L?0172
+0018 E0                MOVX    A,@DPTR
+0019 FD                MOV     R5,A
+001A ED                MOV     A,R5
+001B FF                MOV     R7,A
+                                           ; SOURCE LINE # 469
+                                           ; SOURCE LINE # 470
+001C         ?C0042:
+001C 22                RET     
+             ; FUNCTION InputGetHLen (END)
+
+             ; FUNCTION InputGetVLen (BEGIN)
+                                           ; SOURCE LINE # 474
+                                           ; SOURCE LINE # 475
+                                           ; SOURCE LINE # 477
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 2442              ADD     A,#042H
+0007 110000      R     ACALL   L?0172
+000A E0                MOVX    A,@DPTR
+000B 5470              ANL     A,#070H
+000D 7E00              MOV     R6,#00H
+;---- Variable 'len' assigned to Register 'R6/R7' ----
+                                           ; SOURCE LINE # 478
+000F C4                SWAP    A
+0010 F8                MOV     R0,A
+0011 540F              ANL     A,#0FH
+0013 C8                XCH     A,R0
+0014 68                XRL     A,R0
+0015 FF                MOV     R7,A
+0016 EE                MOV     A,R6
+0017 C4                SWAP    A
+0018 54F0              ANL     A,#0F0H
+001A 48                ORL     A,R0
+001B FE                MOV     R6,A
+                                           ; SOURCE LINE # 479
+001C 759300      E     MOV     DPX,#?C?XDATASEG
+001F E500        E     MOV     A,regTW88+01H
+0021 2444              ADD     A,#044H
+0023 110000      R     ACALL   L?0172
+0026 E0                MOVX    A,@DPTR
+0027 FD                MOV     R5,A
+0028 EF                MOV     A,R7
+0029 4D                ORL     A,R5
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 30  
+
+002A FF                MOV     R7,A
+                                           ; SOURCE LINE # 480
+                                           ; SOURCE LINE # 481
+002B         ?C0043:
+002B 22                RET     
+             ; FUNCTION InputGetVLen (END)
+
+             ; FUNCTION _BT656DecSetFreerun (BEGIN)
+                                           ; SOURCE LINE # 489
+;---- Variable 'fOn' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 490
+                                           ; SOURCE LINE # 491
+0000 EF                MOV     A,R7
+0001 600B              JZ      ?C0044
+0003 110000      R     ACALL   L?0187
+0006 110000      R     ACALL   L?0172
+0009 E0                MOVX    A,@DPTR
+000A 4480              ORL     A,#080H
+000C F0                MOVX    @DPTR,A
+000D 22                RET     
+000E         ?C0044:
+                                           ; SOURCE LINE # 492
+000E 110000      R     ACALL   L?0187
+0011 110000      R     ACALL   L?0172
+0014 E0                MOVX    A,@DPTR
+0015 547F              ANL     A,#07FH
+0017 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 493
+0018         ?C0046:
+0018 22                RET     
+             ; FUNCTION _BT656DecSetFreerun (END)
+
+             ; FUNCTION _Bt656DecSetClkPol (BEGIN)
+                                           ; SOURCE LINE # 515
+;---- Variable 'fInvClk' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 516
+                                           ; SOURCE LINE # 518
+0000 110000      R     ACALL   L?0188
+0003 110000      R     ACALL   L?0172
+0006 E0                MOVX    A,@DPTR
+0007 FE                MOV     R6,A
+;---- Variable 'value' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 519
+0008 EF                MOV     A,R7
+0009 6006              JZ      ?C0047
+000B EE                MOV     A,R6
+000C 4420              ORL     A,#020H
+000E FE                MOV     R6,A
+000F 8004              SJMP    ?C0048
+0011         ?C0047:
+                                           ; SOURCE LINE # 520
+0011 EE                MOV     A,R6
+0012 54DF              ANL     A,#0DFH
+0014 FE                MOV     R6,A
+0015         ?C0048:
+                                           ; SOURCE LINE # 521
+0015 AF06              MOV     R7,AR6
+0017 110000      R     ACALL   L?0188
+001A 110000      R     ACALL   L?0172
+001D EF                MOV     A,R7
+001E F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 522
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 31  
+
+001F 22                RET     
+             ; FUNCTION _Bt656DecSetClkPol (END)
+
+             ; FUNCTION _LvdsRxEnable (BEGIN)
+                                           ; SOURCE LINE # 528
+;---- Variable 'fOn' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 529
+                                           ; SOURCE LINE # 531
+0000 110000      R     ACALL   L?0173
+0003 E0                MOVX    A,@DPTR
+0004 FE                MOV     R6,A
+;---- Variable 'bTemp' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 532
+0005 EF                MOV     A,R7
+0006 6006              JZ      ?C0050
+0008 EE                MOV     A,R6
+0009 4402              ORL     A,#02H
+000B FE                MOV     R6,A
+000C 8004              SJMP    ?C0051
+000E         ?C0050:
+                                           ; SOURCE LINE # 533
+000E EE                MOV     A,R6
+000F 54FD              ANL     A,#0FDH
+0011 FE                MOV     R6,A
+0012         ?C0051:
+                                           ; SOURCE LINE # 534
+0012 AF06              MOV     R7,AR6
+0014 110000      R     ACALL   L?0173
+0017 EF                MOV     A,R7
+0018 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 535
+0019 22                RET     
+             ; FUNCTION _LvdsRxEnable (END)
+
+             ; FUNCTION _LvdsRxPowerDown (BEGIN)
+                                           ; SOURCE LINE # 536
+;---- Variable 'fOn' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 537
+                                           ; SOURCE LINE # 539
+0000 759300      E     MOV     DPX,#?C?XDATASEG
+0003 E500        E     MOV     A,regTW88+01H
+0005 244C              ADD     A,#04CH
+0007 110000      R     ACALL   L?0175
+000A E0                MOVX    A,@DPTR
+000B FE                MOV     R6,A
+;---- Variable 'bTemp' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 540
+000C EF                MOV     A,R7
+000D 6006              JZ      ?C0053
+000F EE                MOV     A,R6
+0010 54BF              ANL     A,#0BFH
+0012 FE                MOV     R6,A
+0013 8004              SJMP    ?C0054
+0015         ?C0053:
+                                           ; SOURCE LINE # 541
+0015 EE                MOV     A,R6
+0016 4440              ORL     A,#040H
+0018 FE                MOV     R6,A
+0019         ?C0054:
+                                           ; SOURCE LINE # 542
+0019 AF06              MOV     R7,AR6
+001B 759300      E     MOV     DPX,#?C?XDATASEG
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 32  
+
+001E E500        E     MOV     A,regTW88+01H
+0020 244C              ADD     A,#04CH
+0022 110000      R     ACALL   L?0175
+0025 EF                MOV     A,R7
+0026 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 543
+0027 22                RET     
+             ; FUNCTION _LvdsRxPowerDown (END)
+
+             ; FUNCTION InitLvdsRx (BEGIN)
+                                           ; SOURCE LINE # 544
+                                           ; SOURCE LINE # 545
+                                           ; SOURCE LINE # 546
+0000 110000      R     ACALL   L?0174
+0003 7407              MOV     A,#07H
+                                           ; SOURCE LINE # 547
+0005 110000      R     ACALL   L?0180
+0008 2449              ADD     A,#049H
+000A 110000      R     ACALL   L?0175
+000D 7401              MOV     A,#01H
+                                           ; SOURCE LINE # 548
+000F 110000      R     ACALL   L?0180
+0012 244A              ADD     A,#04AH
+0014 110000      R     ACALL   L?0175
+0017 E4                CLR     A
+                                           ; SOURCE LINE # 549
+0018 110000      R     ACALL   L?0181
+001B 244B              ADD     A,#04BH
+001D 110000      R     ACALL   L?0175
+0020 7434              MOV     A,#034H
+                                           ; SOURCE LINE # 550
+0022 110000      R     ACALL   L?0181
+0025 244C              ADD     A,#04CH
+0027 110000      R     ACALL   L?0175
+002A 7440              MOV     A,#040H
+                                           ; SOURCE LINE # 551
+002C 110000      R     ACALL   L?0181
+002F 244D              ADD     A,#04DH
+0031 110000      R     ACALL   L?0175
+0034 7417              MOV     A,#017H
+                                           ; SOURCE LINE # 552
+0036 110000      R     ACALL   L?0181
+0039 244E              ADD     A,#04EH
+003B 110000      R     ACALL   L?0175
+003E E4                CLR     A
+003F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 553
+0040 22                RET     
+             ; FUNCTION InitLvdsRx (END)
+
+             ; FUNCTION _ChangeInput (BEGIN)
+                                           ; SOURCE LINE # 575
+0000 90000000    R     MOV     DPTR,#mode
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 576
+                                           ; SOURCE LINE # 577
+0006 7B00        R     MOV     R3,#MBYTE ?SC_17
+0008 7A00        R     MOV     R2,#HIGH ?SC_17
+000A 7900        R     MOV     R1,#LOW ?SC_17
+000C 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 578
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 33  
+
+000F 90000000    R     MOV     DPTR,#mode
+0013 E0                MOVX    A,@DPTR
+0014 FF                MOV     R7,A
+0015 E4                CLR     A
+0016 FD                MOV     R5,A
+0017 110000      E     ACALL   _PrintfInput
+                                           ; SOURCE LINE # 580
+001A 110000      E     ACALL   getNoSignalLogoStatus
+001D EF                MOV     A,R7
+001E 6003              JZ      ?C0057
+                                           ; SOURCE LINE # 581
+0020 110000      E     ACALL   RemoveLogo
+0023         ?C0057:
+                                           ; SOURCE LINE # 584
+0023 90000000    R     MOV     DPTR,#mode
+0027 E0                MOVX    A,@DPTR
+0028 B40900            CJNE    A,#09H,?C0152
+002B         ?C0152:
+002B 5037              JNC     ?C0067
+002D 90000000    R     MOV     DPTR,#?C0153
+0031 F8                MOV     R0,A
+0032 28                ADD     A,R0
+0033 28                ADD     A,R0
+0034 73                JMP     @A+DPTR
+0035         ?C0153:
+0035 010000      R     AJMP    ?C0059
+0038 010000      R     AJMP    ?C0060
+003B 010000      R     AJMP    ?C0061
+003E 010000      R     AJMP    ?C0062
+0041 010000      R     AJMP    ?C0067
+0044 010000      R     AJMP    ?C0064
+0047 010000      R     AJMP    ?C0064
+004A 010000      R     AJMP    ?C0065
+004D 010000      R     AJMP    ?C0066
+                                           ; SOURCE LINE # 586
+0050         ?C0059:
+0050 8012              SJMP    ?C0159
+                                           ; SOURCE LINE # 589
+0052         ?C0060:
+0052 010000      E     AJMP    ChangeSVIDEO
+                                           ; SOURCE LINE # 592
+0055         ?C0061:
+0055 010000      E     AJMP    ChangeComponent
+                                           ; SOURCE LINE # 595
+0058         ?C0062:
+0058 010000      E     AJMP    ChangePC
+                                           ; SOURCE LINE # 601
+                                           ; SOURCE LINE # 602
+005B         ?C0064:
+005B 010000      E     AJMP    ChangeHDMI
+                                           ; SOURCE LINE # 605
+005E         ?C0065:
+005E 010000      E     AJMP    ChangeBT656Loop
+                                           ; SOURCE LINE # 608
+0061         ?C0066:
+0061 010000      E     AJMP    ChangeLVDSRx
+                                           ; SOURCE LINE # 610
+0064         ?C0067:
+                                           ; SOURCE LINE # 611
+0064         ?C0159:
+0064 110000      E     ACALL   ChangeCVBS
+                                           ; SOURCE LINE # 612
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 34  
+
+                                           ; SOURCE LINE # 613
+                                           ; SOURCE LINE # 614
+0067         ?C0068:
+0067 22                RET     
+             ; FUNCTION _ChangeInput (END)
+
+             ; FUNCTION InputModeNext (BEGIN)
+                                           ; SOURCE LINE # 619
+                                           ; SOURCE LINE # 620
+                                           ; SOURCE LINE # 624
+0000 90000000    R     MOV     DPTR,#InputMain
+0004 E0                MOVX    A,@DPTR
+0005 B40504            CJNE    A,#05H,?C0069
+                                           ; SOURCE LINE # 625
+0008 2402              ADD     A,#02H
+000A 8006              SJMP    ?C0160
+000C         ?C0069:
+                                           ; SOURCE LINE # 628
+000C 90000000    R     MOV     DPTR,#InputMain
+0010 E0                MOVX    A,@DPTR
+0011 04                INC     A
+0012         ?C0160:
+0012 90000000    R     MOV     DPTR,#next_input
+0016 F0                MOVX    @DPTR,A
+0017         ?C0073:
+                                           ; SOURCE LINE # 630
+                                           ; SOURCE LINE # 631
+0017 90000000    R     MOV     DPTR,#next_input
+001B E0                MOVX    A,@DPTR
+001C B40902            CJNE    A,#09H,?C0074
+                                           ; SOURCE LINE # 632
+001F E4                CLR     A
+0020 F0                MOVX    @DPTR,A
+0021         ?C0074:
+                                           ; SOURCE LINE # 646
+0021 90000000    R     MOV     DPTR,#next_input
+0025 E0                MOVX    A,@DPTR
+0026 B40402            CJNE    A,#04H,?C0075
+0029 04                INC     A
+002A F0                MOVX    @DPTR,A
+002B         ?C0075:
+                                           ; SOURCE LINE # 649
+002B 90000000    R     MOV     DPTR,#next_input
+002F E0                MOVX    A,@DPTR
+0030 FF                MOV     R7,A
+0031 B40505            CJNE    A,#05H,?C0076
+                                           ; SOURCE LINE # 650
+0034 2402              ADD     A,#02H
+0036 F0                MOVX    @DPTR,A
+0037 800B              SJMP    ?C0077
+0039         ?C0076:
+                                           ; SOURCE LINE # 651
+0039 EF                MOV     A,R7
+003A B40607            CJNE    A,#06H,?C0077
+                                           ; SOURCE LINE # 652
+003D 90000000    R     MOV     DPTR,#next_input
+0041 E0                MOVX    A,@DPTR
+0042 04                INC     A
+0043 F0                MOVX    @DPTR,A
+0044         ?C0077:
+                                           ; SOURCE LINE # 658
+0044 90000000    R     MOV     DPTR,#next_input
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 35  
+
+0048 E0                MOVX    A,@DPTR
+0049 B4050D            CJNE    A,#05H,?C0071
+                                           ; SOURCE LINE # 659
+004C 110000      E     ACALL   GetHdmiModeEE
+004F EF                MOV     A,R7
+0050 6007              JZ      ?C0071
+0052 90000000    R     MOV     DPTR,#next_input
+0056 7406              MOV     A,#06H
+0058 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 660
+                                           ; SOURCE LINE # 666
+0059         ?C0071:
+0059 90000000    R     MOV     DPTR,#next_input
+005D E0                MOVX    A,@DPTR
+005E FF                MOV     R7,A
+005F 6409              XRL     A,#09H
+0061 60B4              JZ      ?C0073
+                                           ; SOURCE LINE # 668
+0063 010000      R     AJMP    _ChangeInput
+             ; FUNCTION InputModeNext (END)
+
+             ; FUNCTION InitInputAsDefault (BEGIN)
+                                           ; SOURCE LINE # 691
+                                           ; SOURCE LINE # 692
+                                           ; SOURCE LINE # 698
+0000 7F05              MOV     R7,#05H
+0002 110000      E     ACALL   _FOsdIndexMsgPrint
+                                           ; SOURCE LINE # 700
+0005 110000      E     ACALL   LinkCheckAndSetInput
+                                           ; SOURCE LINE # 701
+0008 E4                CLR     A
+0009 FF                MOV     R7,A
+000A 110000      E     ACALL   _Interrupt_enableVideoDetect
+                                           ; SOURCE LINE # 702
+000D E4                CLR     A
+000E FF                MOV     R7,A
+000F 110000      E     ACALL   _TaskNoSignal_setCmd
+                                           ; SOURCE LINE # 703
+0012 E4                CLR     A
+0013 FF                MOV     R7,A
+0014 110000      E     ACALL   _LedBackLight
+                                           ; SOURCE LINE # 711
+0017 110000      R     ACALL   L?0182
+001A E4                CLR     A
+001B FD                MOV     R5,A
+001C 110000      E     ACALL   _Init8836AsDefault
+                                           ; SOURCE LINE # 719
+001F 90000000    R     MOV     DPTR,#InputMain
+0023 E0                MOVX    A,@DPTR
+0024 B40900            CJNE    A,#09H,?C0154
+0027         ?C0154:
+0027 5047              JNC     ?C0082
+0029 90000000    R     MOV     DPTR,#?C0155
+002D F8                MOV     R0,A
+002E 28                ADD     A,R0
+002F 28                ADD     A,R0
+0030 73                JMP     @A+DPTR
+0031         ?C0155:
+0031 010000      R     AJMP    ?C0084
+0034 010000      R     AJMP    ?C0084
+0037 010000      R     AJMP    ?C0085
+003A 010000      R     AJMP    ?C0086
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 36  
+
+003D 010000      R     AJMP    ?C0087
+0040 010000      R     AJMP    ?C0087
+0043 010000      R     AJMP    ?C0087
+0046 010000      R     AJMP    ?C0090
+0049 010000      R     AJMP    ?C0091
+                                           ; SOURCE LINE # 720
+                                           ; SOURCE LINE # 721
+004C         ?C0084:
+                                           ; SOURCE LINE # 722
+004C E4                CLR     A
+004D FD                MOV     R5,A
+004E FF                MOV     R7,A
+                                           ; SOURCE LINE # 723
+004F 801C              SJMP    ?C0166
+                                           ; SOURCE LINE # 724
+0051         ?C0085:
+                                           ; SOURCE LINE # 725
+0051 E4                CLR     A
+0052 FD                MOV     R5,A
+0053 7F01              MOV     R7,#01H
+0055         ?C0161:
+                                           ; SOURCE LINE # 726
+0055 8016              SJMP    ?C0166
+                                           ; SOURCE LINE # 727
+0057         ?C0086:
+                                           ; SOURCE LINE # 728
+0057 7D01              MOV     R5,#01H
+0059 7F01              MOV     R7,#01H
+005B         ?C0162:
+                                           ; SOURCE LINE # 729
+005B 8010              SJMP    ?C0166
+                                           ; SOURCE LINE # 730
+005D         ?C0087:
+                                           ; SOURCE LINE # 731
+005D 7D01              MOV     R5,#01H
+005F 7F02              MOV     R7,#02H
+0061         ?C0163:
+                                           ; SOURCE LINE # 732
+0061 800A              SJMP    ?C0166
+                                           ; SOURCE LINE # 733
+                                           ; SOURCE LINE # 734
+                                           ; SOURCE LINE # 737
+0063         ?C0090:
+                                           ; SOURCE LINE # 738
+0063 E4                CLR     A
+0064 FD                MOV     R5,A
+0065 7F06              MOV     R7,#06H
+0067         ?C0165:
+                                           ; SOURCE LINE # 739
+0067 8004              SJMP    ?C0166
+                                           ; SOURCE LINE # 740
+0069         ?C0091:
+                                           ; SOURCE LINE # 741
+0069 7D01              MOV     R5,#01H
+006B 7F03              MOV     R7,#03H
+006D         ?C0166:
+006D 110000      R     ACALL   _InputSetSource
+                                           ; SOURCE LINE # 742
+                                           ; SOURCE LINE # 743
+0070         ?C0082:
+                                           ; SOURCE LINE # 746
+0070 110000      R     ACALL   L?0183
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 37  
+
+0073 110000      E     ACALL   _AMuxSetInput
+                                           ; SOURCE LINE # 749
+0076 E4                CLR     A
+0077 FF                MOV     R7,A
+0078 110000      E     ACALL   _DecoderFreerun
+                                           ; SOURCE LINE # 752
+007B 110000      E     ACALL   aRGB_SetDefaultFor
+                                           ; SOURCE LINE # 766
+007E E4                CLR     A
+007F FD                MOV     R5,A
+0080 7F01              MOV     R7,#01H
+0082 110000      E     ACALL   _BT656EncOutputEnable
+                                           ; SOURCE LINE # 767
+0085 E4                CLR     A
+0086 FB                MOV     R3,A
+0087 FD                MOV     R5,A
+0088 FF                MOV     R7,A
+0089 110000      E     ACALL   _BT656_A_Output
+                                           ; SOURCE LINE # 771
+008C E4                CLR     A
+008D FF                MOV     R7,A
+008E 110000      R     ACALL   _BT656DecSetFreerun
+                                           ; SOURCE LINE # 772
+0091 90000000    R     MOV     DPTR,#InputMain
+0095 E0                MOVX    A,@DPTR
+0096 24F9              ADD     A,#0F9H
+0098 600C              JZ      ?C0101
+009A 2403              ADD     A,#03H
+009C 24FB              ADD     A,#0FBH
+009E 5002              JNC     ?C0100
+00A0 8009              SJMP    ?C0092
+                                           ; SOURCE LINE # 773
+                                           ; SOURCE LINE # 774
+                                           ; SOURCE LINE # 775
+                                           ; SOURCE LINE # 776
+                                           ; SOURCE LINE # 777
+                                           ; SOURCE LINE # 778
+                                           ; SOURCE LINE # 779
+                                           ; SOURCE LINE # 780
+                                           ; SOURCE LINE # 781
+00A2         ?C0100:
+                                           ; SOURCE LINE # 782
+00A2 E4                CLR     A
+00A3 FF                MOV     R7,A
+                                           ; SOURCE LINE # 783
+00A4 8002              SJMP    ?C0167
+                                           ; SOURCE LINE # 784
+00A6         ?C0101:
+                                           ; SOURCE LINE # 785
+00A6 7F01              MOV     R7,#01H
+00A8         ?C0167:
+00A8 110000      R     ACALL   _Bt656DecSetClkPol
+                                           ; SOURCE LINE # 786
+                                           ; SOURCE LINE # 787
+00AB         ?C0092:
+                                           ; SOURCE LINE # 790
+00AB 90000000    R     MOV     DPTR,#InputMain
+00AF E0                MOVX    A,@DPTR
+00B0 24FA              ADD     A,#0FAH
+00B2 600A              JZ      ?C0108
+00B4 14                DEC     A
+00B5 601E              JZ      ?C0110
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 38  
+
+00B7 14                DEC     A
+00B8 6006              JZ      ?C0109
+00BA 2403              ADD     A,#03H
+00BC 701C              JNZ     ?C0102
+                                           ; SOURCE LINE # 791
+                                           ; SOURCE LINE # 792
+                                           ; SOURCE LINE # 793
+                                           ; SOURCE LINE # 794
+                                           ; SOURCE LINE # 795
+                                           ; SOURCE LINE # 805
+                                           ; SOURCE LINE # 806
+00BE         ?C0108:
+                                           ; SOURCE LINE # 809
+                                           ; SOURCE LINE # 814
+                                           ; SOURCE LINE # 816
+                                           ; SOURCE LINE # 818
+                                           ; SOURCE LINE # 820
+00BE 8000              SJMP    ?C0168
+                                           ; SOURCE LINE # 822
+00C0         ?C0109:
+                                           ; SOURCE LINE # 825
+00C0         ?C0168:
+00C0 7D05              MOV     R5,#05H
+                                           ; SOURCE LINE # 828
+00C2 110000      R     ACALL   L?0190
+                                           ; SOURCE LINE # 830
+00C5 7D04              MOV     R5,#04H
+00C7 7F01              MOV     R7,#01H
+00C9 110000      E     ACALL   _DtvSetDelay
+                                           ; SOURCE LINE # 832
+00CC 7D11              MOV     R5,#011H
+00CE 7F01              MOV     R7,#01H
+00D0 110000      E     ACALL   _DtvSetFieldDetectionRegion
+                                           ; SOURCE LINE # 834
+00D3 8005              SJMP    ?C0102
+                                           ; SOURCE LINE # 836
+00D5         ?C0110:
+                                           ; SOURCE LINE # 838
+00D5 E4                CLR     A
+00D6 FD                MOV     R5,A
+                                           ; SOURCE LINE # 839
+00D7 110000      R     ACALL   L?0190
+                                           ; SOURCE LINE # 841
+                                           ; SOURCE LINE # 843
+00DA         ?C0102:
+                                           ; SOURCE LINE # 846
+00DA 90000000    R     MOV     DPTR,#InputMain
+00DE E0                MOVX    A,@DPTR
+00DF 24F9              ADD     A,#0F9H
+00E1 5005              JNC     ?C0118
+00E3 14                DEC     A
+00E4 6013              JZ      ?C0119
+00E6 8019              SJMP    ?C0111
+                                           ; SOURCE LINE # 847
+                                           ; SOURCE LINE # 848
+                                           ; SOURCE LINE # 849
+                                           ; SOURCE LINE # 850
+                                           ; SOURCE LINE # 851
+                                           ; SOURCE LINE # 852
+                                           ; SOURCE LINE # 853
+00E8         ?C0118:
+                                           ; SOURCE LINE # 854
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 39  
+
+00E8 E4                CLR     A
+00E9 FF                MOV     R7,A
+00EA 110000      E     ACALL   _EnableExtLvdsTxChip
+                                           ; SOURCE LINE # 855
+00ED E4                CLR     A
+00EE FF                MOV     R7,A
+00EF 110000      R     ACALL   _LvdsRxEnable
+                                           ; SOURCE LINE # 856
+00F2 7F01              MOV     R7,#01H
+00F4 110000      R     ACALL   _LvdsRxPowerDown
+                                           ; SOURCE LINE # 857
+00F7 8008              SJMP    ?C0111
+                                           ; SOURCE LINE # 858
+00F9         ?C0119:
+                                           ; SOURCE LINE # 859
+00F9 7F01              MOV     R7,#01H
+00FB 110000      E     ACALL   _EnableExtLvdsTxChip
+                                           ; SOURCE LINE # 860
+00FE 110000      R     ACALL   InitLvdsRx
+                                           ; SOURCE LINE # 861
+                                           ; SOURCE LINE # 862
+0101         ?C0111:
+                                           ; SOURCE LINE # 865
+0101 7D01              MOV     R5,#01H
+0103 7F01              MOV     R7,#01H
+0105 110000      E     ACALL   _ScalerSetFreerunAutoManual
+                                           ; SOURCE LINE # 866
+0108 7D29              MOV     R5,#029H
+010A 7C02              MOV     R4,#02H
+010C 7F3D              MOV     R7,#03DH
+010E 7E04              MOV     R6,#04H
+0110 110000      E     ACALL   _ScalerWriteFreerunTotal
+                                           ; SOURCE LINE # 870
+0113 90000000    E     MOV     DPTR,#?_MeasSetWindow?BYTE+06H
+0117 740F              MOV     A,#0FH
+0119 F0                MOVX    @DPTR,A
+011A A3                INC     DPTR
+011B 74FF              MOV     A,#0FFH
+011D F0                MOVX    @DPTR,A
+011E FB                MOV     R3,A
+011F 7A0F              MOV     R2,#0FH
+0121 E4                CLR     A
+0122 FD                MOV     R5,A
+0123 FC                MOV     R4,A
+0124 FF                MOV     R7,A
+0125 FE                MOV     R6,A
+0126 110000      E     ACALL   _MeasSetWindow
+                                           ; SOURCE LINE # 871
+0129 759300      E     MOV     DPX,#?C?XDATASEG
+012C E500        E     MOV     A,regTW88+01H
+012E 2408              ADD     A,#08H
+0130 110000      R     ACALL   L?0189
+0133 7408              MOV     A,#08H
+                                           ; SOURCE LINE # 872
+0135 110000      R     ACALL   L?0181
+0138 240B              ADD     A,#0BH
+013A 110000      R     ACALL   L?0189
+013D 7440              MOV     A,#040H
+013F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 874
+0140 90000000    R     MOV     DPTR,#InputMain
+0144 E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 40  
+
+0145 24FC              ADD     A,#0FCH
+0147 5006              JNC     ?C0124
+0149 24FB              ADD     A,#0FBH
+014B 5009              JNC     ?C0129
+014D 8016              SJMP    ?C0120
+                                           ; SOURCE LINE # 875
+                                           ; SOURCE LINE # 876
+                                           ; SOURCE LINE # 877
+                                           ; SOURCE LINE # 878
+014F         ?C0124:
+                                           ; SOURCE LINE # 879
+014F E4                CLR     A
+0150 FF                MOV     R7,A
+0151 110000      E     ACALL   _MeasEnableDeMeasure
+                                           ; SOURCE LINE # 880
+0154 800F              SJMP    ?C0120
+                                           ; SOURCE LINE # 881
+                                           ; SOURCE LINE # 882
+                                           ; SOURCE LINE # 883
+                                           ; SOURCE LINE # 884
+                                           ; SOURCE LINE # 885
+0156         ?C0129:
+                                           ; SOURCE LINE # 886
+0156 7F01              MOV     R7,#01H
+0158 110000      E     ACALL   _MeasEnableDeMeasure
+                                           ; SOURCE LINE # 887
+015B 7F04              MOV     R7,#04H
+015D 110000      E     ACALL   _MeasSetErrTolerance
+                                           ; SOURCE LINE # 888
+0160 7F01              MOV     R7,#01H
+0162 110000      E     ACALL   _MeasEnableChangedDetection
+                                           ; SOURCE LINE # 889
+                                           ; SOURCE LINE # 890
+0165         ?C0120:
+                                           ; SOURCE LINE # 893
+0165 110000      R     ACALL   L?0183
+0168 010000      E     AJMP    _SetImage
+                                           ; SOURCE LINE # 899
+016B         L?0190:
+016B 7F02              MOV     R7,#02H
+016D 110000      E     ACALL   _DtvSetRouteFormat
+0170 7F01              MOV     R7,#01H
+0172 110000      E     ACALL   _DtvSetReverseBusOrder
+0175 22                RET     
+             ; FUNCTION InitInputAsDefault (END)
+
+             ; FUNCTION _VInput_enableOutput (BEGIN)
+                                           ; SOURCE LINE # 909
+0000 90000000    R     MOV     DPTR,#fRecheck
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 910
+                                           ; SOURCE LINE # 911
+0006 7B00        R     MOV     R3,#MBYTE ?SC_32
+0008 7A00        R     MOV     R2,#HIGH ?SC_32
+000A 7900        R     MOV     R1,#LOW ?SC_32
+000C 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0010 F0                MOVX    @DPTR,A
+0011 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 913
+0014 90000000    R     MOV     DPTR,#fRecheck
+0018 E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 41  
+
+0019 701C              JNZ     ?C0132
+                                           ; SOURCE LINE # 916
+001B         ?C0131:
+                                           ; SOURCE LINE # 917
+                                           ; SOURCE LINE # 918
+001B E4                CLR     A
+001C FD                MOV     R5,A
+001D 7F01              MOV     R7,#01H
+001F 110000      E     ACALL   _ScalerSetFreerunAutoManual
+                                           ; SOURCE LINE # 919
+0022 E4                CLR     A
+0023 FD                MOV     R5,A
+0024 7F01              MOV     R7,#01H
+0026 110000      E     ACALL   _ScalerSetMuteAutoManual
+                                           ; SOURCE LINE # 920
+0029 110000      E     ACALL   ScalerSetFreerunValue
+                                           ; SOURCE LINE # 922
+002C 110000      E     ACALL   SpiOsdSetDeValue
+                                           ; SOURCE LINE # 923
+002F 110000      E     ACALL   FOsdSetDeValue
+                                           ; SOURCE LINE # 924
+0032 7F01              MOV     R7,#01H
+0034 110000      E     ACALL   _LedBackLight
+                                           ; SOURCE LINE # 925
+0037         ?C0132:
+                                           ; SOURCE LINE # 926
+0037 E4                CLR     A
+0038 FF                MOV     R7,A
+0039 110000      E     ACALL   _TaskNoSignal_setCmd
+                                           ; SOURCE LINE # 928
+003C 7F01              MOV     R7,#01H
+003E 110000      E     ACALL   _Interrupt_enableVideoDetect
+                                           ; SOURCE LINE # 931
+0041 110000      R     ACALL   L?0183
+0044 6404              XRL     A,#04H
+0046 600A              JZ      ?C0135
+0048 EF                MOV     A,R7
+0049 6407              XRL     A,#07H
+004B 6005              JZ      ?C0135
+                                           ; SOURCE LINE # 936
+                                           ; SOURCE LINE # 939
+004D         ?C0133:
+                                           ; SOURCE LINE # 941
+004D 7F01              MOV     R7,#01H
+004F 110000      E     ACALL   _Interrupt_enableSyncDetect
+0052         ?C0135:
+                                           ; SOURCE LINE # 944
+0052 90000000    R     MOV     DPTR,#InputMain
+0056 E0                MOVX    A,@DPTR
+0057 B40807            CJNE    A,#08H,?C0137
+                                           ; SOURCE LINE # 945
+005A 90000000    E     MOV     DPTR,#SW_Video_Status
+005E 7401              MOV     A,#01H
+0060 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 952
+0061         ?C0137:
+0061 22                RET     
+             ; FUNCTION _VInput_enableOutput (END)
+
+             ; FUNCTION _VInput_gotoFreerun (BEGIN)
+                                           ; SOURCE LINE # 967
+0000 90000000    R     MOV     DPTR,#reason
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 42  
+
+0004 EF                MOV     A,R7
+0005 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 968
+                                           ; SOURCE LINE # 971
+0006 90000000    R     MOV     DPTR,#InputMain
+000A E0                MOVX    A,@DPTR
+000B 6407              XRL     A,#07H
+000D 6005              JZ      ?C0139
+                                           ; SOURCE LINE # 972
+000F         ?C0138:
+                                           ; SOURCE LINE # 973
+                                           ; SOURCE LINE # 974
+000F 7F02              MOV     R7,#02H
+0011 110000      E     ACALL   _DecoderFreerun
+                                           ; SOURCE LINE # 975
+0014         ?C0139:
+                                           ; SOURCE LINE # 977
+0014 110000      E     ACALL   ScalerCheckAndSetFreerunManual
+                                           ; SOURCE LINE # 979
+0017 110000      R     ACALL   L?0183
+001A 6405              XRL     A,#05H
+001C 6014              JZ      ?C0142
+001E EF                MOV     A,R7
+001F 6406              XRL     A,#06H
+0021 600F              JZ      ?C0142
+0023 EF                MOV     A,R7
+0024 6407              XRL     A,#07H
+0026 600A              JZ      ?C0142
+0028 EF                MOV     A,R7
+0029 6408              XRL     A,#08H
+002B 6005              JZ      ?C0142
+                                           ; SOURCE LINE # 982
+                                           ; SOURCE LINE # 983
+002D         ?C0140:
+                                           ; SOURCE LINE # 984
+                                           ; SOURCE LINE # 985
+002D 7F01              MOV     R7,#01H
+002F 110000      E     ACALL   _ScalerSetMuteManual
+                                           ; SOURCE LINE # 986
+0032         ?C0142:
+                                           ; SOURCE LINE # 988
+0032 90000000    R     MOV     DPTR,#reason
+0036 E0                MOVX    A,@DPTR
+0037 701B              JNZ     ?C0143
+0039 110000      E     ACALL   MenuGetLevel
+003C EF                MOV     A,R7
+003D 7015              JNZ     ?C0143
+                                           ; SOURCE LINE # 989
+003F 300012            JNB     g_access,?C0143
+                                           ; SOURCE LINE # 990
+0042 110000      E     ACALL   FOsdSetDeValue
+                                           ; SOURCE LINE # 991
+0045 7F02              MOV     R7,#02H
+0047 110000      E     ACALL   _FOsdIndexMsgPrint
+                                           ; SOURCE LINE # 992
+004A E4                CLR     A
+004B F500        E     MOV     tic_task,A
+004D F500        E     MOV     tic_task+01H,A
+                                           ; SOURCE LINE # 994
+004F 7F01              MOV     R7,#01H
+0051 110000      E     ACALL   _TaskNoSignal_setCmd
+                                           ; SOURCE LINE # 995
+C51 COMPILER V9.56.0.0   INPUTCTRL                                                         07/18/2018 10:44:36 PAGE 43  
+
+                                           ; SOURCE LINE # 996
+0054         ?C0143:
+                                           ; SOURCE LINE # 998
+0054 90000000    R     MOV     DPTR,#InputMain
+0058 E0                MOVX    A,@DPTR
+0059 B40315            CJNE    A,#03H,?C0145
+                                           ; SOURCE LINE # 1000
+005C 110000      R     ACALL   InputGetHStart
+005F 90000000    E     MOV     DPTR,#RGB_hStart
+0063 EE                MOV     A,R6
+0064 F0                MOVX    @DPTR,A
+0065 A3                INC     DPTR
+0066 EF                MOV     A,R7
+0067 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1001
+0068 110000      E     ACALL   ScalerReadVDEReg
+006B 90000000    E     MOV     DPTR,#RGB_vDE
+006F EF                MOV     A,R7
+0070 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 1002
+0071         ?C0145:
+                                           ; SOURCE LINE # 1004
+0071 7F01              MOV     R7,#01H
+0073 110000      E     ACALL   _LedBackLight
+                                           ; SOURCE LINE # 1006
+0076 7F01              MOV     R7,#01H
+0078 010000      E     AJMP    _Interrupt_enableVideoDetect
+             ; FUNCTION _VInput_gotoFreerun (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1735    ----
+   CONSTANT SIZE    =     59    ----
+   XDATA SIZE       =      3      14
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

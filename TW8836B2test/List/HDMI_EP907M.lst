@@ -1,0 +1,1283 @@
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE HDMI_EP907M
+OBJECT MODULE PLACED IN .\Output\HDMI_EP907M.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source36\HDMI_EP907M.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE(.
+                    -\Output\TW8836B_EVB11.ORC) BROWSE INCDIR(SiI-SW;SiI-SW\HAL;SiI-SW\DEBUG;SiI-SW\CEC;.\Source36\LIB) DEFINE(EVB_11,nullFn=
+                    -//) DEBUG CODE PRINT(.\List\HDMI_EP907M.lst) TABS(2) OBJECT(.\Output\HDMI_EP907M.obj)
+
+line level    source
+
+   1          /**
+   2           * @file
+   3           * HDMI_EP907M.c 
+   4           * @author Brian Kang
+   5           * @version 1.0
+   6           * @section LICENSE
+   7           *  Copyright (C) 2011~2012 Intersil Corporation
+   8           * @section DESCRIPTION
+   9           *  HDMI EP9553E device driver
+  10          
+  11          
+  12           [KL_166]
+  13          
+  14          HDCP Key download from MCU
+  15          HDMI Controller Version 0.26
+  16          ---------------------------
+  17          HDMI Auto, 480P,576P,720P@50, 720P@60,1080i@50,1080i@60,1080P@60
+  18          
+  19          BB_EP9553E-130424-TW8836.hex
+  20          
+  21           [KL_166 130424]
+  22          
+  23          HDCP Key download from MCU
+  24          HDMI(EP9553E) Controller Version 0.26
+  25          
+  26          HDMI Auto, NTSC,PAL, 480P,576P,720P@50, 720P@60,1080i@50,1080i@60,1080P@60
+  27          
+  28          
+  29          */
+  30          /*
+  31          Disclaimer: THIS INFORMATION IS PROVIDED 'AS-IS' FOR EVALUATION PURPOSES ONLY.  
+  32          INTERSIL CORPORATION AND ITS SUBSIDIARIES ('INTERSIL') DISCLAIM ALL WARRANTIES, 
+  33          INCLUDING WITHOUT LIMITATION FITNESS FOR A PARTICULAR PURPOSE AND MERCHANTABILITY.  
+  34          Intersil provides evaluation platforms to help our customers to develop products. 
+  35          However, factors beyond Intersil's control could significantly affect Intersil 
+  36          product performance. 
+  37          It remains the customers' responsibility to verify the actual system performance.
+  38          */
+  39          #include "Config.h"
+  40          #include "typedefs.h"
+  41          #include "TW8836.h"
+  42          
+  43          #include "Global.h"
+  44          #include "cpu.h"
+  45          #include "printf.h"
+  46          #include "util.h"
+  47          
+  48          #include "i2c.h"
+  49          
+  50          #include "main.h"
+  51          #include "dtv.h"
+  52          
+  53          #include "EP907M_RegDef.h"
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 2   
+
+  54          //#include "HDMI_EP9553E.h"
+  55          #include "EP9553_RegDef.h"
+  56          
+  57          #include "HDMI_EP907M.h"
+  58          
+  59          
+  60          #ifndef SUPPORT_HDMI_EP907M
+              //==========================================
+              //----------------------------
+              /**
+              * Trick for Bank Code Segment
+              */
+              //----------------------------
+              CODE BYTE DUMMY_HDMI_EP907M_CODE;
+              void Dummy_HDMI_EP907M_func(void)
+              {
+                BYTE temp;
+                temp = DUMMY_HDMI_EP907M_CODE;
+              }
+              #else //..SUPPORT_HDMI_EP907M
+  74          //==========================================
+  75          
+  76          /**
+  77          * EDID data
+  78          */
+  79          
+  80          
+  81          /*  HDCP Program
+  82          
+  83            HDCP key Area $00~$27 : encrypted 40 56-bit HDCP keys
+  84            BKSV key Area   $28     : 40-bit BKSV
+  85          
+  86            $48,Byte0[2] = 1; //EE_DIS: disable HDCP key downloading from external EE. HDCP keys are written by MCU.
+  87            download HDCP
+  88          */
+  89          
+  90          /**
+  91          * HDCP key data
+  92          */
+  93          
+  94                                          
+  95          
+  96          
+  97          
+  98          #ifdef UNCALLED_SEGMENT
+              #endif //..UNCALLED_SEGMENT
+ 100          
+ 101          
+ 102          
+ 103          
+ 104          
+ 105          /**
+ 106          * download EDID data from FW to EP9351 RAM
+ 107          *
+ 108          * On the develop
+ 109          * @param addr. if 0, use HDMI_EDID_DATA[] on the code segment.
+ 110          */
+ 111          
+ 112          
+ 113          /**
+ 114          * download HDCP key from FW to EP9351 RAM
+ 115          *
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 3   
+
+ 116          * On the develop
+ 117          */
+ 118          
+ 119          
+ 120          /**
+ 121          * init EP9351 HW.
+ 122          *
+ 123          * call from InitSystem.
+ 124          * follow up the power up sequency. (curr, ignore)
+ 125          * download EDID and HDCP.
+ 126          * result:
+ 127          * PowerDown state & Mute state
+ 128          *
+ 129          * BugFix120802. Increase TempByte[6] to TempByte[20]
+ 130          */
+ 131          //#if 0
+ 132          //void Hdmi_SystemInit_EP907M(void)
+ 133          //{}
+ 134          //#endif
+ 135          /**
+ 136          * init EP9351 CHIP
+ 137          * Power up, unmute and assign some default values.
+ 138          */
+ 139          void HdmiInitEp907MChip(void)
+ 140          {
+ 141   1        BYTE i;
+ 142   1        BYTE bTemp;
+ 143   1      
+ 144   1        //select PORT1.(HDMI port)
+ 145   1        //Printf("\n\rselect PORT1.(HDMI port)");
+ 146   1        Printf("\n\rUse KL_166 130123 or higher.");
+ 147   1      
+ 148   1      
+ 149   1        //check EP907M before we request something.
+ 150   1        for(i=0; i < 100; i++) {
+ 151   2          WriteI2C_multi(I2CID_EP907M,0x21, EP907M_System_Control, EP907M_System_Control__PORT_SEL__P2);
+ 152   2      
+ 153   2          //bTemp = ReadI2C_multi(I2CID_EP907M,0x21, 0x2100);
+ 154   2          //bTemp = ReadI2C_multi(I2CID_EP907M,0x21, 0x2100);
+ 155   2          delay1ms(10);
+ 156   2          bTemp = ReadI2C_multi(I2CID_EP907M,0x21, EP907M_System_Control);
+ 157   2          if((bTemp & 0x30) == 0x10)
+ 158   2            break;
+ 159   2          delay1ms(10);
+ 160   2        }
+ 161   1        Printf(" wait:%d", (WORD)i);
+ 162   1        //WriteI2C_multi(I2CID_EP907M,0x21, EP907M_System_Control, EP907M_System_Control__PORT_SEL__P2);
+ 163   1      
+ 164   1        //Audio. MCLK=128.
+ 165   1        //WriteI2C_multi(I2CID_EP907M,0x21, EP907M_Audio_Output_Control, EP907M_Audio_Output_Control__AAM_EN | 0x
+             -01);
+ 166   1      
+ 167   1        WriteI2C_multi(I2CID_EP907M,0x21, EP907M_Audio_Output_Control, EP907M_Audio_Output_Control__AAM_EN | 0x01
+             -);
+ 168   1      #if defined(EVB_10)
+                //this board prefers the falling dege DCLK.
+                WriteI2C_multi(I2CID_EP907M,0x21, EP907M_Video_Output_Control, 0x00);  
+              #endif
+ 172   1      }
+ 173          
+ 174          #if 1 //see BKFYI130224
+ 175          #ifdef SUPPORT_HDMI_EP907M
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 4   
+
+ 176          /**
+ 177          * check AVI InfoFrame
+ 178          * 
+ 179          * call when $3D[7:6] == 11b
+ 180          *           $3C[4] == 1
+ 181          * check $29[0] first.
+ 182          */
+ 183          BYTE CheckAviInfoFrame(void)
+ 184          {
+ 185   1        BYTE TempByte[15];
+ 186   1        BYTE bTemp;
+ 187   1        BYTE result;
+ 188   1        //------------------------------------
+ 189   1        //check AVI InfoFrame
+ 190   1      
+ 191   1        bTemp = ReadI2C_multi(I2CID_EP907M,0x21,EP907M_Interrupt_Flags);      //$29
+ 192   1      
+ 193   1      #ifdef DEBUG_DTV
+                Printf("\n\rCheckAviInfoFrame $0100:%02bx", bTemp);
+              #endif
+ 196   1        if((bTemp & 0x01) == 0) {
+ 197   2      #ifdef DEBUG_DTV
+                  Puts(" FAIL");
+              #endif
+ 200   2          return ERR_FAIL;
+ 201   2        }
+ 202   1      
+ 203   1        //---------------------
+ 204   1        // found AVI InfoFrame.
+ 205   1        //---------------------
+ 206   1        
+ 207   1        //read AVI InfoFrame from $2A
+ 208   1        ReadI2CS_multi(I2CID_EP907M,0x21, EP907M_AVI_Information, TempByte, 6);
+ 209   1        //DBG_PrintAviInfoFrame();
+ 210   1      
+ 211   1        //---------------------
+ 212   1        //color convert to RGB
+ 213   1        //---------------------
+ 214   1        //   Y [2][6:5]    Input HDMI format
+ 215   1        //      0:RGB
+ 216   1        //      1:YUV(422)
+ 217   1        //      2:YUV(444)
+ 218   1        //      3:Unused
+ 219   1        bTemp = (TempByte[1] & 0x60) >> 5;
+ 220   1      //#ifdef DEBUG_DTV
+ 221   1      //  Puts("\n\rInput HDMI format ");
+ 222   1      //  if(bTemp == 0)    Puts("RGB");
+ 223   1      //  else if (bTemp==1)  Puts("YUV(422)");
+ 224   1      //  else if (bTemp==2)  Puts("YUV(444)");
+ 225   1      //  else        Puts("unknown");
+ 226   1      //#endif
+ 227   1        result = 0;
+ 228   1        if (bTemp==1)     result = 0x50;
+ 229   1        else if (bTemp==2)  result = 0x10;
+ 230   1      
+ 231   1        // TempByte3[7:6] Colorimetry
+ 232   1        bTemp = (TempByte[2] & 0xc0)>>6;
+ 233   1        if(bTemp==2) result |= 0x04;  //BT.709
+ 234   1        //else if(bTemp==3) {
+ 235   1        //  //Extended Colorimetry Info
+ 236   1        //  i = TempByte[4]&0x70)>>4;
+ 237   1        //  ...
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 5   
+
+ 238   1        //}
+ 239   1      
+ 240   1        //  TempByte6[3:0] Pixel Repetition Factor
+ 241   1        //bTemp = TempByte[6] & 0x0F;
+ 242   1        //if(bTemp > 3) i = 0x03; //EP9351 supports only 2 bits.
+ 243   1        //result |= bTemp;
+ 244   1      
+ 245   1      //BK120731 test
+ 246   1      //    TempBit03 = (!TempBit04 && !(pEP9351C_Registers->Video_Status[0] & EP907M_Video_Status_0__VIN_FMT_Full
+             -_Range) || // Input RGB LR
+ 247   1      //           !TempBit05 && !(pEP9351C_Registers->Output_Format_Control & EP907M_Output_Format_Control__VOUT_FM
+             -T_Full_Range) );  // or Output RGB LR
+ 248   1      //  result |= 0x08; //full range
+ 249   1      
+ 250   1        WriteI2C_multi(I2CID_EP907M,0x21, EP907M_Video_Format_Control, result);
+ 251   1      
+ 252   1        return ERR_SUCCESS;
+ 253   1      }
+ 254          #endif
+ 255          #endif
+ 256          
+ 257          BYTE HdmiCheckConnection(void)
+ 258          {
+ 259   1      //  BYTE ret;
+ 260   1      //  BYTE i;
+ 261   1      
+ 262   1      #ifdef DEBUG_DTV__TEST
+                BYTE TempByte[8];
+                WORD hFPorch,vFPorch;
+                WORD hBPorch,vBPorch;
+              #endif
+ 267   1      //  WORD hActive,vActive;
+ 268   1      #if defined(SUPPORT_HDMI_EP907M)
+ 269   1      #else
+                WORD Old_hActive,Old_vActive;
+              #endif
+ 272   1      //  BYTE vFreq;
+ 273   1          
+ 274   1      //  WORD hCropStart,vCropStart;
+ 275   1        BYTE bTemp;
+ 276   1      //  struct DIGIT_VIDEO_TIME_TABLE_s *pCEA861;
+ 277   1      //  struct SCALER_TIME_TABLE_s *pScaler;
+ 278   1      
+ 279   1      //  WORD hSync,vSync;
+ 280   1      //  BYTE hPol,vPol;
+ 281   1      
+ 282   1      
+ 283   1      
+ 284   1        //read System Status register $201.
+ 285   1        //If it is too fast, VISR will take care.
+ 286   1        bTemp = ReadI2C_multi(I2CID_EP907M,0x21, EP907M_System_Status_1 );
+ 287   1        if((bTemp & 0xC0) != 0xC0) {
+ 288   2          Printf(" => NoSignal");
+ 289   2      #ifdef DEBUG_DTV
+                  dPrintf(" $201:%bx",bTemp);
+              #endif
+ 292   2          return ERR_FAIL;
+ 293   2        }
+ 294   1        return 0;
+ 295   1      }
+ 296          /**
+ 297          * @return 
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 6   
+
+ 298          * 1:hdmi
+ 299          * 0:dvi
+ 300          */
+ 301          BYTE HdmiCheckMode(void)
+ 302          {
+ 303   1        BYTE i;
+ 304   1        BYTE bTemp;
+ 305   1      
+ 306   1        //read System Status register $200.
+ 307   1        //if $200[4]==1, HDMI mode.
+ 308   1        //actually, ...
+ 309   1        for(i=0; i < 10; i++) {
+ 310   2          bTemp = ReadI2C_multi(I2CID_EP907M,0x21, EP907M_System_Status_0 );
+ 311   2          if(bTemp & EP907M_System_Status_0__HDMI) {
+ 312   3            Puts(" HDMI mode");
+ 313   3            return 1; //it is a hdmi mode
+ 314   3          }
+ 315   2          delay1ms(10);
+ 316   2        }
+ 317   1        Puts(" DVI or VESA mode");
+ 318   1        return 0;
+ 319   1        //dPrintf(" $200:%bx @%bx",bTemp, i);
+ 320   1      }
+ 321          BYTE HdmiSetColorSpace(BYTE ColorSpace)
+ 322          {
+ 323   1        WriteI2C_multi(I2CID_EP907M,0x21, EP907M_Video_Format_Control, ColorSpace );  //clear 
+ 324   1        return 0;
+ 325   1      }
+ 326          
+ 327          BYTE HdmiDebugTimingValue(void)
+ 328          {
+ 329   1        BYTE TempByte[8];
+ 330   1        WORD hFPorch,vFPorch;
+ 331   1        WORD hSync,vSync;
+ 332   1        WORD hBPorch,vBPorch;
+ 333   1        WORD hActive,vActive;
+ 334   1          
+ 335   1        WORD hCropStart,vCropStart;
+ 336   1        BYTE bTemp;
+ 337   1      
+ 338   1        BYTE hPol,vPol;
+ 339   1        WORD vTotal,hTotal;
+ 340   1      
+ 341   1        //-----------------------------
+ 342   1        // read HSync timing register value, $0600~$0607.
+ 343   1        //-----------------------------
+ 344   1        ReadI2CS_multi(I2CID_EP907M,0x21, EP907M_Hsync_Timing, TempByte, 8);
+ 345   1      
+ 346   1        hActive = TempByte[0];  hActive <<= 8;    hActive += TempByte[1];
+ 347   1        hFPorch = TempByte[2];  hFPorch <<= 8;    hFPorch += TempByte[3];
+ 348   1        hBPorch = TempByte[4];  hBPorch <<= 8;    hBPorch += TempByte[5];
+ 349   1        hSync   = TempByte[6];  hSync <<= 8;    hSync   += TempByte[7];
+ 350   1        hTotal = hSync + hBPorch + hActive + hFPorch;
+ 351   1      
+ 352   1        //-----------------------------
+ 353   1        // read VSync timing register value, $0700~0704.
+ 354   1        //-----------------------------
+ 355   1        ReadI2CS_multi(I2CID_EP907M,0x21, EP907M_Vsync_Timing, TempByte, 5);
+ 356   1        vActive = TempByte[0];  vActive <<= 8;    vActive += TempByte[1];
+ 357   1        vFPorch =  TempByte[2];
+ 358   1        vBPorch =  TempByte[3];
+ 359   1        vSync =  TempByte[4]&0x7F;
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 7   
+
+ 360   1        vTotal = vSync + vBPorch + vActive + vFPorch;
+ 361   1      
+ 362   1        //-----------------------------
+ 363   1        // read Polarity Control register. $2001
+ 364   1        // $2001[0] HS_POL
+ 365   1        //    1 = HSYNC pin is negative polarity (high during video active period).
+ 366   1        // $2001[1] VS_POL
+ 367   1        //    1 = VSYNC pin is negative polarity (high during video active period).
+ 368   1        //
+ 369   1        // I do not change $2001[1:0], so I assume, it is a 00b.
+ 370   1        //-----------------------------
+ 371   1        bTemp = ReadI2C_multi(I2CID_EP907M,0x21,EP907M_Polarity_Control);  /* NOTE: $41 */
+ 372   1        hPol = bTemp & EP907M_Polarity_Control__HS_POL_Low ? 0:1;   //ActiveHigh
+ 373   1        vPol = bTemp & EP907M_Polarity_Control__VS_POL_Low ? 0:1;   //ActiveHigh
+ 374   1      
+ 375   1        //select hStart, vStart for InputCrop.
+ 376   1        hCropStart = hBPorch;
+ 377   1        if(hPol)
+ 378   1          hCropStart += hSync;  
+ 379   1        vCropStart = vBPorch;
+ 380   1        if(vPol)
+ 381   1          vCropStart += vSync;
+ 382   1      
+ 383   1      
+ 384   1        //Printf("\n\rTimeReg %d hPol:%bx hSync:%d hBPorch:%d hCropStart:%d",hActive, hPol, hSync, hBPorch, hCrop
+             -Start);
+ 385   1        //Printf("\n\r        %d vPol:%bx vSync:%d vBPorch:%d vCropStart:%d",vActive, vPol, vSync, vBPorch, vCrop
+             -Start);  
+ 386   1        //
+ 387   1      
+ 388   1        Printf("\n\rTimeReg %dx%d Pol:%02bx ",hActive,vActive, hPol << 4 | vPol);
+ 389   1        Printf(" %d:%d,%d,%d",hTotal, hFPorch, hSync, hBPorch);
+ 390   1        Printf(" %d:%d,%d,%d",vTotal, vFPorch, vSync, vBPorch);
+ 391   1        Printf(" hStart:%d vStart:%d",hCropStart,vCropStart);
+ 392   1      
+ 393   1        //if source is 720x240, EP907M reports it as 1440x240.
+ 394   1        //I assume, 720x288, also same.
+ 395   1        if(hActive==1440) {
+ 396   2          if(vActive==240 || vActive==288) {
+ 397   3            hActive = 720;
+ 398   3            hCropStart >>=1;   //div2
+ 399   3            Printf(" hActive:%d hStart:%d", hActive,hCropStart); 
+ 400   3          }
+ 401   2        }
+ 402   1      
+ 403   1      
+ 404   1        return 0;
+ 405   1      }
+ 406          
+ 407          
+ 408          #endif //..ifdef SUPPORT_HDMI_EP907M
+ 409          
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 8   
+
+ASSEMBLY LISTING OF GENERATED OBJECT CODE
+
+
+             ; FUNCTION Com001F (BEGIN)
+0000         L?0032:
+0000 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0004 F0                MOVX    @DPTR,A
+0005 A3                INC     DPTR
+0006 EF                MOV     A,R7
+0007 F0                MOVX    @DPTR,A
+0008 22                RET     
+0009         L?0033:
+0009 FF                MOV     R7,A
+000A         L?0034:
+000A E4                CLR     A
+000B F0                MOVX    @DPTR,A
+000C A3                INC     DPTR
+000D EF                MOV     A,R7
+000E F0                MOVX    @DPTR,A
+000F E0                MOVX    A,@DPTR
+0010 F8                MOV     R0,A
+0011 E4                CLR     A
+0012 F0                MOVX    @DPTR,A
+0013 E8                MOV     A,R0
+0014 22                RET     
+0015         L?0035:
+0015 E4                CLR     A
+0016 FC                MOV     R4,A
+0017 FD                MOV     R5,A
+0018 FE                MOV     R6,A
+0019 90000000    E     MOV     DPTR,#?_WriteI2C_multi?BYTE+04H
+001D 110000      E     ACALL   ?C?LSTXDATA
+0020 7A23              MOV     R2,#023H
+0022         L?0036:
+0022 7B01              MOV     R3,#01H
+0024 7D21              MOV     R5,#021H
+0026 7F78              MOV     R7,#078H
+0028 22                RET     
+0029         L?0038:
+0029 7A21              MOV     R2,#021H
+002B         L?0039:
+002B 7B00              MOV     R3,#00H
+002D 7D21              MOV     R5,#021H
+002F 7F78              MOV     R7,#078H
+0031 22                RET     
+0032         L?0040:
+0032         L?0041:
+0032 E0                MOVX    A,@DPTR
+0033 FF                MOV     R7,A
+0034 A3                INC     DPTR
+0035 E0                MOVX    A,@DPTR
+0036 90000000    E     MOV     DPTR,#?_Printf?BYTE+05H
+003A CF                XCH     A,R7
+003B F0                MOVX    @DPTR,A
+003C A3                INC     DPTR
+003D EF                MOV     A,R7
+003E F0                MOVX    @DPTR,A
+003F 22                RET     
+0040         L?0042:
+0040 E0                MOVX    A,@DPTR
+0041 FF                MOV     R7,A
+0042 A3                INC     DPTR
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 9   
+
+0043 E0                MOVX    A,@DPTR
+0044 CF                XCH     A,R7
+0045         L?0043:
+0045 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+0049 F0                MOVX    @DPTR,A
+004A A3                INC     DPTR
+004B 22                RET     
+004C         L?0044:
+004C 90000000    E     MOV     DPTR,#?_ReadI2CS_multi?BYTE+04H
+0050 7400        R     MOV     A,#MBYTE TempByte
+0052 F0                MOVX    @DPTR,A
+0053 A3                INC     DPTR
+0054 7400        R     MOV     A,#HIGH TempByte
+0056 F0                MOVX    @DPTR,A
+0057 A3                INC     DPTR
+0058 7400        R     MOV     A,#LOW TempByte
+005A F0                MOVX    @DPTR,A
+005B A3                INC     DPTR
+005C 22                RET     
+005D         L?0046:
+005D E0                MOVX    A,@DPTR
+005E FF                MOV     R7,A
+005F A3                INC     DPTR
+0060 E0                MOVX    A,@DPTR
+0061 90000000    E     MOV     DPTR,#?_Printf?BYTE+07H
+0065 CF                XCH     A,R7
+0066 F0                MOVX    @DPTR,A
+0067 A3                INC     DPTR
+0068 EF                MOV     A,R7
+0069 F0                MOVX    @DPTR,A
+006A 22                RET     
+006B         L?0047:
+006B E4                CLR     A
+006C FE                MOV     R6,A
+006D FD                MOV     R5,A
+006E FC                MOV     R4,A
+006F 90000000    E     MOV     DPTR,#?_WriteI2C_multi?BYTE+04H
+0073 010000      E     AJMP    ?C?LSTXDATA
+0076         L?0048:
+0076 E0                MOVX    A,@DPTR
+0077 3400              ADDC    A,#00H
+0079 F0                MOVX    @DPTR,A
+007A 90000000    R     MOV     DPTR,#TempByte+02H
+007E E0                MOVX    A,@DPTR
+007F 22                RET     
+             ; FUNCTION Com001F (END)
+
+             ; FUNCTION HdmiInitEp907MChip (BEGIN)
+                                           ; SOURCE LINE # 139
+                                           ; SOURCE LINE # 140
+                                           ; SOURCE LINE # 146
+0000 7B00        R     MOV     R3,#MBYTE ?SC_0
+0002 7A00        R     MOV     R2,#HIGH ?SC_0
+0004 7900        R     MOV     R1,#LOW ?SC_0
+0006 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 150
+0009 E4                CLR     A
+000A 90000000    R     MOV     DPTR,#i
+000E F0                MOVX    @DPTR,A
+000F         ?C0001:
+                                           ; SOURCE LINE # 151
+000F 7F10              MOV     R7,#010H
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 10  
+
+0011 110000      R     ACALL   L?0047
+0014 110000      R     ACALL   L?0038
+0017 110000      E     ACALL   _WriteI2C_multi
+                                           ; SOURCE LINE # 155
+001A 7F0A              MOV     R7,#0AH
+001C 7E00              MOV     R6,#00H
+001E 110000      E     ACALL   _delay1ms
+                                           ; SOURCE LINE # 156
+0021 110000      R     ACALL   L?0038
+0024 110000      E     ACALL   _ReadI2C_multi
+;---- Variable 'bTemp' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 157
+0027 EF                MOV     A,R7
+0028 5430              ANL     A,#030H
+002A 6410              XRL     A,#010H
+002C 6014              JZ      ?C0002
+                                           ; SOURCE LINE # 158
+002E         ?C0004:
+                                           ; SOURCE LINE # 159
+002E 7F0A              MOV     R7,#0AH
+0030 7E00              MOV     R6,#00H
+0032 110000      E     ACALL   _delay1ms
+                                           ; SOURCE LINE # 160
+0035 90000000    R     MOV     DPTR,#i
+0039 E0                MOVX    A,@DPTR
+003A 04                INC     A
+003B F0                MOVX    @DPTR,A
+003C E0                MOVX    A,@DPTR
+003D C3                CLR     C
+003E 9464              SUBB    A,#064H
+0040 40CD              JC      ?C0001
+0042         ?C0002:
+                                           ; SOURCE LINE # 161
+0042 7B00        R     MOV     R3,#MBYTE ?SC_31
+0044 7A00        R     MOV     R2,#HIGH ?SC_31
+0046 7900        R     MOV     R1,#LOW ?SC_31
+0048 90000000    R     MOV     DPTR,#i
+004C E0                MOVX    A,@DPTR
+004D FF                MOV     R7,A
+004E E4                CLR     A
+004F 110000      R     ACALL   L?0032
+0052 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 167
+0055 7F05              MOV     R7,#05H
+0057 110000      R     ACALL   L?0047
+005A 7B03              MOV     R3,#03H
+005C 7A20              MOV     R2,#020H
+005E 7D21              MOV     R5,#021H
+0060 7F78              MOV     R7,#078H
+0062 010000      E     AJMP    _WriteI2C_multi
+             ; FUNCTION HdmiInitEp907MChip (END)
+
+             ; FUNCTION CheckAviInfoFrame (BEGIN)
+                                           ; SOURCE LINE # 183
+                                           ; SOURCE LINE # 184
+                                           ; SOURCE LINE # 191
+0000 7A01              MOV     R2,#01H
+0002 110000      R     ACALL   L?0039
+0005 110000      E     ACALL   _ReadI2C_multi
+;---- Variable 'bTemp' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 196
+0008 EF                MOV     A,R7
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 11  
+
+0009 20E003            JB      ACC.0,?C0006
+                                           ; SOURCE LINE # 200
+000C 7F01              MOV     R7,#01H
+000E 22                RET     
+                                           ; SOURCE LINE # 201
+000F         ?C0006:
+                                           ; SOURCE LINE # 208
+000F 90000000    E     MOV     DPTR,#?_ReadI2CS_multi?BYTE+04H
+0013 7400        R     MOV     A,#MBYTE TempByte
+0015 F0                MOVX    @DPTR,A
+0016 A3                INC     DPTR
+0017 7400        R     MOV     A,#HIGH TempByte
+0019 F0                MOVX    @DPTR,A
+001A A3                INC     DPTR
+001B 7400        R     MOV     A,#LOW TempByte
+001D F0                MOVX    @DPTR,A
+001E A3                INC     DPTR
+001F 7406              MOV     A,#06H
+0021 F0                MOVX    @DPTR,A
+0022 7B00              MOV     R3,#00H
+0024 7A08              MOV     R2,#08H
+0026 7D21              MOV     R5,#021H
+0028 7F78              MOV     R7,#078H
+002A 110000      E     ACALL   _ReadI2CS_multi
+                                           ; SOURCE LINE # 219
+002D 90000000    R     MOV     DPTR,#TempByte+01H
+0031 E0                MOVX    A,@DPTR
+0032 5460              ANL     A,#060H
+0034 C4                SWAP    A
+0035 13                RRC     A
+0036 5407              ANL     A,#07H
+0038 FF                MOV     R7,A
+                                           ; SOURCE LINE # 227
+;---- Variable 'result' assigned to Register 'R6' ----
+0039 E4                CLR     A
+003A FE                MOV     R6,A
+                                           ; SOURCE LINE # 228
+003B EF                MOV     A,R7
+003C B40104            CJNE    A,#01H,?C0008
+003F 7E50              MOV     R6,#050H
+0041 8006              SJMP    ?C0009
+0043         ?C0008:
+                                           ; SOURCE LINE # 229
+0043 EF                MOV     A,R7
+0044 B40202            CJNE    A,#02H,?C0009
+0047 7E10              MOV     R6,#010H
+0049         ?C0009:
+                                           ; SOURCE LINE # 232
+0049 90000000    R     MOV     DPTR,#TempByte+02H
+004D E0                MOVX    A,@DPTR
+004E 54C0              ANL     A,#0C0H
+0050 C4                SWAP    A
+0051 13                RRC     A
+0052 13                RRC     A
+0053 5403              ANL     A,#03H
+                                           ; SOURCE LINE # 233
+0055 B40204            CJNE    A,#02H,?C0011
+0058 EE                MOV     A,R6
+0059 4404              ORL     A,#04H
+005B FE                MOV     R6,A
+005C         ?C0011:
+                                           ; SOURCE LINE # 250
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 12  
+
+005C AF06              MOV     R7,AR6
+005E 110000      R     ACALL   L?0035
+0061 110000      E     ACALL   _WriteI2C_multi
+                                           ; SOURCE LINE # 252
+0064 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 253
+0066         ?C0007:
+0066 22                RET     
+             ; FUNCTION CheckAviInfoFrame (END)
+
+             ; FUNCTION HdmiCheckConnection (BEGIN)
+                                           ; SOURCE LINE # 257
+                                           ; SOURCE LINE # 258
+                                           ; SOURCE LINE # 286
+0000 7A02              MOV     R2,#02H
+0002 110000      R     ACALL   L?0036
+0005 110000      E     ACALL   _ReadI2C_multi
+;---- Variable 'bTemp' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 287
+0008 EF                MOV     A,R7
+0009 54C0              ANL     A,#0C0H
+000B 64C0              XRL     A,#0C0H
+000D 600C              JZ      ?C0012
+                                           ; SOURCE LINE # 288
+000F 7B00        R     MOV     R3,#MBYTE ?SC_40
+0011 7A00        R     MOV     R2,#HIGH ?SC_40
+0013 7900        R     MOV     R1,#LOW ?SC_40
+0015 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 292
+0018 7F01              MOV     R7,#01H
+001A 22                RET     
+                                           ; SOURCE LINE # 293
+001B         ?C0012:
+                                           ; SOURCE LINE # 294
+001B 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 295
+001D         ?C0013:
+001D 22                RET     
+             ; FUNCTION HdmiCheckConnection (END)
+
+             ; FUNCTION HdmiCheckMode (BEGIN)
+                                           ; SOURCE LINE # 301
+                                           ; SOURCE LINE # 302
+                                           ; SOURCE LINE # 309
+0000 E4                CLR     A
+0001 90000000    R     MOV     DPTR,#i
+0005 F0                MOVX    @DPTR,A
+0006         ?C0014:
+                                           ; SOURCE LINE # 310
+0006 7B00              MOV     R3,#00H
+0008 7A02              MOV     R2,#02H
+000A 7D21              MOV     R5,#021H
+000C 7F78              MOV     R7,#078H
+000E 110000      E     ACALL   _ReadI2C_multi
+;---- Variable 'bTemp' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 311
+0011 EF                MOV     A,R7
+0012 30E40C            JNB     ACC.4,?C0017
+                                           ; SOURCE LINE # 312
+0015 7B00        R     MOV     R3,#MBYTE ?SC_53
+0017 7A00        R     MOV     R2,#HIGH ?SC_53
+0019 7900        R     MOV     R1,#LOW ?SC_53
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 13  
+
+001B 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 313
+001E 7F01              MOV     R7,#01H
+0020 22                RET     
+                                           ; SOURCE LINE # 314
+0021         ?C0017:
+                                           ; SOURCE LINE # 315
+0021 7F0A              MOV     R7,#0AH
+0023 7E00              MOV     R6,#00H
+0025 110000      E     ACALL   _delay1ms
+                                           ; SOURCE LINE # 316
+0028 90000000    R     MOV     DPTR,#i
+002C E0                MOVX    A,@DPTR
+002D 04                INC     A
+002E F0                MOVX    @DPTR,A
+002F E0                MOVX    A,@DPTR
+0030 C3                CLR     C
+0031 940A              SUBB    A,#0AH
+0033 40D1              JC      ?C0014
+0035         ?C0015:
+                                           ; SOURCE LINE # 317
+0035 7B00        R     MOV     R3,#MBYTE ?SC_64
+0037 7A00        R     MOV     R2,#HIGH ?SC_64
+0039 7900        R     MOV     R1,#LOW ?SC_64
+003B 110000      E     ACALL   _Puts
+                                           ; SOURCE LINE # 318
+003E 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 320
+0040         ?C0018:
+0040 22                RET     
+             ; FUNCTION HdmiCheckMode (END)
+
+             ; FUNCTION _HdmiSetColorSpace (BEGIN)
+                                           ; SOURCE LINE # 321
+;---- Variable 'ColorSpace' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 322
+                                           ; SOURCE LINE # 323
+0000 110000      R     ACALL   L?0035
+0003 110000      E     ACALL   _WriteI2C_multi
+                                           ; SOURCE LINE # 324
+0006 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 325
+0008         ?C0019:
+0008 22                RET     
+             ; FUNCTION _HdmiSetColorSpace (END)
+
+             ; FUNCTION HdmiDebugTimingValue (BEGIN)
+                                           ; SOURCE LINE # 327
+                                           ; SOURCE LINE # 328
+                                           ; SOURCE LINE # 344
+0000 110000      R     ACALL   L?0044
+0003 7408              MOV     A,#08H
+0005 F0                MOVX    @DPTR,A
+0006 7A06              MOV     R2,#06H
+                                           ; SOURCE LINE # 346
+0008 110000      R     ACALL   L?0045
+000B 90000000    R     MOV     DPTR,#hActive
+000F 110000      R     ACALL   L?0033
+0012 90000000    R     MOV     DPTR,#hActive
+0016 F0                MOVX    @DPTR,A
+0017 90000000    R     MOV     DPTR,#TempByte+01H
+001B E0                MOVX    A,@DPTR
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 14  
+
+001C FF                MOV     R7,A
+001D 90000000    R     MOV     DPTR,#hActive+01H
+0021 E0                MOVX    A,@DPTR
+0022 2F                ADD     A,R7
+0023 F0                MOVX    @DPTR,A
+0024 90000000    R     MOV     DPTR,#hActive
+                                           ; SOURCE LINE # 347
+0028 110000      R     ACALL   L?0048
+002B 90000000    R     MOV     DPTR,#hFPorch
+002F 110000      R     ACALL   L?0033
+0032 90000000    R     MOV     DPTR,#hFPorch
+0036 F0                MOVX    @DPTR,A
+0037 90000000    R     MOV     DPTR,#TempByte+03H
+003B E0                MOVX    A,@DPTR
+003C FF                MOV     R7,A
+003D 90000000    R     MOV     DPTR,#hFPorch+01H
+0041 E0                MOVX    A,@DPTR
+0042 2F                ADD     A,R7
+0043 F0                MOVX    @DPTR,A
+0044 90000000    R     MOV     DPTR,#hFPorch
+0048 E0                MOVX    A,@DPTR
+0049 3400              ADDC    A,#00H
+004B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 348
+004C 90000000    R     MOV     DPTR,#TempByte+04H
+0050 E0                MOVX    A,@DPTR
+0051 FF                MOV     R7,A
+0052 90000000    R     MOV     DPTR,#hBPorch
+0056 110000      R     ACALL   L?0034
+0059 90000000    R     MOV     DPTR,#hBPorch
+005D F0                MOVX    @DPTR,A
+005E 90000000    R     MOV     DPTR,#TempByte+05H
+0062 E0                MOVX    A,@DPTR
+0063 FF                MOV     R7,A
+0064 90000000    R     MOV     DPTR,#hBPorch+01H
+0068 E0                MOVX    A,@DPTR
+0069 2F                ADD     A,R7
+006A F0                MOVX    @DPTR,A
+006B 90000000    R     MOV     DPTR,#hBPorch
+006F E0                MOVX    A,@DPTR
+0070 3400              ADDC    A,#00H
+0072 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 349
+0073 90000000    R     MOV     DPTR,#TempByte+06H
+0077 E0                MOVX    A,@DPTR
+0078 FF                MOV     R7,A
+0079 90000000    R     MOV     DPTR,#hSync
+007D 110000      R     ACALL   L?0034
+0080 90000000    R     MOV     DPTR,#hSync
+0084 F0                MOVX    @DPTR,A
+0085 90000000    R     MOV     DPTR,#TempByte+07H
+0089 E0                MOVX    A,@DPTR
+008A FF                MOV     R7,A
+008B 90000000    R     MOV     DPTR,#hSync+01H
+008F E0                MOVX    A,@DPTR
+0090 2F                ADD     A,R7
+0091 F0                MOVX    @DPTR,A
+0092 90000000    R     MOV     DPTR,#hSync
+0096 E0                MOVX    A,@DPTR
+0097 3400              ADDC    A,#00H
+0099 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 350
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 15  
+
+009A 90000000    R     MOV     DPTR,#hBPorch
+009E E0                MOVX    A,@DPTR
+009F FE                MOV     R6,A
+00A0 A3                INC     DPTR
+00A1 E0                MOVX    A,@DPTR
+00A2 FF                MOV     R7,A
+00A3 90000000    R     MOV     DPTR,#hSync+01H
+00A7 E0                MOVX    A,@DPTR
+00A8 2F                ADD     A,R7
+00A9 FF                MOV     R7,A
+00AA 90000000    R     MOV     DPTR,#hSync
+00AE E0                MOVX    A,@DPTR
+00AF 3E                ADDC    A,R6
+00B0 FE                MOV     R6,A
+00B1 90000000    R     MOV     DPTR,#hActive+01H
+00B5 E0                MOVX    A,@DPTR
+00B6 2F                ADD     A,R7
+00B7 FF                MOV     R7,A
+00B8 90000000    R     MOV     DPTR,#hActive
+00BC E0                MOVX    A,@DPTR
+00BD 3E                ADDC    A,R6
+00BE FE                MOV     R6,A
+00BF 90000000    R     MOV     DPTR,#hFPorch+01H
+00C3 E0                MOVX    A,@DPTR
+00C4 2F                ADD     A,R7
+00C5 FF                MOV     R7,A
+00C6 90000000    R     MOV     DPTR,#hFPorch
+00CA E0                MOVX    A,@DPTR
+00CB 3E                ADDC    A,R6
+00CC 90000000    R     MOV     DPTR,#hTotal
+00D0 F0                MOVX    @DPTR,A
+00D1 A3                INC     DPTR
+00D2 EF                MOV     A,R7
+00D3 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 355
+00D4 110000      R     ACALL   L?0044
+00D7 7405              MOV     A,#05H
+00D9 F0                MOVX    @DPTR,A
+00DA 7A07              MOV     R2,#07H
+                                           ; SOURCE LINE # 356
+00DC 110000      R     ACALL   L?0045
+00DF FF                MOV     R7,A
+00E0 90000000    R     MOV     DPTR,#vActive
+00E4 110000      R     ACALL   L?0034
+00E7 90000000    R     MOV     DPTR,#vActive
+00EB F0                MOVX    @DPTR,A
+00EC 90000000    R     MOV     DPTR,#TempByte+01H
+00F0 E0                MOVX    A,@DPTR
+00F1 FF                MOV     R7,A
+00F2 90000000    R     MOV     DPTR,#vActive+01H
+00F6 E0                MOVX    A,@DPTR
+00F7 2F                ADD     A,R7
+00F8 F0                MOVX    @DPTR,A
+00F9 90000000    R     MOV     DPTR,#vActive
+                                           ; SOURCE LINE # 357
+00FD 110000      R     ACALL   L?0048
+0100 FF                MOV     R7,A
+0101 90000000    R     MOV     DPTR,#vFPorch
+0105 E4                CLR     A
+0106 F0                MOVX    @DPTR,A
+0107 A3                INC     DPTR
+0108 EF                MOV     A,R7
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 16  
+
+0109 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 358
+010A 90000000    R     MOV     DPTR,#TempByte+03H
+010E E0                MOVX    A,@DPTR
+010F FF                MOV     R7,A
+0110 7E00              MOV     R6,#00H
+0112 90000000    R     MOV     DPTR,#vBPorch
+0116 EE                MOV     A,R6
+0117 F0                MOVX    @DPTR,A
+0118 A3                INC     DPTR
+0119 EF                MOV     A,R7
+011A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 359
+011B 90000000    R     MOV     DPTR,#TempByte+04H
+011F E0                MOVX    A,@DPTR
+0120 547F              ANL     A,#07FH
+0122 FD                MOV     R5,A
+0123 90000000    R     MOV     DPTR,#vSync
+0127 E4                CLR     A
+0128 F0                MOVX    @DPTR,A
+0129 A3                INC     DPTR
+012A ED                MOV     A,R5
+012B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 360
+012C E0                MOVX    A,@DPTR
+012D 2F                ADD     A,R7
+012E FF                MOV     R7,A
+012F 90000000    R     MOV     DPTR,#vSync
+0133 E0                MOVX    A,@DPTR
+0134 3E                ADDC    A,R6
+0135 FE                MOV     R6,A
+0136 90000000    R     MOV     DPTR,#vActive+01H
+013A E0                MOVX    A,@DPTR
+013B 2F                ADD     A,R7
+013C FF                MOV     R7,A
+013D 90000000    R     MOV     DPTR,#vActive
+0141 E0                MOVX    A,@DPTR
+0142 3E                ADDC    A,R6
+0143 FE                MOV     R6,A
+0144 90000000    R     MOV     DPTR,#vFPorch+01H
+0148 E0                MOVX    A,@DPTR
+0149 2F                ADD     A,R7
+014A FF                MOV     R7,A
+014B 90000000    R     MOV     DPTR,#vFPorch
+014F E0                MOVX    A,@DPTR
+0150 3E                ADDC    A,R6
+0151 90000000    R     MOV     DPTR,#vTotal
+0155 F0                MOVX    @DPTR,A
+0156 A3                INC     DPTR
+0157 EF                MOV     A,R7
+0158 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 371
+0159 7B01              MOV     R3,#01H
+015B 7A20              MOV     R2,#020H
+015D 7D21              MOV     R5,#021H
+015F 7F78              MOV     R7,#078H
+0161 110000      E     ACALL   _ReadI2C_multi
+;---- Variable 'bTemp' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 372
+0164 EF                MOV     A,R7
+0165 7E01              MOV     R6,#01H
+0167 30E002            JNB     ACC.0,?C0020
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 17  
+
+016A 7E00              MOV     R6,#00H
+016C         ?C0020:
+016C         ?C0021:
+;---- Variable 'hPol' assigned to Register 'R6' ----
+                                           ; SOURCE LINE # 373
+016C EF                MOV     A,R7
+016D 7F01              MOV     R7,#01H
+016F 30E102            JNB     ACC.1,?C0022
+0172 7F00              MOV     R7,#00H
+0174         ?C0022:
+0174         ?C0023:
+;---- Variable 'vPol' assigned to Register 'R7' ----
+                                           ; SOURCE LINE # 376
+0174 90000000    R     MOV     DPTR,#hBPorch
+0178 E0                MOVX    A,@DPTR
+0179 FD                MOV     R5,A
+017A A3                INC     DPTR
+017B E0                MOVX    A,@DPTR
+017C 90000000    R     MOV     DPTR,#hCropStart
+0180 CD                XCH     A,R5
+0181 F0                MOVX    @DPTR,A
+0182 A3                INC     DPTR
+0183 ED                MOV     A,R5
+0184 F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 377
+0185 EE                MOV     A,R6
+0186 6017              JZ      ?C0024
+                                           ; SOURCE LINE # 378
+0188 90000000    R     MOV     DPTR,#hSync
+018C E0                MOVX    A,@DPTR
+018D FC                MOV     R4,A
+018E A3                INC     DPTR
+018F E0                MOVX    A,@DPTR
+0190 FD                MOV     R5,A
+0191 90000000    R     MOV     DPTR,#hCropStart+01H
+0195 E0                MOVX    A,@DPTR
+0196 2D                ADD     A,R5
+0197 F0                MOVX    @DPTR,A
+0198 90000000    R     MOV     DPTR,#hCropStart
+019C E0                MOVX    A,@DPTR
+019D 3C                ADDC    A,R4
+019E F0                MOVX    @DPTR,A
+019F         ?C0024:
+                                           ; SOURCE LINE # 379
+019F 90000000    R     MOV     DPTR,#vBPorch
+01A3 E0                MOVX    A,@DPTR
+01A4 FD                MOV     R5,A
+01A5 A3                INC     DPTR
+01A6 E0                MOVX    A,@DPTR
+01A7 90000000    R     MOV     DPTR,#vCropStart
+01AB CD                XCH     A,R5
+01AC F0                MOVX    @DPTR,A
+01AD A3                INC     DPTR
+01AE ED                MOV     A,R5
+01AF F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 380
+01B0 EF                MOV     A,R7
+01B1 6017              JZ      ?C0025
+                                           ; SOURCE LINE # 381
+01B3 90000000    R     MOV     DPTR,#vSync
+01B7 E0                MOVX    A,@DPTR
+01B8 FC                MOV     R4,A
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 18  
+
+01B9 A3                INC     DPTR
+01BA E0                MOVX    A,@DPTR
+01BB FD                MOV     R5,A
+01BC 90000000    R     MOV     DPTR,#vCropStart+01H
+01C0 E0                MOVX    A,@DPTR
+01C1 2D                ADD     A,R5
+01C2 F0                MOVX    @DPTR,A
+01C3 90000000    R     MOV     DPTR,#vCropStart
+01C7 E0                MOVX    A,@DPTR
+01C8 3C                ADDC    A,R4
+01C9 F0                MOVX    @DPTR,A
+01CA         ?C0025:
+                                           ; SOURCE LINE # 388
+01CA 7B00        R     MOV     R3,#MBYTE ?SC_82
+01CC 7A00        R     MOV     R2,#HIGH ?SC_82
+01CE 7900        R     MOV     R1,#LOW ?SC_82
+01D0 90000000    R     MOV     DPTR,#hActive
+01D4 E0                MOVX    A,@DPTR
+01D5 FD                MOV     R5,A
+01D6 A3                INC     DPTR
+01D7 E0                MOVX    A,@DPTR
+01D8 CD                XCH     A,R5
+01D9 110000      R     ACALL   L?0043
+01DC ED                MOV     A,R5
+01DD F0                MOVX    @DPTR,A
+01DE 90000000    R     MOV     DPTR,#vActive
+01E2 E0                MOVX    A,@DPTR
+01E3 FD                MOV     R5,A
+01E4 A3                INC     DPTR
+01E5 E0                MOVX    A,@DPTR
+01E6 90000000    E     MOV     DPTR,#?_Printf?BYTE+05H
+01EA CD                XCH     A,R5
+01EB F0                MOVX    @DPTR,A
+01EC A3                INC     DPTR
+01ED ED                MOV     A,R5
+01EE F0                MOVX    @DPTR,A
+01EF EE                MOV     A,R6
+01F0 C4                SWAP    A
+01F1 54F0              ANL     A,#0F0H
+01F3 4F                ORL     A,R7
+01F4 A3                INC     DPTR
+01F5 F0                MOVX    @DPTR,A
+01F6 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 389
+01F9 7B00        R     MOV     R3,#MBYTE ?SC_109
+01FB 7A00        R     MOV     R2,#HIGH ?SC_109
+01FD 7900        R     MOV     R1,#LOW ?SC_109
+01FF 90000000    R     MOV     DPTR,#hTotal
+0203 E0                MOVX    A,@DPTR
+0204 FF                MOV     R7,A
+0205 A3                INC     DPTR
+0206 E0                MOVX    A,@DPTR
+0207 CF                XCH     A,R7
+0208 110000      R     ACALL   L?0032
+020B 90000000    R     MOV     DPTR,#hFPorch
+020F 110000      R     ACALL   L?0040
+0212 90000000    R     MOV     DPTR,#hSync
+0216 110000      R     ACALL   L?0046
+0219 90000000    R     MOV     DPTR,#hBPorch
+021D 110000      R     ACALL   L?0037
+                                           ; SOURCE LINE # 390
+0220 7B00        R     MOV     R3,#MBYTE ?SC_109
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 19  
+
+0222 7A00        R     MOV     R2,#HIGH ?SC_109
+0224 7900        R     MOV     R1,#LOW ?SC_109
+0226 90000000    R     MOV     DPTR,#vTotal
+022A 110000      R     ACALL   L?0042
+022D EF                MOV     A,R7
+022E F0                MOVX    @DPTR,A
+022F 90000000    R     MOV     DPTR,#vFPorch
+0233 110000      R     ACALL   L?0040
+0236 90000000    R     MOV     DPTR,#vSync
+023A 110000      R     ACALL   L?0046
+023D 90000000    R     MOV     DPTR,#vBPorch
+0241 110000      R     ACALL   L?0037
+                                           ; SOURCE LINE # 391
+0244 7B00        R     MOV     R3,#MBYTE ?SC_122
+0246 7A00        R     MOV     R2,#HIGH ?SC_122
+0248 7900        R     MOV     R1,#LOW ?SC_122
+024A 90000000    R     MOV     DPTR,#hCropStart
+024E 110000      R     ACALL   L?0042
+0251 EF                MOV     A,R7
+0252 F0                MOVX    @DPTR,A
+0253 90000000    R     MOV     DPTR,#vCropStart
+0257 110000      R     ACALL   L?0041
+025A 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 395
+025D 90000000    R     MOV     DPTR,#hActive
+0261 E0                MOVX    A,@DPTR
+0262 6405              XRL     A,#05H
+0264 7004              JNZ     ?C0030
+0266 A3                INC     DPTR
+0267 E0                MOVX    A,@DPTR
+0268 64A0              XRL     A,#0A0H
+026A         ?C0030:
+026A 704E              JNZ     ?C0026
+                                           ; SOURCE LINE # 396
+026C 90000000    R     MOV     DPTR,#vActive
+0270 E0                MOVX    A,@DPTR
+0271 FE                MOV     R6,A
+0272 A3                INC     DPTR
+0273 E0                MOVX    A,@DPTR
+0274 FF                MOV     R7,A
+0275 64F0              XRL     A,#0F0H
+0277 4E                ORL     A,R6
+0278 6006              JZ      ?C0028
+027A BE013D            CJNE    R6,#01H,?C0026
+027D BF203A            CJNE    R7,#020H,?C0026
+0280         ?C0028:
+                                           ; SOURCE LINE # 397
+0280 90000000    R     MOV     DPTR,#hActive
+0284 7402              MOV     A,#02H
+0286 F0                MOVX    @DPTR,A
+0287 A3                INC     DPTR
+0288 74D0              MOV     A,#0D0H
+028A F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 398
+028B 90000000    R     MOV     DPTR,#hCropStart
+028F E0                MOVX    A,@DPTR
+0290 C3                CLR     C
+0291 13                RRC     A
+0292 FE                MOV     R6,A
+0293 A3                INC     DPTR
+0294 E0                MOVX    A,@DPTR
+0295 13                RRC     A
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 20  
+
+0296 FF                MOV     R7,A
+0297 90000000    R     MOV     DPTR,#hCropStart
+029B EE                MOV     A,R6
+029C F0                MOVX    @DPTR,A
+029D A3                INC     DPTR
+029E EF                MOV     A,R7
+029F F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 399
+02A0 7B00        R     MOV     R3,#MBYTE ?SC_143
+02A2 7A00        R     MOV     R2,#HIGH ?SC_143
+02A4 7900        R     MOV     R1,#LOW ?SC_143
+02A6 90000000    E     MOV     DPTR,#?_Printf?BYTE+03H
+02AA 7402              MOV     A,#02H
+02AC F0                MOVX    @DPTR,A
+02AD A3                INC     DPTR
+02AE 74D0              MOV     A,#0D0H
+02B0 F0                MOVX    @DPTR,A
+02B1 A3                INC     DPTR
+02B2 EE                MOV     A,R6
+02B3 F0                MOVX    @DPTR,A
+02B4 A3                INC     DPTR
+02B5 EF                MOV     A,R7
+02B6 F0                MOVX    @DPTR,A
+02B7 110000      E     ACALL   _Printf
+                                           ; SOURCE LINE # 400
+                                           ; SOURCE LINE # 401
+02BA         ?C0026:
+                                           ; SOURCE LINE # 404
+02BA 7F00              MOV     R7,#00H
+                                           ; SOURCE LINE # 405
+02BC         ?C0029:
+02BC 22                RET     
+02BD         L?0037:
+02BD E0                MOVX    A,@DPTR
+02BE FF                MOV     R7,A
+02BF A3                INC     DPTR
+02C0 E0                MOVX    A,@DPTR
+02C1 90000000    E     MOV     DPTR,#?_Printf?BYTE+09H
+02C5 CF                XCH     A,R7
+02C6 F0                MOVX    @DPTR,A
+02C7 A3                INC     DPTR
+02C8 EF                MOV     A,R7
+02C9 F0                MOVX    @DPTR,A
+02CA 110000      E     ACALL   _Printf
+02CD 22                RET     
+02CE         L?0045:
+02CE 7B00              MOV     R3,#00H
+02D0 7D21              MOV     R5,#021H
+02D2 7F78              MOV     R7,#078H
+02D4 110000      E     ACALL   _ReadI2CS_multi
+02D7 90000000    R     MOV     DPTR,#TempByte
+02DB E0                MOVX    A,@DPTR
+02DC 22                RET     
+             ; FUNCTION HdmiDebugTimingValue (END)
+
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1169    ----
+   CONSTANT SIZE    =    165    ----
+   XDATA SIZE       =   ----      49
+   PDATA SIZE       =   ----    ----
+C51 COMPILER V9.56.0.0   HDMI_EP907M                                                       07/18/2018 10:44:38 PAGE 21  
+
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
