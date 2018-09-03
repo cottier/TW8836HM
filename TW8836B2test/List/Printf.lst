@@ -1,4 +1,4 @@
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 1   
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 1   
 
 
 C51 COMPILER V9.56.0.0, COMPILATION OF MODULE PRINTF
@@ -62,7 +62,7 @@ line level    source
   51   3                  fmt++;
   52   3            default:  _outchar( ch );
   53   3                  continue;
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 2   
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 2   
 
   54   3          }
   55   2      
@@ -126,7 +126,7 @@ line level    source
  113   4              }
  114   3      
  115   3              if(cnt==0) {
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 3   
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 3   
 
  116   4                if( value==0 ) { _outchar('0'); continue; }
  117   4      
@@ -190,7 +190,7 @@ line level    source
  175          #ifdef SUPPORT_UART1
               void DoPrint1( const char *fmt, va_list ap )
               {
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 4   
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 4   
 
                 char  ch;
                 char  i;
@@ -254,7 +254,7 @@ line level    source
               
                       switch (fl_len) {
                       case 1:
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 5   
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 5   
 
                         if( ch=='d' ) value = (char)va_arg( ap, char );
                         else          value = (BYTE)va_arg( ap, BYTE );
@@ -318,7 +318,7 @@ line level    source
                       continue;
               
                     case 's':
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 6   
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 6   
 
               
                       ptr = (char *)va_arg( ap, char* );
@@ -382,7 +382,7 @@ line level    source
               #endif
  362          
  363          //=============================================================================
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 7   
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 7   
 
  364          //                                                                           
  365          //=============================================================================
@@ -446,7 +446,7 @@ line level    source
               
               /**
               * Puts debug level 2
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 8   
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 8   
 
               */
               void wPuts( char *ptr )
@@ -499,7 +499,7 @@ line level    source
                 ePrintf("\n\rSystemTime:%ld.%02ld %s", time/100, time%100, msg ); 
               }
               #endif
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 9   
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 9   
 
 ASSEMBLY LISTING OF GENERATED OBJECT CODE
 
@@ -563,7 +563,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 003C 90000000    R     MOV     DPTR,#ch
 0040 F0                MOVX    @DPTR,A
 0041 22                RET     
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 10  
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 10  
 
 0042         L?0110:
 0042         L?0111:
@@ -627,7 +627,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 0087 FE                MOV     R6,A
 0088 FD                MOV     R5,A
 0089 FC                MOV     R4,A
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 11  
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 11  
 
 008A 22                RET     
 008B         L?0124:
@@ -691,7 +691,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 0049 110000      R     ACALL   L?0096
 004C 110000      R     ACALL   L?0108
                                            ; SOURCE LINE # 64
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 12  
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 12  
 
 004F E0                MOVX    A,@DPTR
 0050 FD                MOV     R5,A
@@ -755,7 +755,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 00A5 7404              MOV     A,#04H
 00A7 F0                MOVX    @DPTR,A
 00A8 800D              SJMP    ?C0015
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 13  
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 13  
 
                                            ; SOURCE LINE # 82
                                            ; SOURCE LINE # 83
@@ -819,7 +819,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 010E FD                MOV     R5,A
 010F FE                MOV     R6,A
 0110         ?C0085:
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 14  
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 14  
 
                                            ; SOURCE LINE # 97
 0110 8042              SJMP    ?C0091
@@ -883,7 +883,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 0161 2000FD            JB      RS_Xbusy,?C0034
 0164 C2AC              CLR     SFRB_ES
 0166 75992D            MOV     SFR_SBUF,#02DH
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 15  
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 15  
 
 0169 D200        E     SETB    RS_Xbusy
 016B D2AC              SETB    SFRB_ES
@@ -947,7 +947,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 01C2 110000      R     ACALL   L?0112
                                            ; SOURCE LINE # 121
 01C5 90000000    R     MOV     DPTR,#cnt
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 16  
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 16  
 
 01C9 E0                MOVX    A,@DPTR
 01CA 04                INC     A
@@ -1011,7 +1011,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 022A FB                MOV     R3,A
 022B C3                CLR     C
 022C 110000      E     ACALL   ?C?ULCMP
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 17  
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 17  
 
 022F 6009              JZ      ?C0051
 0231 90000000    R     MOV     DPTR,#ch
@@ -1075,7 +1075,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
                                            ; SOURCE LINE # 144
 0291         ?C0060:
 0291 90000000    R     MOV     DPTR,#ap
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 18  
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 18  
 
 0295 110000      R     ACALL   L?0098
 0298 110000      E     ACALL   ?C?CLDPTR
@@ -1139,7 +1139,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 02F2         ?C0067:
                                            ; SOURCE LINE # 152
 02F2 2000FD            JB      RS_Xbusy,?C0067
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 19  
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 19  
 
 02F5 C2AC              CLR     SFRB_ES
 02F7 90000000    R     MOV     DPTR,#i
@@ -1203,7 +1203,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 0364 80E0              SJMP    ?C0071
                                            ; SOURCE LINE # 161
                                            ; SOURCE LINE # 163
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 20  
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 20  
 
 0366         ?C0076:
                                            ; SOURCE LINE # 164
@@ -1267,7 +1267,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 001D 90000000    R     MOV     DPTR,#?_DoPrint?BYTE+03H
 0021 C9                XCH     A,R1
 0022 110000      R     ACALL   L?0118
-C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 14:41:53 PAGE 21  
+C51 COMPILER V9.56.0.0   PRINTF                                                            08/31/2018 16:22:08 PAGE 21  
 
 0025 90000000    R     MOV     DPTR,#fmt
 0029 E0                MOVX    A,@DPTR

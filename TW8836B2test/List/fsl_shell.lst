@@ -1,0 +1,665 @@
+C51 COMPILER V9.56.0.0   FSL_SHELL                                                         08/31/2018 16:10:58 PAGE 1   
+
+
+C51 COMPILER V9.56.0.0, COMPILATION OF MODULE FSL_SHELL
+OBJECT MODULE PLACED IN .\Output\fsl_shell.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE source\utils\fsl_shell.c LARGE OMF2 ROM(D512K) OPTIMIZE(9,SPEED) REGFILE
+                    -(.\Output\TW8836B_EVB11.ORC) BROWSE INCDIR(.\source\app;.\source\common;.\source\drv;.\source\HW;.\source\utils;.\source
+                    -\test) DEFINE(EVB_11,nullFn=//) DEBUG CODE PRINT(.\List\fsl_shell.lst) TABS(2) OBJECT(.\Output\fsl_shell.obj)
+
+line level    source
+
+   1          /*
+   2           * Copyright (c) 2015, Freescale Semiconductor, Inc.
+   3           * All rights reserved.
+   4           *
+   5           * Redistribution and use in source and binary forms, with or without modification,
+   6           * are permitted provided that the following conditions are met:
+   7           *
+   8           * o Redistributions of source code must retain the above copyright notice, this list
+   9           *   of conditions and the following disclaimer.
+  10           *
+  11           * o Redistributions in binary form must reproduce the above copyright notice, this
+  12           *   list of conditions and the following disclaimer in the documentation and/or
+  13           *   other materials provided with the distribution.
+  14           *
+  15           * o Neither the name of Freescale Semiconductor, Inc. nor the names of its
+  16           *   contributors may be used to endorse or promote products derived from this
+  17           *   software without specific prior written permission.
+  18           *
+  19           * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+  20           * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+  21           * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+  22           * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+  23           * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+  24           * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+  25           * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+  26           * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+  27           * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+  28           * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+  29           *
+  30           * POSIX getopt for Windows
+  31           * Code given out at the 1985 UNIFORUM conference in Dallas.
+  32           *
+  33           * From std-unix@ut-sally.UUCP (Moderator, John Quarterman) Sun Nov  3 14:34:15 1985
+  34           * Relay-Version: version B 2.10.3 4.3bsd-beta 6/6/85; site gatech.CSNET
+  35           * Posting-Version: version B 2.10.2 9/18/84; site ut-sally.UUCP
+  36           * Path: gatech!akgua!mhuxv!mhuxt!mhuxr!ulysses!allegra!mit-eddie!genrad!panda!talcott!harvard!seismo!ut-s
+             -ally!std-unix
+  37           * From: std-unix@ut-sally.UUCP (Moderator, John Quarterman)
+  38           * Newsgroups: mod.std.unix
+  39           * Subject: public domain AT&T getopt source
+  40           * Message-ID: <3352@ut-sally.UUCP>
+  41           * Date: 3 Nov 85 19:34:15 GMT
+  42           * Date-Received: 4 Nov 85 12:25:09 GMT
+  43           * Organization: IEEE/P1003 Portable Operating System Environment Committee
+  44           * Lines: 91
+  45           * Approved: jsq@ut-sally.UUC
+  46           * Here's something you've all been waiting for:  the AT&T public domain
+  47           * source for getopt(3).  It is the code which was given out at the 1985
+  48           * UNIFORUM conference in Dallas.  I obtained it by electronic mail
+  49           * directly from AT&T.  The people there assure me that it is indeed
+  50           * in the public domain
+  51           * There is no manual page.  That is because the one they gave out at
+  52           * UNIFORUM was slightly different from the current System V Release 2
+C51 COMPILER V9.56.0.0   FSL_SHELL                                                         08/31/2018 16:10:58 PAGE 2   
+
+  53           * manual page.  The difference apparently involved a note about the
+  54           * famous rules 5 and 6, recommending using white space between an option
+  55           * and its first argument, and not grouping options that have arguments.
+  56           * Getopt itself is currently lenient about both of these things White
+  57           * space is allowed, but not mandatory, and the last option in a group can
+  58           * have an argument.  That particular version of the man page evidently
+  59           * has no official existence, and my source at AT&T did not send a copy.
+  60           * The current SVR2 man page reflects the actual behavor of this getopt.
+  61           * However, I am not about to post a copy of anything licensed by AT&T.
+  62           */
+  63          
+  64          #include <assert.h>
+  65          #include "fsl_shell.h"
+*** ERROR C141 IN LINE 88 OF source\utils\fsl_shell.h: syntax error near '*', expected ')'
+*** ERROR C141 IN LINE 91 OF source\utils\fsl_shell.h: syntax error near '*', expected ')'
+*** ERROR C141 IN LINE 110 OF source\utils\fsl_shell.h: syntax error near 'BYTE'
+*** ERROR C129 IN LINE 110 OF source\utils\fsl_shell.h: missing ';' before 'cmd_num'
+  66          
+  67          /*******************************************************************************
+  68           * Definitions
+  69           ******************************************************************************/
+  70          #define KEY_ESC (0x1BU)
+  71          #define KET_DEL (0x7FU)
+  72          
+  73          /*******************************************************************************
+  74           * Prototypes
+  75           ******************************************************************************/
+  76          static int32_t HelpCommand(p_shell_context_t context, int32_t argc, char **argv); /*!< help command */
+  77          
+  78          static int32_t ExitCommand(p_shell_context_t context, int32_t argc, char **argv); /*!< exit command */
+  79          
+  80          static int32_t ParseLine(const char *cmd, uint32_t len, char *argv[SHELL_MAX_ARGS]); /*!< parse line comma
+             -nd */
+  81          
+  82          static int32_t StrCompare(const char *str1, const char *str2, int32_t count); /*!< compare string command 
+             -*/
+  83          
+  84          static void ProcessCommand(p_shell_context_t context, const char *cmd); /*!< process a command */
+  85          
+  86          static void GetHistoryCommand(p_shell_context_t context, uint8_t hist_pos); /*!< get commands history */
+  87          
+  88          static void AutoComplete(p_shell_context_t context); /*!< auto complete command */
+  89          
+  90          static uint8_t GetChar(p_shell_context_t context); /*!< get a char from communication interface */
+  91          
+  92          static int32_t StrLen(const char *str); /*!< get string length */
+  93          
+  94          static char *StrCopy(char *dest, const char *src, int32_t count); /*!< string copy */
+  95          
+  96          /*******************************************************************************
+  97           * Variables
+  98           ******************************************************************************/
+  99          static const shell_command_context_t xHelpCommand = {"help", "\r\n\"help\": Lists all the registered comma
+             -nds\r\n",
+ 100                                                               HelpCommand, 0};
+ 101          
+ 102          static const shell_command_context_t xExitCommand = {"exit", "\r\n\"exit\": Exit program\r\n", ExitCommand
+             -, 0};
+ 103          
+ 104          static shell_command_context_list_t g_RegisteredCommands;
+ 105          
+ 106          static char g_paramBuffer[SHELL_BUFFER_SIZE];
+C51 COMPILER V9.56.0.0   FSL_SHELL                                                         08/31/2018 16:10:58 PAGE 3   
+
+ 107          
+ 108          /*******************************************************************************
+ 109           * Code
+ 110           ******************************************************************************/
+ 111          void SHELL_Init(
+ 112              p_shell_context_t context, send_data_cb_t send_cb, recv_data_cb_t recv_cb, printf_data_t shell_printf,
+             - char *prompt)
+ 113          {
+ 114              assert(send_cb != NULL);
+ 115              assert(recv_cb != NULL);
+ 116              assert(prompt != NULL);
+ 117              assert(shell_printf != NULL);
+ 118          
+ 119              /* Memset for context */
+ 120              memset(context, 0, sizeof(shell_context_struct));
+ 121              context->send_data_func = send_cb;
+ 122              context->recv_data_func = recv_cb;
+ 123              context->printf_data_func = shell_printf;
+ 124              context->prompt = prompt;
+ 125          
+ 126              SHELL_RegisterCommand(&xHelpCommand);
+ 127              SHELL_RegisterCommand(&xExitCommand);
+ 128          }
+ 129          
+ 130          int32_t SHELL_Main(p_shell_context_t context)
+ 131          {
+ 132              uint8_t ch;
+ 133              int32_t i;
+ 134          
+ 135              if (!context)
+ 136              {
+ 137                  return -1;
+ 138              }
+ 139          
+ 140              context->exit = false;
+ 141              context->printf_data_func("\r\nSHELL (build: %s)\r\n", __DATE__);
+ 142              context->printf_data_func("Copyright (c) 2015 Freescale Semiconductor\r\n");
+ 143              context->printf_data_func(context->prompt);
+ 144          
+ 145              while (1)
+ 146              {
+ 147                  if (context->exit)
+ 148                  {
+ 149                      break;
+ 150                  }
+ 151                  ch = GetChar(context);
+ 152                  /* Special key */
+ 153                  if (ch == KEY_ESC)
+ 154                  {
+ 155                      context->stat = kSHELL_Special;
+ 156                      continue;
+ 157                  }
+ 158                  else if (context->stat == kSHELL_Special)
+ 159                  {
+ 160                      /* Function key */
+ 161                      if (ch == '[')
+ 162                      {
+ 163                          context->stat = kSHELL_Function;
+ 164                          continue;
+ 165                      }
+ 166                      context->stat = kSHELL_Normal;
+ 167                  }
+C51 COMPILER V9.56.0.0   FSL_SHELL                                                         08/31/2018 16:10:58 PAGE 4   
+
+ 168                  else if (context->stat == kSHELL_Function)
+ 169                  {
+ 170                      context->stat = kSHELL_Normal;
+ 171          
+ 172                      switch ((uint8_t)ch)
+ 173                      {
+ 174                          /* History operation here */
+ 175                          case 'A': /* Up key */
+ 176                              GetHistoryCommand(context, context->hist_current);
+ 177                              if (context->hist_current < (context->hist_count - 1))
+ 178                              {
+ 179                                  context->hist_current++;
+ 180                              }
+ 181                              break;
+ 182                          case 'B': /* Down key */
+ 183                              GetHistoryCommand(context, context->hist_current);
+ 184                              if (context->hist_current > 0)
+ 185                              {
+ 186                                  context->hist_current--;
+ 187                              }
+ 188                              break;
+ 189                          case 'D': /* Left key */
+ 190                              if (context->c_pos)
+ 191                              {
+ 192                                  context->printf_data_func("\b");
+ 193                                  context->c_pos--;
+ 194                              }
+ 195                              break;
+ 196                          case 'C': /* Right key */
+ 197                              if (context->c_pos < context->l_pos)
+ 198                              {
+ 199                                  context->printf_data_func("%c", context->line[context->c_pos]);
+ 200                                  context->c_pos++;
+ 201                              }
+ 202                              break;
+ 203                          default:
+ 204                              break;
+ 205                      }
+ 206                      continue;
+ 207                  }
+ 208                  /* Handle tab key */
+ 209                  else if (ch == '\t')
+ 210                  {
+ 211          #if SHELL_AUTO_COMPLETE
+ 212                      /* Move the cursor to the beginning of line */
+ 213                      for (i = 0; i < context->c_pos; i++)
+ 214                      {
+ 215                          context->printf_data_func("\b");
+ 216                      }
+ 217                      /* Do auto complete */
+ 218                      AutoComplete(context);
+ 219                      /* Move position to end */
+ 220                      context->c_pos = context->l_pos = StrLen(context->line);
+ 221          #endif
+ 222                      continue;
+ 223                  }
+ 224          #if SHELL_SEARCH_IN_HIST
+ 225                  /* Search command in history */
+ 226                  else if ((ch == '`') && (context->l_pos == 0) && (context->line[0] == 0x00))
+ 227                  {
+ 228                  }
+ 229          #endif
+C51 COMPILER V9.56.0.0   FSL_SHELL                                                         08/31/2018 16:10:58 PAGE 5   
+
+ 230                  /* Handle backspace key */
+ 231                  else if ((ch == KET_DEL) || (ch == '\b'))
+ 232                  {
+ 233                      /* There must be at last one char */
+ 234                      if (context->c_pos == 0)
+ 235                      {
+ 236                          continue;
+ 237                      }
+ 238          
+ 239                      context->l_pos--;
+ 240                      context->c_pos--;
+ 241          
+ 242                      if (context->l_pos > context->c_pos)
+ 243                      {
+ 244                          memmove(&context->line[context->c_pos], &context->line[context->c_pos + 1],
+ 245                                  context->l_pos - context->c_pos);
+ 246                          context->line[context->l_pos] = 0;
+ 247                          context->printf_data_func("\b%s  \b", &context->line[context->c_pos]);
+ 248          
+ 249                          /* Reset position */
+ 250                          for (i = context->c_pos; i <= context->l_pos; i++)
+ 251                          {
+ 252                              context->printf_data_func("\b");
+ 253                          }
+ 254                      }
+ 255                      else /* Normal backspace operation */
+ 256                      {
+ 257                          context->printf_data_func("\b \b");
+ 258                          context->line[context->l_pos] = 0;
+ 259                      }
+ 260                      continue;
+ 261                  }
+ 262                  else
+ 263                  {
+ 264                  }
+ 265          
+ 266                  /* Input too long */
+ 267                  if (context->l_pos >= (SHELL_BUFFER_SIZE - 1))
+ 268                  {
+ 269                      context->l_pos = 0;
+ 270                  }
+ 271          
+ 272                  /* Handle end of line, break */
+ 273                  if ((ch == '\r') || (ch == '\n'))
+ 274                  {
+ 275                      context->printf_data_func("\r\n");
+ 276                      ProcessCommand(context, context->line);
+ 277                      /* Reset all params */
+ 278                      context->c_pos = context->l_pos = 0;
+ 279                      context->hist_current = 0;
+ 280                      context->printf_data_func(context->prompt);
+ 281                      memset(context->line, 0, sizeof(context->line));
+ 282                      continue;
+ 283                  }
+ 284          
+ 285                  /* Normal character */
+ 286                  if (context->c_pos < context->l_pos)
+ 287                  {
+ 288                      memmove(&context->line[context->c_pos + 1], &context->line[context->c_pos],
+ 289                              context->l_pos - context->c_pos);
+ 290                      context->line[context->c_pos] = ch;
+ 291                      context->printf_data_func("%s", &context->line[context->c_pos]);
+C51 COMPILER V9.56.0.0   FSL_SHELL                                                         08/31/2018 16:10:58 PAGE 6   
+
+ 292                      /* Move the cursor to new position */
+ 293                      for (i = context->c_pos; i < context->l_pos; i++)
+ 294                      {
+ 295                          context->printf_data_func("\b");
+ 296                      }
+ 297                  }
+ 298                  else
+ 299                  {
+ 300                      context->line[context->l_pos] = ch;
+ 301                      context->printf_data_func("%c", ch);
+ 302                  }
+ 303          
+ 304                  ch = 0;
+ 305                  context->l_pos++;
+ 306                  context->c_pos++;
+ 307              }
+ 308              return 0;
+ 309          }
+ 310          
+ 311          static int32_t HelpCommand(p_shell_context_t context, int32_t argc, char **argv)
+ 312          {
+ 313              uint8_t i = 0;
+ 314          
+ 315              for (i = 0; i < g_RegisteredCommands.numberOfCommandInList; i++)
+ 316              {
+ 317                  context->printf_data_func(g_RegisteredCommands.CommandList[i]->pcHelpString);
+ 318              }
+ 319              return 0;
+ 320          }
+ 321          
+ 322          static int32_t ExitCommand(p_shell_context_t context, int32_t argc, char **argv)
+ 323          {
+ 324              /* Skip warning */
+ 325              context->printf_data_func("\r\nSHELL exited\r\n");
+ 326              context->exit = true;
+ 327              return 0;
+ 328          }
+ 329          
+ 330          static void ProcessCommand(p_shell_context_t context, const char *cmd)
+ 331          {
+ 332              static const shell_command_context_t *tmpCommand = NULL;
+ 333              static const char *tmpCommandString;
+ 334              int32_t argc;
+ 335              char *argv[SHELL_BUFFER_SIZE];
+ 336              uint8_t flag = 1;
+ 337              uint8_t tmpCommandLen;
+ 338              uint8_t tmpLen;
+ 339              uint8_t i = 0;
+ 340          
+ 341              tmpLen = StrLen(cmd);
+ 342              argc = ParseLine(cmd, tmpLen, argv);
+ 343          
+ 344              if ((tmpCommand == NULL) && (argc > 0))
+ 345              {
+ 346                  for (i = 0; i < g_RegisteredCommands.numberOfCommandInList; i++)
+ 347                  {
+ 348                      tmpCommand = g_RegisteredCommands.CommandList[i];
+ 349                      tmpCommandString = tmpCommand->pcCommand;
+ 350                      tmpCommandLen = StrLen(tmpCommandString);
+ 351                      /* Compare with space or end of string */
+ 352                      if ((cmd[tmpCommandLen] == ' ') || (cmd[tmpCommandLen] == 0x00))
+ 353                      {
+C51 COMPILER V9.56.0.0   FSL_SHELL                                                         08/31/2018 16:10:58 PAGE 7   
+
+ 354                          if (StrCompare(tmpCommandString, argv[0], tmpCommandLen) == 0)
+ 355                          {
+ 356                              if ((tmpCommand->cExpectedNumberOfParameters == 0) && (argc == 1))
+ 357                              {
+ 358                                  flag = 0;
+ 359                              }
+ 360                              else if (tmpCommand->cExpectedNumberOfParameters > 0)
+ 361                              {
+ 362                                  if ((argc - 1) == tmpCommand->cExpectedNumberOfParameters)
+ 363                                  {
+ 364                                      flag = 0;
+ 365                                  }
+ 366                              }
+ 367                              else
+ 368                              {
+ 369                                  flag = 1;
+ 370                              }
+ 371                              break;
+ 372                          }
+ 373                      }
+ 374                  }
+ 375              }
+ 376          
+ 377              if ((tmpCommand != NULL) && (flag == 1U))
+ 378              {
+ 379                  context->printf_data_func(
+ 380                      "\r\nIncorrect command parameter(s).  Enter \"help\" to view a list of available commands.\r\n
+             -\r\n");
+ 381                  tmpCommand = NULL;
+ 382              }
+ 383              else if (tmpCommand != NULL)
+ 384              {
+ 385                  tmpLen = StrLen(cmd);
+ 386                  /* Compare with last command. Push back to history buffer if different */
+ 387                  if (tmpLen != StrCompare(cmd, context->hist_buf[0], StrLen(cmd)))
+ 388                  {
+ 389                      for (i = SHELL_HIST_MAX - 1; i > 0; i--)
+ 390                      {
+ 391                          memset(context->hist_buf[i], '\0', SHELL_BUFFER_SIZE);
+ 392                          tmpLen = StrLen(context->hist_buf[i - 1]);
+ 393                          StrCopy(context->hist_buf[i], context->hist_buf[i - 1], tmpLen);
+ 394                      }
+ 395                      memset(context->hist_buf[0], '\0', SHELL_BUFFER_SIZE);
+ 396                      tmpLen = StrLen(cmd);
+ 397                      StrCopy(context->hist_buf[0], cmd, tmpLen);
+ 398                      if (context->hist_count < SHELL_HIST_MAX)
+ 399                      {
+ 400                          context->hist_count++;
+ 401                      }
+ 402                  }
+ 403                  tmpCommand->pFuncCallBack(context, argc, argv);
+ 404                  tmpCommand = NULL;
+ 405              }
+ 406              else
+ 407              {
+ 408                  context->printf_data_func(
+ 409                      "\r\nCommand not recognised.  Enter 'help' to view a list of available commands.\r\n\r\n");
+ 410                  tmpCommand = NULL;
+ 411              }
+ 412          }
+ 413          
+ 414          static void GetHistoryCommand(p_shell_context_t context, uint8_t hist_pos)
+C51 COMPILER V9.56.0.0   FSL_SHELL                                                         08/31/2018 16:10:58 PAGE 8   
+
+ 415          {
+ 416              uint8_t i;
+ 417              uint32_t tmp;
+ 418          
+ 419              if (context->hist_buf[0][0] == '\0')
+ 420              {
+ 421                  context->hist_current = 0;
+ 422                  return;
+ 423              }
+ 424              if (hist_pos > SHELL_HIST_MAX)
+ 425              {
+ 426                  hist_pos = SHELL_HIST_MAX - 1;
+ 427              }
+ 428              tmp = StrLen(context->line);
+ 429              /* Clear current if have */
+ 430              if (tmp > 0)
+ 431              {
+ 432                  memset(context->line, '\0', tmp);
+ 433                  for (i = 0; i < tmp; i++)
+ 434                  {
+ 435                      context->printf_data_func("\b \b");
+ 436                  }
+ 437              }
+ 438          
+ 439              context->l_pos = StrLen(context->hist_buf[hist_pos]);
+ 440              context->c_pos = context->l_pos;
+ 441              StrCopy(context->line, context->hist_buf[hist_pos], context->l_pos);
+ 442              context->printf_data_func(context->hist_buf[hist_pos]);
+ 443          }
+ 444          
+ 445          static void AutoComplete(p_shell_context_t context)
+ 446          {
+ 447              int32_t len;
+ 448              int32_t minLen;
+ 449              uint8_t i = 0;
+ 450              const shell_command_context_t *tmpCommand = NULL;
+ 451              const char *namePtr;
+ 452              const char *cmdName;
+ 453          
+ 454              minLen = 0;
+ 455              namePtr = NULL;
+ 456          
+ 457              if (!StrLen(context->line))
+ 458              {
+ 459                  return;
+ 460              }
+ 461              context->printf_data_func("\r\n");
+ 462              /* Empty tab, list all commands */
+ 463              if (context->line[0] == '\0')
+ 464              {
+ 465                  HelpCommand(context, 0, NULL);
+ 466                  return;
+ 467              }
+ 468              /* Do auto complete */
+ 469              for (i = 0; i < g_RegisteredCommands.numberOfCommandInList; i++)
+ 470              {
+ 471                  tmpCommand = g_RegisteredCommands.CommandList[i];
+ 472                  cmdName = tmpCommand->pcCommand;
+ 473                  if (StrCompare(context->line, cmdName, StrLen(context->line)) == 0)
+ 474                  {
+ 475                      if (minLen == 0)
+ 476                      {
+C51 COMPILER V9.56.0.0   FSL_SHELL                                                         08/31/2018 16:10:58 PAGE 9   
+
+ 477                          namePtr = cmdName;
+ 478                          minLen = StrLen(namePtr);
+ 479                          /* Show possible matches */
+ 480                          context->printf_data_func("%s\r\n", cmdName);
+ 481                          continue;
+ 482                      }
+ 483                      len = StrCompare(namePtr, cmdName, StrLen(namePtr));
+ 484                      if (len < 0)
+ 485                      {
+ 486                          len = len * (-1);
+ 487                      }
+ 488                      if (len < minLen)
+ 489                      {
+ 490                          minLen = len;
+ 491                      }
+ 492                  }
+ 493              }
+ 494              /* Auto complete string */
+ 495              if (namePtr)
+ 496              {
+ 497                  StrCopy(context->line, namePtr, minLen);
+ 498              }
+ 499              context->printf_data_func("%s%s", context->prompt, context->line);
+ 500              return;
+ 501          }
+ 502          
+ 503          static char *StrCopy(char *dest, const char *src, int32_t count)
+ 504          {
+ 505              char *ret = dest;
+ 506              int32_t i = 0;
+ 507          
+ 508              for (i = 0; i < count; i++)
+ 509              {
+ 510                  dest[i] = src[i];
+ 511              }
+ 512          
+ 513              return ret;
+ 514          }
+ 515          
+ 516          static int32_t StrLen(const char *str)
+ 517          {
+ 518              int32_t i = 0;
+ 519          
+ 520              while (*str)
+ 521              {
+ 522                  str++;
+ 523                  i++;
+ 524              }
+ 525              return i;
+ 526          }
+ 527          
+ 528          static int32_t StrCompare(const char *str1, const char *str2, int32_t count)
+ 529          {
+ 530              while (count--)
+ 531              {
+ 532                  if (*str1++ != *str2++)
+ 533                  {
+ 534                      return *(unsigned char *)(str1 - 1) - *(unsigned char *)(str2 - 1);
+ 535                  }
+ 536              }
+ 537              return 0;
+ 538          }
+C51 COMPILER V9.56.0.0   FSL_SHELL                                                         08/31/2018 16:10:58 PAGE 10  
+
+ 539          
+ 540          static int32_t ParseLine(const char *cmd, uint32_t len, char *argv[SHELL_MAX_ARGS])
+ 541          {
+ 542              uint32_t argc;
+ 543              char *p;
+ 544              uint32_t position;
+ 545          
+ 546              /* Init params */
+ 547              memset(g_paramBuffer, '\0', len + 1);
+ 548              StrCopy(g_paramBuffer, cmd, len);
+ 549          
+ 550              p = g_paramBuffer;
+ 551              position = 0;
+ 552              argc = 0;
+ 553          
+ 554              while (position < len)
+ 555              {
+ 556                  /* Skip all blanks */
+ 557                  while (((char)(*p) == ' ') && (position < len))
+ 558                  {
+ 559                      *p = '\0';
+ 560                      p++;
+ 561                      position++;
+ 562                  }
+ 563                  /* Process begin of a string */
+ 564                  if (*p == '"')
+ 565                  {
+ 566                      p++;
+ 567                      position++;
+ 568                      argv[argc] = p;
+ 569                      argc++;
+ 570                      /* Skip this string */
+ 571                      while ((*p != '"') && (position < len))
+ 572                      {
+ 573                          p++;
+ 574                          position++;
+ 575                      }
+ 576                      /* Skip '"' */
+ 577                      *p = '\0';
+ 578                      p++;
+ 579                      position++;
+ 580                  }
+ 581                  else /* Normal char */
+ 582                  {
+ 583                      argv[argc] = p;
+ 584                      argc++;
+ 585                      while (((char)*p != ' ') && ((char)*p != '\t') && (position < len))
+ 586                      {
+ 587                          p++;
+ 588                          position++;
+ 589                      }
+ 590                  }
+ 591              }
+ 592              return argc;
+ 593          }
+ 594          
+ 595          int32_t SHELL_RegisterCommand(const shell_command_context_t *command_context)
+ 596          {
+ 597              int32_t result = 0;
+ 598          
+ 599              /* If have room  in command list */
+ 600              if (g_RegisteredCommands.numberOfCommandInList < SHELL_MAX_CMD)
+C51 COMPILER V9.56.0.0   FSL_SHELL                                                         08/31/2018 16:10:58 PAGE 11  
+
+ 601              {
+ 602                  g_RegisteredCommands.CommandList[g_RegisteredCommands.numberOfCommandInList++] = command_context;
+ 603              }
+ 604              else
+ 605              {
+ 606                  result = -1;
+ 607              }
+ 608              return result;
+ 609          }
+ 610          
+ 611          static uint8_t GetChar(p_shell_context_t context)
+ 612          {
+ 613              uint8_t ch;
+ 614          
+ 615          #if SHELL_USE_FILE_STREAM
+                  ch = fgetc(context->STDIN);
+              #else
+ 618              context->recv_data_func(&ch, 1U);
+ 619          #endif
+ 620              return ch;
+ 621          }
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  4 ERROR(S)

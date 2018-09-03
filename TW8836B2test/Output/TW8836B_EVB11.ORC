@@ -3,6 +3,7 @@ $0E000880  _DETIM_Init
 $1E000800  _Pclkinit
 $1E000C8F  _Puts
 $80000000  _RS_tx
+$0E0008F0  _SHELL_RegisterCommand
 $1E00088E  _TIM_Init
 $0E000880  _TIM_Start
 $1E000C8F  ChangeText

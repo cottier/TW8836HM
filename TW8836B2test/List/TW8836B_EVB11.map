@@ -1,4 +1,4 @@
-LX51 LINKER/LOCATER V4.66.66.0                                                          08/31/2018  14:47:27  PAGE 1
+LX51 LINKER/LOCATER V4.66.66.0                                                          08/31/2018  16:30:40  PAGE 1
 
 
 LX51 LINKER/LOCATER V4.66.66.0, INVOKED BY:
@@ -58,20 +58,28 @@ INPUT MODULES INCLUDED:
          COMMENT TYPE 0: AX51 V3.07
   C:\KEIL_V5\C51\LIB\CD51L.LIB (?C?PLDPTR)
          COMMENT TYPE 0: AX51 V3.07
+  C:\KEIL_V5\C51\LIB\CD51L.LIB (?C?PSTPTR)
+         COMMENT TYPE 0: AX51 V3.07
+  C:\KEIL_V5\C51\LIB\CD51L.LIB (?C?ICALL390)
+         COMMENT TYPE 0: AX51 V3.07
   C:\KEIL_V5\C51\LIB\CD51L.LIB (?C_INIT)
          COMMENT TYPE 0: AX51 V3.07
   C:\KEIL_V5\C51\LIB\CD51L.LIB (?C?LLDIDATA)
          COMMENT TYPE 0: AX51 V3.07
   C:\KEIL_V5\C51\LIB\CD51L.LIB (?C?LLDXDATA)
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 2
+
+
          COMMENT TYPE 0: AX51 V3.07
   C:\KEIL_V5\C51\LIB\CD51L.LIB (?C?LLDCODE)
          COMMENT TYPE 0: AX51 V3.07
   C:\KEIL_V5\C51\LIB\CD51L.LIB (?C?PLDIDATA)
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 2
-
-
+         COMMENT TYPE 0: AX51 V3.07
+  C:\KEIL_V5\C51\LIB\CD51L.LIB (?C?PSTIDATA)
          COMMENT TYPE 0: AX51 V3.07
   C:\KEIL_V5\C51\LIB\CD51L.LIB (?C?PLDXDATA)
+         COMMENT TYPE 0: AX51 V3.07
+  C:\KEIL_V5\C51\LIB\CD51L.LIB (?C?PSTXDATA)
          COMMENT TYPE 0: AX51 V3.07
   C:\KEIL_V5\C51\LIB\CD51L.LIB (?C?PLDCODE)
          COMMENT TYPE 0: AX51 V3.07
@@ -83,13 +91,13 @@ ACTIVE MEMORY CLASSES OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
 
 BASE        START       END         USED      MEMORY CLASS
 ==========================================================
-X:000000H   X:000000H   X:0007FFH   0000B2H   XDATA
+X:000000H   X:000000H   X:0007FFH   0000C4H   XDATA
             X:00C000H   X:00C7FFH               
 X:000000H   X:000000H   X:0007FFH             HDATA
             X:00C000H   X:00C7FFH               
-C:000000H   C:000000H   C:00FFFFH   0003C4H   CODE
-C:000000H   C:000000H   C:00FFFFH   00004FH   CONST
-C:000000H   C:000000H   C:03FFFFH   000900H   ECODE
+C:000000H   C:000000H   C:00FFFFH   000437H   CODE
+C:000000H   C:000000H   C:00FFFFH   000060H   CONST
+C:000000H   C:000000H   C:03FFFFH   0009B1H   ECODE
 C:000000H   C:000000H   C:03FFFFH             HCONST
 I:000000H   I:000000H   I:00007FH   000037H   DATA
 I:000020H.0 I:000020H.0 I:00002FH.7 000000H.3 BIT
@@ -124,56 +132,62 @@ START     STOP      LENGTH    ALIGN  RELOC    MEMORY CLASS   SEGMENT NAME
 00001BH   00001DH   000003H   BYTE   OFFS..   CODE           ?INTERRUPT?0001B
 00001EH   000022H   000005H   ---    ---      **GAP**
 000023H   000025H   000003H   BYTE   OFFS..   CODE           ?INTERRUPT?00023
-000026H   00026DH   000248H   BYTE   UNIT     CODE           ?C?LIB_CODE
-00026EH   000341H   0000D4H   BYTE   UNIT     CODE           ?C_C51STARTUP
-000342H   00038AH   000049H   BYTE   UNIT     CODE           ?C_INITSEG
-00038BH   000399H   00000FH   BYTE   UNIT     CODE           ?BANK?SELECT
-00039AH   0003B1H   000018H   BYTE   UNIT     CONST          ?CO?MAIN
-0003B2H   0003C6H   000015H   BYTE   UNIT     CONST          ?CO?HWSYSCLK
-0003C7H   0003D7H   000011H   BYTE   UNIT     CONST          ?CO?PRINTF
-0003D8H   0003E8H   000011H   BYTE   UNIT     CONST          ?CO?CHANGE_CONST_TEXT
-0003E9H   0003FDH   000015H   BYTE   INSEG    ECODE          ?PR?HWTIME
+000026H   0002E0H   0002BBH   BYTE   UNIT     CODE           ?C?LIB_CODE
+0002E1H   0003B4H   0000D4H   BYTE   UNIT     CODE           ?C_C51STARTUP
+0003B5H   0003FDH   000049H   BYTE   UNIT     CODE           ?C_INITSEG
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 3
+
+
 0003FEH   0003FFH   000002H   ---    ---      **GAP**
 000400H   000443H   000044H   PAGE   UNIT     CODE           ?BANK?SWITCH
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 3
-
-
-000444H   0007E3H   0003A0H   BYTE   INSEG    ECODE          ?PR?_DOPRINT?PRINTF
-0007E4H   000880H   00009DH   BYTE   INSEG    ECODE          ?PR?OUTPUTPLANTINIT?HWPANEL
-000881H   000912H   000092H   BYTE   INSEG    ECODE          ?PR?PRINTF
-000913H   000994H   000082H   BYTE   INSEG    ECODE          ?PR?INITCPU?INIT
-000995H   000A07H   000073H   BYTE   INSEG    ECODE          ?PR?_SSPLLINIT?HWSYSCLK
-000A08H   000A6CH   000065H   BYTE   INSEG    ECODE          ?PR?MAIN?MAIN
-000A6DH   000AB1H   000045H   BYTE   INSEG    ECODE          ?PR?_TIM_INIT?HWTIME
-000AB2H   000AF0H   00003FH   BYTE   INSEG    ECODE          ?PR?UART0_INT?INTERRUPT
-000AF1H   000B2FH   00003FH   BYTE   INSEG    ECODE          ?PR?_PRINTF?PRINTF
-000B30H   000B6AH   00003BH   BYTE   INSEG    ECODE          ?PR?SPICLKRECOVER27MSOURCE?HWSYSCLK
-000B6BH   000B97H   00002DH   BYTE   INSEG    ECODE          ?PR?HWSYSCLK
-000B98H   000BC2H   00002BH   BYTE   INSEG    ECODE          ?PR?_PCLKINIT?HWSYSCLK
-000BC3H   000BEBH   000029H   BYTE   INSEG    ECODE          ?PR?TIMER1_INT?INTERRUPT
-000BECH   000C13H   000028H   BYTE   INSEG    ECODE          ?PR?_DELAY1MS?INIT
-000C14H   000C3BH   000028H   BYTE   INSEG    ECODE          ?PR?HWPANEL
-000C3CH   000C62H   000027H   BYTE   INSEG    ECODE          ?PR?SYSCLKINIT?HWSYSCLK
-000C63H   000C83H   000021H   BYTE   INSEG    ECODE          ?PR?TIMER0_INT?INTERRUPT
-000C84H   000CA4H   000021H   BYTE   INSEG    ECODE          ?PR?_PUTS?PRINTF
-000CA5H   000CC2H   00001EH   BYTE   INSEG    ECODE          ?PR?INIT
-000CC3H   000CDAH   000018H   BYTE   INSEG    ECODE          ?PR?RS_RX?INIT
-000CDBH   000CECH   000012H   BYTE   INSEG    ECODE          ?PR?MAIN
-000CEDH   000CFEH   000012H   BYTE   INSEG    ECODE          ?PR?CHANGETEXT?CHANGE_CONST_TEXT
-000CFFH   000D08H   00000AH   BYTE   INSEG    ECODE          ?PR?RS_READY?INIT
-000D09H   000D12H   00000AH   BYTE   INSEG    ECODE          ?PR?_DETIM_INIT?HWTIME
-000D13H   000D1CH   00000AH   BYTE   INSEG    ECODE          ?PR?_TIM_START?HWTIME
+000444H   000452H   00000FH   BYTE   UNIT     CODE           ?BANK?SELECT
+000453H   00046AH   000018H   BYTE   UNIT     CONST          ?CO?MAIN
+00046BH   00047FH   000015H   BYTE   UNIT     CONST          ?CO?HWSYSCLK
+000480H   000490H   000011H   BYTE   UNIT     CONST          ?CO?PRINTF
+000491H   0004A1H   000011H   BYTE   UNIT     CONST          ?CO?HMSHELL
+0004A2H   0004B2H   000011H   BYTE   UNIT     CONST          ?CO?CHANGE_CONST_TEXT
+0004B3H   000852H   0003A0H   BYTE   INSEG    ECODE          ?PR?_DOPRINT?PRINTF
+000853H   0008EFH   00009DH   BYTE   INSEG    ECODE          ?PR?OUTPUTPLANTINIT?HWPANEL
+0008F0H   000982H   000093H   BYTE   INSEG    ECODE          ?PR?_SHELL_INIT?HMSHELL
+000983H   000A14H   000092H   BYTE   INSEG    ECODE          ?PR?PRINTF
+000A15H   000A96H   000082H   BYTE   INSEG    ECODE          ?PR?INITCPU?INIT
+000A97H   000B09H   000073H   BYTE   INSEG    ECODE          ?PR?_SSPLLINIT?HWSYSCLK
+000B0AH   000B6EH   000065H   BYTE   INSEG    ECODE          ?PR?MAIN?MAIN
+000B6FH   000BB3H   000045H   BYTE   INSEG    ECODE          ?PR?_TIM_INIT?HWTIME
+000BB4H   000BF2H   00003FH   BYTE   INSEG    ECODE          ?PR?UART0_INT?INTERRUPT
+000BF3H   000C31H   00003FH   BYTE   INSEG    ECODE          ?PR?_PRINTF?PRINTF
+000C32H   000C6CH   00003BH   BYTE   INSEG    ECODE          ?PR?SPICLKRECOVER27MSOURCE?HWSYSCLK
+000C6DH   000C99H   00002DH   BYTE   INSEG    ECODE          ?PR?HWSYSCLK
+000C9AH   000CC4H   00002BH   BYTE   INSEG    ECODE          ?PR?_PCLKINIT?HWSYSCLK
+000CC5H   000CEDH   000029H   BYTE   INSEG    ECODE          ?PR?TIMER1_INT?INTERRUPT
+000CEEH   000D15H   000028H   BYTE   INSEG    ECODE          ?PR?_DELAY1MS?INIT
+000D16H   000D3DH   000028H   BYTE   INSEG    ECODE          ?PR?HWPANEL
+000D3EH   000D64H   000027H   BYTE   INSEG    ECODE          ?PR?SYSCLKINIT?HWSYSCLK
+000D65H   000D85H   000021H   BYTE   INSEG    ECODE          ?PR?TIMER0_INT?INTERRUPT
+000D86H   000DA6H   000021H   BYTE   INSEG    ECODE          ?PR?_PUTS?PRINTF
+000DA7H   000DC4H   00001EH   BYTE   INSEG    ECODE          ?PR?INIT
+000DC5H   000DDCH   000018H   BYTE   INSEG    ECODE          ?PR?RS_RX?INIT
+000DDDH   000DF1H   000015H   BYTE   INSEG    ECODE          ?PR?HWTIME
+000DF2H   000E03H   000012H   BYTE   INSEG    ECODE          ?PR?MAIN
+000E04H   000E15H   000012H   BYTE   INSEG    ECODE          ?PR?_SHELL_REGISTERCOMMAND?HMSHELL
+000E16H   000E27H   000012H   BYTE   INSEG    ECODE          ?PR?CHANGETEXT?CHANGE_CONST_TEXT
+000E28H   000E33H   00000CH   BYTE   INSEG    ECODE          ?PR?HMSHELL
+000E34H   000E3DH   00000AH   BYTE   INSEG    ECODE          ?PR?RS_READY?INIT
+000E3EH   000E47H   00000AH   BYTE   INSEG    ECODE          ?PR?_DETIM_INIT?HWTIME
+000E48H   000E51H   00000AH   BYTE   INSEG    ECODE          ?PR?_TIM_START?HWTIME
 
 * * * * * * * * * * *  X D A T A   M E M O R Y  * * * * * * * * * * * * *
 000000H   000044H   000045H   BYTE   UNIT     XDATA          _XDATA_GROUP_
 000045H   000076H   000032H   BYTE   UNIT     XDATA          ?XD?PRINTF
 000077H   00009CH   000026H   BYTE   UNIT     XDATA          ?XD?CHANGE_CONST_TEXT
-00009DH   0000A5H   000009H   BYTE   UNIT     XDATA          ?XD?MAIN
-0000A6H   0000A8H   000003H   BYTE   UNIT     XDATA          ?XD?_TIM_INIT?HWTIME
-0000A9H   0000ABH   000003H   BYTE   UNIT     XDATA          ?XD?_DETIM_INIT?HWTIME
-0000ACH   0000AEH   000003H   BYTE   UNIT     XDATA          ?XD?_TIM_START?HWTIME
-0000AFH   0000B0H   000002H   BYTE   UNIT     XDATA          ?XD?_DELAY1MS?INIT
-0000B1H   0000B1H   000001H   BYTE   UNIT     XDATA          ?XD?OUTPUTPLANTINIT?HWPANEL
+00009DH   0000ABH   00000FH   BYTE   UNIT     XDATA          ?XD?_SHELL_INIT?HMSHELL
+0000ACH   0000B4H   000009H   BYTE   UNIT     XDATA          ?XD?MAIN
+0000B5H   0000B7H   000003H   BYTE   UNIT     XDATA          ?XD?_TIM_INIT?HWTIME
+0000B8H   0000BAH   000003H   BYTE   UNIT     XDATA          ?XD?_DETIM_INIT?HWTIME
+0000BBH   0000BDH   000003H   BYTE   UNIT     XDATA          ?XD?_TIM_START?HWTIME
+0000BEH   0000C0H   000003H   BYTE   UNIT     XDATA          ?XD?_SHELL_REGISTERCOMMAND?HMSHELL
+0000C1H   0000C2H   000002H   BYTE   UNIT     XDATA          ?XD?_DELAY1MS?INIT
+0000C3H   0000C3H   000001H   BYTE   UNIT     XDATA          ?XD?OUTPUTPLANTINIT?HWPANEL
 
 
 
@@ -189,6 +203,9 @@ TIMER0_INT/INTERRUPT                 ----- -----  ----- -----
 
 TIMER1_INT/INTERRUPT                 ----- -----  ----- -----
 
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 4
+
+
 *** NEW ROOT ***********************
 
 UART0_INT/INTERRUPT                  ----- -----  ----- -----
@@ -203,9 +220,6 @@ MAIN/MAIN                            ----- -----  0000H 0001H
   +--> INITCPU/INIT
   +--> MCUINIT/MAIN
   +--> ?CO?MAIN
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 4
-
-
   +--> _PUTS/PRINTF
   +--> MAIN
   +--> _PRINTF/PRINTF
@@ -257,6 +271,9 @@ _PRINTF/PRINTF                       ----- -----  0002H 002FH
   +--> _DOPRINT/PRINTF
 
 _DOPRINT/PRINTF                      20H.0 20H.1  0030H 0044H
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 5
+
+
   +--> PRINTF
   +--> ?CO?PRINTF
 
@@ -271,11 +288,9 @@ PUBLIC SYMBOLS OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
 
       VALUE       CLASS    TYPE      PUBLIC SYMBOL NAME
       =================================================
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 5
-
-
       02000030H   XDATA    BYTE      ?_DoPrint?BYTE
       02000002H   XDATA    BYTE      ?_Printf?BYTE
+      0200009DH   XDATA    BYTE      ?_SHELL_Init?BYTE
       01000400H   CODE     NEAR LAB  ?B_BANK0
       01000411H   CODE     NEAR LAB  ?B_BANK1
       01000422H   CODE     NEAR LAB  ?B_BANK2
@@ -290,64 +305,71 @@ PUBLIC SYMBOLS OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       0100041BH   CODE     NEAR LAB  ?B_SWITCH1
       0100042CH   CODE     NEAR LAB  ?B_SWITCH2
       0100043DH   CODE     NEAR LAB  ?B_SWITCH3
-      0100038CH   CODE     NEAR LAB  ?B_SWITCHBANK_A
+      01000445H   CODE     NEAR LAB  ?B_SWITCHBANK_A
       01000026H   CODE     NEAR LAB  ?C?CLDPTR
       00000081H   NUMBER   ---       ?C?CODEMTYPE
       00000000H   NUMBER   ---       ?C?CODESEG
-      0100025AH   CODE     NEAR LAB  ?C?CSTPTR
+      010002CDH   CODE     NEAR LAB  ?C?CSTPTR
+      01000268H   CODE     NEAR LAB  ?C?ICALL390
+      0100026EH   CODE     NEAR LAB  ?C?ICALLX2
       0100003CH   CODE     NEAR LAB  ?C?IILDX
       01000052H   CODE     NEAR LAB  ?C?ILDIX
       01000068H   CODE     NEAR LAB  ?C?ILDPTR
-      0100022CH   CODE     NEAR LAB  ?C?LLDCODE
-      01000214H   CODE     NEAR LAB  ?C?LLDIDATA
+      0100028DH   CODE     NEAR LAB  ?C?LLDCODE
+      01000275H   CODE     NEAR LAB  ?C?LLDIDATA
       010001CEH   CODE     NEAR LAB  ?C?LLDPTR
-      01000220H   CODE     NEAR LAB  ?C?LLDXDATA
+      01000281H   CODE     NEAR LAB  ?C?LLDXDATA
       0100008CH   CODE     NEAR LAB  ?C?LMUL
       010001EBH   CODE     NEAR LAB  ?C?LSTXDATA
-      0100024EH   CODE     NEAR LAB  ?C?PLDCODE
-      0100023CH   CODE     NEAR LAB  ?C?PLDIDATA
+      010002C1H   CODE     NEAR LAB  ?C?PLDCODE
+      0100029DH   CODE     NEAR LAB  ?C?PLDIDATA
       010001F7H   CODE     NEAR LAB  ?C?PLDPTR
-      01000245H   CODE     NEAR LAB  ?C?PLDXDATA
+      010002AFH   CODE     NEAR LAB  ?C?PLDXDATA
+      010002A6H   CODE     NEAR LAB  ?C?PSTIDATA
+      01000214H   CODE     NEAR LAB  ?C?PSTPTR
+      010002B8H   CODE     NEAR LAB  ?C?PSTXDATA
       010001BAH   CODE     NEAR LAB  ?C?SLSHR
       010001A9H   CODE     NEAR LAB  ?C?ULCMP
       01000117H   CODE     NEAR LAB  ?C?ULDIV
       00000001H   NUMBER   ---       ?C?XDATAMTYPE
       00000000H   NUMBER   ---       ?C?XDATASEG
-      010002B7H   CODE     NEAR LAB  ?C_START
+      0100032AH   CODE     NEAR LAB  ?C_START
       01000000H   CODE     NEAR LAB  ?C_STARTUP
-      01000BECH   ECODE    ---       _delay1ms
-      01000D09H   ECODE    ---       _DETIM_Init
-      01000444H   ECODE    ---       _DoPrint
-      01000B98H   ECODE    ---       _Pclkinit
-      01000AF1H   ECODE    ---       _Printf
-      01000C84H   ECODE    ---       _Puts
+      01000CEEH   ECODE    ---       _delay1ms
+      01000E3EH   ECODE    ---       _DETIM_Init
+      010004B3H   ECODE    ---       _DoPrint
+      01000C9AH   ECODE    ---       _Pclkinit
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 6
+
+
+      01000BF3H   ECODE    ---       _Printf
+      01000D86H   ECODE    ---       _Puts
       0100000EH   ECODE    ---       _RS_tx
-      0100038BH   CODE     NEAR LAB  _SWITCHBANK
-      01000A6DH   ECODE    ---       _TIM_Init
-      01000D13H   ECODE    ---       _TIM_Start
+      010008F0H   ECODE    ---       _SHELL_Init
+      01000E04H   ECODE    ---       _SHELL_RegisterCommand
+      01000444H   CODE     NEAR LAB  _SWITCHBANK
+      01000B6FH   ECODE    ---       _TIM_Init
+      01000E48H   ECODE    ---       _TIM_Start
 *SFR* 000000E0H   DATA     BYTE      ACC
 *SFR* 000000F0H   DATA     BYTE      B
 *SFR* 0000009AH   DATA     BYTE      BANKREG
-      01000CEDH   ECODE    ---       ChangeText
-      0200009FH   XDATA    WORD      Count10MS
-      020000A4H   XDATA    WORD      Count1MS
+      01000E16H   ECODE    ---       ChangeText
+      020000AEH   XDATA    WORD      Count10MS
+      020000B3H   XDATA    WORD      Count1MS
 *SFR* 00000083H   DATA     BYTE      DPH
 *SFR* 00000082H   DATA     BYTE      DPL
 *SFR* 00000093H   DATA     BYTE      DPX
 *SFR* 000000A8H.7 DATA     BIT       EA
-      020000A3H   XDATA    BYTE      flag_Tog
+      020000B2H   XDATA    BYTE      flag_Tog
       02000045H   XDATA    ---       FOsdMsgBuff
-      0200009DH   XDATA    WORD      global_Freerun_hTotal
-      020000A1H   XDATA    WORD      global_Freerun_vTotal
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 6
-
-
-      010003C7H   CONST    ---       Hex
+      020000ACH   XDATA    WORD      global_Freerun_hTotal
+      020000B0H   XDATA    WORD      global_Freerun_vTotal
+      01000480H   CONST    ---       Hex
 *SFR* 000000A8H   DATA     BYTE      IE
-      01000913H   ECODE    ---       InitCpu
-      01000A08H   ECODE    ---       main
+      01000A15H   ECODE    ---       InitCpu
+      01000B0AH   ECODE    ---       main
       01000003H   ECODE    ---       McuInit
-      010007E4H   ECODE    ---       OutputPlantInit
+      01000853H   ECODE    ---       OutputPlantInit
 *SFR* 00000080H   DATA     BIT       P0_0
 *SFR* 00000080H.1 DATA     BIT       P0_1
 *SFR* 00000080H.2 DATA     BIT       P0_2
@@ -384,8 +406,11 @@ PUBLIC SYMBOLS OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000021H   DATA     ---       RS_buf
       00000043H   DATA     BYTE      RS_in
       00000044H   DATA     BYTE      RS_out
-      01000CFFH   ECODE    ---       RS_ready
-      01000CC3H   ECODE    ---       RS_rx
+      01000E34H   ECODE    ---       RS_ready
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 7
+
+
+      01000DC5H   ECODE    ---       RS_rx
       00000020H.2 BIT      BIT       RS_Xbusy
 *SFR* 000000E0H   DATA     BYTE      SFR_ACC
 *SFR* 0000009DH   DATA     BYTE      SFR_ACON
@@ -407,9 +432,6 @@ PUBLIC SYMBOLS OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
 *SFR* 00000082H   DATA     BYTE      SFR_DPL
 *SFR* 00000082H   DATA     BYTE      SFR_DPL0
 *SFR* 00000084H   DATA     BYTE      SFR_DPL1
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 7
-
-
 *SFR* 00000093H   DATA     BYTE      SFR_DPP
 *SFR* 00000086H   DATA     BYTE      SFR_DPS
 *SFR* 00000093H   DATA     BYTE      SFR_DPX
@@ -453,6 +475,9 @@ PUBLIC SYMBOLS OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
 *SFR* 0000008DH   DATA     BYTE      SFR_TH1
 *SFR* 000000CDH   DATA     BYTE      SFR_TH2
 *SFR* 0000008AH   DATA     BYTE      SFR_TL0
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 8
+
+
 *SFR* 0000008BH   DATA     BYTE      SFR_TL1
 *SFR* 000000CCH   DATA     BYTE      SFR_TL2
 *SFR* 00000089H   DATA     BYTE      SFR_TMOD
@@ -475,9 +500,6 @@ PUBLIC SYMBOLS OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
 *SFR* 000000A8H.3 DATA     BIT       SFRB_ET1
 *SFR* 000000A8H.5 DATA     BIT       SFRB_ET2
 *SFR* 000000E8H.5 DATA     BIT       SFRB_EWDI
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 8
-
-
 *SFR* 000000D8H.1 DATA     BIT       SFRB_EWT
 *SFR* 000000A8H   DATA     BIT       SFRB_EX0
 *SFR* 000000A8H.2 DATA     BIT       SFRB_EX1
@@ -521,6 +543,9 @@ PUBLIC SYMBOLS OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
 *SFR* 00000090H.1 DATA     BIT       SFRB_T2EX
 *SFR* 000000C0H.3 DATA     BIT       SFRB_TB18
 *SFR* 00000098H.3 DATA     BIT       SFRB_TB8
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 9
+
+
 *SFR* 00000088H.5 DATA     BIT       SFRB_TF0
 *SFR* 00000088H.7 DATA     BIT       SFRB_TF1
 *SFR* 00000098H.1 DATA     BIT       SFRB_TI
@@ -537,16 +562,13 @@ PUBLIC SYMBOLS OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
 *SFR* 000000F8H.3 DATA     BIT       SFRR_PINT5
 *SFR* 000000F8H.4 DATA     BIT       SFRR_PINT6
 *SFR* 000000F8H.5 DATA     BIT       SFRR_PWDI
-      01000C3CH   ECODE    ---       SysclkInit
+      01000D3EH   ECODE    ---       SysclkInit
       02000077H   XDATA    ---       TEXT
       00000045H   DATA     WORD      tic_pc
-      01000C63H   ECODE    ---       timer0_int
-      01000BC3H   ECODE    ---       timer1_int
+      01000D65H   ECODE    ---       timer0_int
+      01000CC5H   ECODE    ---       timer1_int
 *SFR* 0000009AH   DATA     BYTE      TWBASE
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 9
-
-
-      01000AB2H   ECODE    ---       uart0_int
+      01000BB4H   ECODE    ---       uart0_int
 
 
 
@@ -569,8 +591,8 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       0100041BH   PUBLIC    CODE     NEAR LAB  ?B_SWITCH1
       0100042CH   PUBLIC    CODE     NEAR LAB  ?B_SWITCH2
       0100043DH   PUBLIC    CODE     NEAR LAB  ?B_SWITCH3
-      0100038CH   PUBLIC    CODE     NEAR LAB  ?B_SWITCHBANK_A
-      0100038BH   PUBLIC    CODE     NEAR LAB  _SWITCHBANK
+      01000445H   PUBLIC    CODE     NEAR LAB  ?B_SWITCHBANK_A
+      01000444H   PUBLIC    CODE     NEAR LAB  _SWITCHBANK
       000000E0H   SFRSYM    DATA     BYTE      ACC
       000000F0H   SFRSYM    DATA     BYTE      B
       0000009AH   SFRSYM    DATA     BYTE      BANKREG
@@ -579,7 +601,7 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000A8H.7 SFRSYM    DATA     BIT       EA
       000000A8H   SFRSYM    DATA     BYTE      IE
       00000000H   SYMBOL    NUMBER   ---       ?B_FIRSTBIT
-      01000391H   SYMBOL    CODE     NEAR LAB  ?B_RESTORE_BANK
+      0100044AH   SYMBOL    CODE     NEAR LAB  ?B_RESTORE_BANK
       00000000H   SYMBOL    NUMBER   ---       ?B_RTX
       00000000H   SYMBOL    NUMBER   ---       ?B_VAR_BANKING
       00000044H   SYMBOL    NUMBER   ---       B_SWITCH_SIZE
@@ -587,22 +609,25 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000004H   SYMBOL    NUMBER   ---       CNT
       00000000H   SYMBOL    NUMBER   ---       LONG_MACRO
       00000003H   SYMBOL    NUMBER   ---       MASK
-      01000396H   SYMBOL    CODE     NEAR LAB  SWITCH_TAB
+      0100044FH   SYMBOL    CODE     NEAR LAB  SWITCH_TAB
+
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 10
+
 
       01000400H   BLOCK     CODE     NEAR LAB  LVL=0
       ---         BLOCKEND  ---      ---       LVL=0
 
-      0100038BH   BLOCK     CODE     NEAR LAB  LVL=0
+      01000444H   BLOCK     CODE     NEAR LAB  LVL=0
       ---         BLOCKEND  ---      ---       LVL=0
 
       ---         MODULE    ---      ---       MAIN
-      020000A4H   PUBLIC    XDATA    WORD      Count1MS
-      020000A3H   PUBLIC    XDATA    BYTE      flag_Tog
-      020000A1H   PUBLIC    XDATA    WORD      global_Freerun_vTotal
-      0200009FH   PUBLIC    XDATA    WORD      Count10MS
-      0200009DH   PUBLIC    XDATA    WORD      global_Freerun_hTotal
+      020000B3H   PUBLIC    XDATA    WORD      Count1MS
+      020000B2H   PUBLIC    XDATA    BYTE      flag_Tog
+      020000B0H   PUBLIC    XDATA    WORD      global_Freerun_vTotal
+      020000AEH   PUBLIC    XDATA    WORD      Count10MS
+      020000ACH   PUBLIC    XDATA    WORD      global_Freerun_hTotal
       01000003H   PUBLIC    ECODE    ---       McuInit
-      01000A08H   PUBLIC    ECODE    ---       main
+      01000B0AH   PUBLIC    ECODE    ---       main
       000000D8H.1 SFRSYM    DATA     BIT       SFRB_EWT
       000000B0H.1 SFRSYM    DATA     BIT       SFRB_TXD
       000000CAH   SFRSYM    DATA     BYTE      SFR_RCRL
@@ -611,9 +636,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000088H   SFRSYM    DATA     BYTE      SFR_TCON
       000000D0H.5 SFRSYM    DATA     BIT       SFRB_F0
       000000EAH   SFRSYM    DATA     BYTE      SFR_MXAX
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 10
-
-
       000000D8H   SFRSYM    DATA     BIT       SFRB_RWT
       000000C0H.2 SFRSYM    DATA     BIT       SFRB_RB18
       000000F8H   SFRSYM    DATA     BIT       SFRR_PINT2
@@ -657,6 +679,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000080H.6 SFRSYM    DATA     BIT       P0_6
       000000B0H.4 SFRSYM    DATA     BIT       P3_4
       000000A0H.5 SFRSYM    DATA     BIT       P2_5
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 11
+
+
       00000090H.6 SFRSYM    DATA     BIT       P1_6
       00000080H.7 SFRSYM    DATA     BIT       P0_7
       000000B0H.5 SFRSYM    DATA     BIT       P3_5
@@ -679,9 +704,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000A8H.4 SFRSYM    DATA     BIT       SFRB_ES
       00000083H   SFRSYM    DATA     BYTE      SFR_DPH
       00000098H   SFRSYM    DATA     BIT       SFRB_RI
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 11
-
-
       000000F8H   SFRSYM    DATA     BYTE      SFR_EIP
       000000D0H.7 SFRSYM    DATA     BIT       SFRB_CY
       000000B0H.2 SFRSYM    DATA     BIT       SFRB_INT0
@@ -725,6 +747,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000D8H.2 SFRSYM    DATA     BIT       SFRB_WTRF
       000000F8H.5 SFRSYM    DATA     BIT       SFRR_PWDI
       000000A8H.4 SFRSYM    DATA     BIT       SFRB_ES0
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 12
+
+
       000000A8H.6 SFRSYM    DATA     BIT       SFRB_ES1
       000000A8H.1 SFRSYM    DATA     BIT       SFRB_ET0
       000000A8H.3 SFRSYM    DATA     BIT       SFRB_ET1
@@ -747,9 +772,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000082H   SFRSYM    DATA     BYTE      SFR_DPL0
       000000D0H   SFRSYM    DATA     BIT       SFRB_P
       00000084H   SFRSYM    DATA     BYTE      SFR_DPL1
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 12
-
-
       00000098H.7 SFRSYM    DATA     BIT       SFRB_SM0
       0000009EH   SFRSYM    DATA     BYTE      SFR_UART0FIFO
       00000098H.6 SFRSYM    DATA     BIT       SFRB_SM1
@@ -792,33 +814,33 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000087H   SFRSYM    DATA     BYTE      SFR_PCON
       01000003H   SYMBOL    ECODE    ---       McuInit
 
-      01000CDBH   BLOCK     ECODE    ---       LVL=0
+      01000DF2H   BLOCK     ECODE    ---       LVL=0
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 13
+
+
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000A08H   BLOCK     ECODE    ---       LVL=0
-      01000A08H   BLOCK     ECODE    NEAR LAB  LVL=1
+      01000B0AH   BLOCK     ECODE    ---       LVL=0
+      01000B0AH   BLOCK     ECODE    NEAR LAB  LVL=1
       02000000H   SYMBOL    XDATA    WORD      temp
       ---         BLOCKEND  ---      ---       LVL=1
-      01000A08H   LINE      ECODE    ---       #24
-      01000A08H   LINE      ECODE    ---       #25
-      01000A08H   LINE      ECODE    ---       #26
-      01000A11H   LINE      ECODE    ---       #27
-      01000A13H   LINE      ECODE    ---       #28
-      01000A1CH   LINE      ECODE    ---       #31
-      01000A1EH   LINE      ECODE    ---       #33
-      01000A21H   LINE      ECODE    ---       #34
-      01000A2AH   LINE      ECODE    ---       #35
-      01000A2AH   LINE      ECODE    ---       #36
-      01000A2AH   LINE      ECODE    ---       #37
-      01000A3BH   LINE      ECODE    ---       #38
-      01000A3BH   LINE      ECODE    ---       #39
-      01000A40H   LINE      ECODE    ---       #40
-      01000A4DH   LINE      ECODE    ---       #41
-      01000A6BH   LINE      ECODE    ---       #42
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 13
-
-
-      01000A6BH   LINE      ECODE    ---       #43
+      01000B0AH   LINE      ECODE    ---       #24
+      01000B0AH   LINE      ECODE    ---       #25
+      01000B0AH   LINE      ECODE    ---       #26
+      01000B13H   LINE      ECODE    ---       #27
+      01000B15H   LINE      ECODE    ---       #28
+      01000B1EH   LINE      ECODE    ---       #31
+      01000B20H   LINE      ECODE    ---       #33
+      01000B23H   LINE      ECODE    ---       #34
+      01000B2CH   LINE      ECODE    ---       #35
+      01000B2CH   LINE      ECODE    ---       #36
+      01000B2CH   LINE      ECODE    ---       #37
+      01000B3DH   LINE      ECODE    ---       #38
+      01000B3DH   LINE      ECODE    ---       #39
+      01000B42H   LINE      ECODE    ---       #40
+      01000B4FH   LINE      ECODE    ---       #41
+      01000B6DH   LINE      ECODE    ---       #42
+      01000B6DH   LINE      ECODE    ---       #43
       ---         BLOCKEND  ---      ---       LVL=0
 
       01000003H   BLOCK     ECODE    ---       LVL=0
@@ -830,9 +852,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       ---         BLOCKEND  ---      ---       LVL=0
 
       ---         MODULE    ---      ---       INTERRUPT
-      01000AB2H   PUBLIC    ECODE    ---       uart0_int
-      01000BC3H   PUBLIC    ECODE    ---       timer1_int
-      01000C63H   PUBLIC    ECODE    ---       timer0_int
+      01000BB4H   PUBLIC    ECODE    ---       uart0_int
+      01000CC5H   PUBLIC    ECODE    ---       timer1_int
+      01000D65H   PUBLIC    ECODE    ---       timer0_int
       000000D8H.1 SFRSYM    DATA     BIT       SFRB_EWT
       000000B0H.1 SFRSYM    DATA     BIT       SFRB_TXD
       000000CAH   SFRSYM    DATA     BYTE      SFR_RCRL
@@ -861,6 +883,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000D0H.6 SFRSYM    DATA     BIT       SFRB_AC
       000000C0H.5 SFRSYM    DATA     BIT       SFRB_SM12
       000000B0H.4 SFRSYM    DATA     BIT       SFRB_T0
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 14
+
+
       000000B0H   SFRSYM    DATA     BIT       P3_0
       000000A0H.1 SFRSYM    DATA     BIT       P2_1
       00000090H.2 SFRSYM    DATA     BIT       P1_2
@@ -883,9 +908,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000090H.5 SFRSYM    DATA     BIT       P1_5
       00000080H.6 SFRSYM    DATA     BIT       P0_6
       000000B0H.4 SFRSYM    DATA     BIT       P3_4
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 14
-
-
       000000A0H.5 SFRSYM    DATA     BIT       P2_5
       00000090H.6 SFRSYM    DATA     BIT       P1_6
       00000080H.7 SFRSYM    DATA     BIT       P0_7
@@ -929,6 +951,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000B0H.6 SFRSYM    DATA     BIT       SFRB_WR
       000000E8H.5 SFRSYM    DATA     BIT       SFRB_EWDI
       00000093H   SFRSYM    DATA     BYTE      SFR_DPX
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 15
+
+
       000000D8H.3 SFRSYM    DATA     BIT       SFRB_WDIF
       0000008EH   SFRSYM    DATA     BYTE      SFR_CKCON
       000000D0H   SFRSYM    DATA     BYTE      SFR_PSW
@@ -951,9 +976,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000FAH   SFRSYM    DATA     BYTE      SFR_E2IF
       000000D8H.2 SFRSYM    DATA     BIT       SFRB_WTRF
       000000F8H.5 SFRSYM    DATA     BIT       SFRR_PWDI
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 15
-
-
       000000A8H.4 SFRSYM    DATA     BIT       SFRB_ES0
       000000A8H.6 SFRSYM    DATA     BIT       SFRB_ES1
       000000A8H.1 SFRSYM    DATA     BIT       SFRB_ET0
@@ -997,6 +1019,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000088H.4 SFRSYM    DATA     BIT       SFRB_TR0
       000000CEH   SFRSYM    DATA     BYTE      SFR_CCEN
       00000088H.6 SFRSYM    DATA     BIT       SFRB_TR1
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 16
+
+
       000000B8H   SFRSYM    DATA     BIT       SFRB_PX0
       000000B8H.2 SFRSYM    DATA     BIT       SFRB_PX1
       00000093H   SFRSYM    DATA     BYTE      SFR_DPX0
@@ -1018,46 +1043,43 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000099H   SFRSYM    DATA     BYTE      SFR_SBUF
       00000087H   SFRSYM    DATA     BYTE      SFR_PCON
 
-      01000C63H   BLOCK     ECODE    ---       LVL=0
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 16
-
-
-      01000C63H   LINE      ECODE    ---       #5
-      01000C6BH   LINE      ECODE    ---       #7
-      01000C7BH   LINE      ECODE    ---       #8
+      01000D65H   BLOCK     ECODE    ---       LVL=0
+      01000D65H   LINE      ECODE    ---       #5
+      01000D6DH   LINE      ECODE    ---       #7
+      01000D7DH   LINE      ECODE    ---       #8
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000BC3H   BLOCK     ECODE    ---       LVL=0
-      01000BC3H   LINE      ECODE    ---       #11
-      01000BCBH   LINE      ECODE    ---       #13
-      01000BD3H   LINE      ECODE    ---       #14
-      01000BE3H   LINE      ECODE    ---       #15
+      01000CC5H   BLOCK     ECODE    ---       LVL=0
+      01000CC5H   LINE      ECODE    ---       #11
+      01000CCDH   LINE      ECODE    ---       #13
+      01000CD5H   LINE      ECODE    ---       #14
+      01000CE5H   LINE      ECODE    ---       #15
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000AB2H   BLOCK     ECODE    ---       LVL=0
-      01000AB9H   BLOCK     ECODE    NEAR LAB  LVL=1
+      01000BB4H   BLOCK     ECODE    ---       LVL=0
+      01000BBBH   BLOCK     ECODE    NEAR LAB  LVL=1
       00000017H   SYMBOL    DATA     BYTE      count
       ---         BLOCKEND  ---      ---       LVL=1
-      01000AB2H   LINE      ECODE    ---       #22
-      01000AB9H   LINE      ECODE    ---       #31
-      01000ABCH   LINE      ECODE    ---       #32
-      01000ABEH   LINE      ECODE    ---       #34
-      01000AC3H   LINE      ECODE    ---       #35
-      01000AC6H   LINE      ECODE    ---       #36
-      01000AC9H   LINE      ECODE    ---       #40
-      01000ACBH   LINE      ECODE    ---       #41
-      01000ACBH   LINE      ECODE    ---       #46
-      01000ACEH   LINE      ECODE    ---       #47
-      01000AD8H   LINE      ECODE    ---       #48
-      01000AE2H   LINE      ECODE    ---       #49
-      01000AE3H   LINE      ECODE    ---       #50
-      01000AE5H   LINE      ECODE    ---       #51
-      01000AE5H   LINE      ECODE    ---       #57
-      01000AE5H   LINE      ECODE    ---       #59
-      01000AE8H   LINE      ECODE    ---       #60
-      01000AEAH   LINE      ECODE    ---       #61
-      01000AECH   LINE      ECODE    ---       #62
-      01000AECH   LINE      ECODE    ---       #63
+      01000BB4H   LINE      ECODE    ---       #22
+      01000BBBH   LINE      ECODE    ---       #31
+      01000BBEH   LINE      ECODE    ---       #32
+      01000BC0H   LINE      ECODE    ---       #34
+      01000BC5H   LINE      ECODE    ---       #35
+      01000BC8H   LINE      ECODE    ---       #36
+      01000BCBH   LINE      ECODE    ---       #40
+      01000BCDH   LINE      ECODE    ---       #41
+      01000BCDH   LINE      ECODE    ---       #46
+      01000BD0H   LINE      ECODE    ---       #47
+      01000BDAH   LINE      ECODE    ---       #48
+      01000BE4H   LINE      ECODE    ---       #49
+      01000BE5H   LINE      ECODE    ---       #50
+      01000BE7H   LINE      ECODE    ---       #51
+      01000BE7H   LINE      ECODE    ---       #57
+      01000BE7H   LINE      ECODE    ---       #59
+      01000BEAH   LINE      ECODE    ---       #60
+      01000BECH   LINE      ECODE    ---       #61
+      01000BEEH   LINE      ECODE    ---       #62
+      01000BEEH   LINE      ECODE    ---       #63
       ---         BLOCKEND  ---      ---       LVL=0
 
       ---         MODULE    ---      ---       INIT
@@ -1065,13 +1087,16 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000044H   PUBLIC    DATA     BYTE      RS_out
       00000043H   PUBLIC    DATA     BYTE      RS_in
       00000041H   PUBLIC    DATA     ---       regTW88
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 17
+
+
       00000021H   PUBLIC    DATA     ---       RS_buf
       00000020H.2 PUBLIC    BIT      BIT       RS_Xbusy
-      01000913H   PUBLIC    ECODE    ---       InitCpu
+      01000A15H   PUBLIC    ECODE    ---       InitCpu
       0100000EH   PUBLIC    ECODE    ---       _RS_tx
-      01000CFFH   PUBLIC    ECODE    ---       RS_ready
-      01000CC3H   PUBLIC    ECODE    ---       RS_rx
-      01000BECH   PUBLIC    ECODE    ---       _delay1ms
+      01000E34H   PUBLIC    ECODE    ---       RS_ready
+      01000DC5H   PUBLIC    ECODE    ---       RS_rx
+      01000CEEH   PUBLIC    ECODE    ---       _delay1ms
       000000D8H.1 SFRSYM    DATA     BIT       SFRB_EWT
       000000B0H.1 SFRSYM    DATA     BIT       SFRB_TXD
       000000CAH   SFRSYM    DATA     BYTE      SFR_RCRL
@@ -1087,9 +1112,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000F8H.1 SFRSYM    DATA     BIT       SFRR_PINT3
       000000C0H.3 SFRSYM    DATA     BIT       SFRB_TB18
       000000F8H.2 SFRSYM    DATA     BIT       SFRR_PINT4
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 17
-
-
       00000080H   SFRSYM    DATA     BIT       P0_0
       000000F8H.3 SFRSYM    DATA     BIT       SFRR_PINT5
       000000C0H.7 SFRSYM    DATA     BIT       SFRB_SM10
@@ -1133,6 +1155,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000090H.7 SFRSYM    DATA     BIT       P1_7
       000000B0H.6 SFRSYM    DATA     BIT       P3_6
       000000A0H.7 SFRSYM    DATA     BIT       P2_7
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 18
+
+
       0000008CH   SFRSYM    DATA     BYTE      SFR_TH0
       000000B0H.7 SFRSYM    DATA     BIT       P3_7
       0000008DH   SFRSYM    DATA     BYTE      SFR_TH1
@@ -1155,9 +1180,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000098H.1 SFRSYM    DATA     BIT       SFRB_TI
       00000082H   SFRSYM    DATA     BYTE      SFR_DPL
       00000099H   SFRSYM    DATA     BYTE      SFR_SBUF0
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 18
-
-
       000000C1H   SFRSYM    DATA     BYTE      SFR_SBUF1
       00000098H   SFRSYM    DATA     BYTE      SFR_SCON0
       00000093H   SFRSYM    DATA     BYTE      SFR_DPP
@@ -1201,6 +1223,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000083H   SFRSYM    DATA     BYTE      SFR_DPH0
       000000FDH   SFRSYM    DATA     BYTE      SFR_E2IM
       000000A8H.5 SFRSYM    DATA     BIT       SFRB_ET2
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 19
+
+
       000000A8H   SFRSYM    DATA     BYTE      SFR_IE
       00000088H.7 SFRSYM    DATA     BIT       SFRB_TF1
       00000085H   SFRSYM    DATA     BYTE      SFR_DPH1
@@ -1223,9 +1248,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000EBH   SFRSYM    DATA     BYTE      SFR_TA
       000000E2H   SFRSYM    DATA     BYTE      SFR_CAMC
       0000009FH   SFRSYM    DATA     BYTE      SFR_UART1FIFO
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 19
-
-
       00000098H.5 SFRSYM    DATA     BIT       SFRB_SM2
       000000C9H   SFRSYM    DATA     BYTE      SFR_T2IF
       000000B8H.4 SFRSYM    DATA     BIT       SFRB_PS0
@@ -1260,52 +1282,52 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000099H   SFRSYM    DATA     BYTE      SFR_SBUF
       00000087H   SFRSYM    DATA     BYTE      SFR_PCON
 
-      01000CA5H   BLOCK     ECODE    ---       LVL=0
+      01000DA7H   BLOCK     ECODE    ---       LVL=0
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000BECH   BLOCK     ECODE    ---       LVL=0
+      01000CEEH   BLOCK     ECODE    ---       LVL=0
       00000006H   SYMBOL    DATA     WORD      cnt_1ms
-      01000BECH   BLOCK     ECODE    NEAR LAB  LVL=1
-      020000AFH   SYMBOL    XDATA    WORD      temp_tic_pc
+      01000CEEH   BLOCK     ECODE    NEAR LAB  LVL=1
+      020000C1H   SYMBOL    XDATA    WORD      temp_tic_pc
       ---         BLOCKEND  ---      ---       LVL=1
-      01000BECH   LINE      ECODE    ---       #131
-      01000BECH   LINE      ECODE    ---       #132
-      01000BECH   LINE      ECODE    ---       #134
-      01000BEEH   LINE      ECODE    ---       #135
-      01000BF3H   LINE      ECODE    ---       #136
-      01000BF5H   LINE      ECODE    ---       #137
-      01000BF5H   LINE      ECODE    ---       #138
-      01000BF7H   LINE      ECODE    ---       #139
-      01000C02H   LINE      ECODE    ---       #140
-      01000C04H   LINE      ECODE    ---       #141
-      01000C13H   LINE      ECODE    ---       #142
+      01000CEEH   LINE      ECODE    ---       #131
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 20
+
+
+      01000CEEH   LINE      ECODE    ---       #132
+      01000CEEH   LINE      ECODE    ---       #134
+      01000CF0H   LINE      ECODE    ---       #135
+      01000CF5H   LINE      ECODE    ---       #136
+      01000CF7H   LINE      ECODE    ---       #137
+      01000CF7H   LINE      ECODE    ---       #138
+      01000CF9H   LINE      ECODE    ---       #139
+      01000D04H   LINE      ECODE    ---       #140
+      01000D06H   LINE      ECODE    ---       #141
+      01000D15H   LINE      ECODE    ---       #142
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000CC3H   BLOCK     ECODE    ---       LVL=0
-      01000CC3H   BLOCK     ECODE    NEAR LAB  LVL=1
+      01000DC5H   BLOCK     ECODE    ---       LVL=0
+      01000DC5H   BLOCK     ECODE    NEAR LAB  LVL=1
       00000007H   SYMBOL    DATA     BYTE      ret
       ---         BLOCKEND  ---      ---       LVL=1
-      01000CC3H   LINE      ECODE    ---       #150
-      01000CC3H   LINE      ECODE    ---       #151
-      01000CC3H   LINE      ECODE    ---       #154
-      01000CC5H   LINE      ECODE    ---       #156
-      01000CCCH   LINE      ECODE    ---       #157
-      01000CCEH   LINE      ECODE    ---       #158
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 20
-
-
-      01000CD5H   LINE      ECODE    ---       #159
-      01000CD8H   LINE      ECODE    ---       #161
-      01000CDAH   LINE      ECODE    ---       #163
-      01000CDAH   LINE      ECODE    ---       #164
+      01000DC5H   LINE      ECODE    ---       #150
+      01000DC5H   LINE      ECODE    ---       #151
+      01000DC5H   LINE      ECODE    ---       #154
+      01000DC7H   LINE      ECODE    ---       #156
+      01000DCEH   LINE      ECODE    ---       #157
+      01000DD0H   LINE      ECODE    ---       #158
+      01000DD7H   LINE      ECODE    ---       #159
+      01000DDAH   LINE      ECODE    ---       #161
+      01000DDCH   LINE      ECODE    ---       #163
+      01000DDCH   LINE      ECODE    ---       #164
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000CFFH   BLOCK     ECODE    ---       LVL=0
-      01000CFFH   LINE      ECODE    ---       #173
-      01000CFFH   LINE      ECODE    ---       #174
-      01000CFFH   LINE      ECODE    ---       #175
-      01000D08H   LINE      ECODE    ---       #176
-      01000D08H   LINE      ECODE    ---       #177
+      01000E34H   BLOCK     ECODE    ---       LVL=0
+      01000E34H   LINE      ECODE    ---       #173
+      01000E34H   LINE      ECODE    ---       #174
+      01000E34H   LINE      ECODE    ---       #175
+      01000E3DH   LINE      ECODE    ---       #176
+      01000E3DH   LINE      ECODE    ---       #177
       ---         BLOCKEND  ---      ---       LVL=0
 
       0100000EH   BLOCK     ECODE    ---       LVL=0
@@ -1320,36 +1342,39 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       01000019H   LINE      ECODE    ---       #188
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000913H   BLOCK     ECODE    ---       LVL=0
-      01000913H   LINE      ECODE    ---       #189
-      01000913H   LINE      ECODE    ---       #190
-      01000913H   LINE      ECODE    ---       #212
-      01000916H   LINE      ECODE    ---       #213
-      01000919H   LINE      ECODE    ---       #215
-      01000925H   LINE      ECODE    ---       #216
-      0100092FH   LINE      ECODE    ---       #218
-      01000939H   LINE      ECODE    ---       #219
-      01000943H   LINE      ECODE    ---       #221
-      0100094EH   LINE      ECODE    ---       #222
-      01000965H   LINE      ECODE    ---       #223
-      01000971H   LINE      ECODE    ---       #225
-      01000974H   LINE      ECODE    ---       #236
-      01000977H   LINE      ECODE    ---       #248
-      0100097AH   LINE      ECODE    ---       #258
-      0100097DH   LINE      ECODE    ---       #259
-      01000980H   LINE      ECODE    ---       #261
-      01000983H   LINE      ECODE    ---       #262
-      01000986H   LINE      ECODE    ---       #277
-      01000989H   LINE      ECODE    ---       #287
-      0100098CH   LINE      ECODE    ---       #297
-      0100098FH   LINE      ECODE    ---       #307
-      01000992H   LINE      ECODE    ---       #311
-      01000994H   LINE      ECODE    ---       #312
+      01000A15H   BLOCK     ECODE    ---       LVL=0
+      01000A15H   LINE      ECODE    ---       #189
+      01000A15H   LINE      ECODE    ---       #190
+      01000A15H   LINE      ECODE    ---       #212
+      01000A18H   LINE      ECODE    ---       #213
+      01000A1BH   LINE      ECODE    ---       #215
+      01000A27H   LINE      ECODE    ---       #216
+      01000A31H   LINE      ECODE    ---       #218
+      01000A3BH   LINE      ECODE    ---       #219
+      01000A45H   LINE      ECODE    ---       #221
+      01000A50H   LINE      ECODE    ---       #222
+      01000A67H   LINE      ECODE    ---       #223
+      01000A73H   LINE      ECODE    ---       #225
+      01000A76H   LINE      ECODE    ---       #236
+      01000A79H   LINE      ECODE    ---       #248
+      01000A7CH   LINE      ECODE    ---       #258
+      01000A7FH   LINE      ECODE    ---       #259
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 21
+
+
+      01000A82H   LINE      ECODE    ---       #261
+      01000A85H   LINE      ECODE    ---       #262
+      01000A88H   LINE      ECODE    ---       #277
+      01000A8BH   LINE      ECODE    ---       #287
+      01000A8EH   LINE      ECODE    ---       #297
+      01000A91H   LINE      ECODE    ---       #307
+      01000A94H   LINE      ECODE    ---       #311
+      01000A96H   LINE      ECODE    ---       #312
       ---         BLOCKEND  ---      ---       LVL=0
 
       ---         MODULE    ---      ---       HWSYSCLK
-      01000C3CH   PUBLIC    ECODE    ---       SysclkInit
-      01000B98H   PUBLIC    ECODE    ---       _Pclkinit
+      01000D3EH   PUBLIC    ECODE    ---       SysclkInit
+      01000C9AH   PUBLIC    ECODE    ---       _Pclkinit
       000000D8H.1 SFRSYM    DATA     BIT       SFRB_EWT
       000000B0H.1 SFRSYM    DATA     BIT       SFRB_TXD
       000000CAH   SFRSYM    DATA     BYTE      SFR_RCRL
@@ -1359,9 +1384,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000D0H.5 SFRSYM    DATA     BIT       SFRB_F0
       000000EAH   SFRSYM    DATA     BYTE      SFR_MXAX
       000000D8H   SFRSYM    DATA     BIT       SFRB_RWT
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 21
-
-
       000000C0H.2 SFRSYM    DATA     BIT       SFRB_RB18
       000000F8H   SFRSYM    DATA     BIT       SFRR_PINT2
       000000F0H   SFRSYM    DATA     BYTE      SFR_B
@@ -1405,6 +1427,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000B0H.4 SFRSYM    DATA     BIT       P3_4
       000000A0H.5 SFRSYM    DATA     BIT       P2_5
       00000090H.6 SFRSYM    DATA     BIT       P1_6
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 22
+
+
       00000080H.7 SFRSYM    DATA     BIT       P0_7
       000000B0H.5 SFRSYM    DATA     BIT       P3_5
       000000A0H.6 SFRSYM    DATA     BIT       P2_6
@@ -1427,9 +1452,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000083H   SFRSYM    DATA     BYTE      SFR_DPH
       00000098H   SFRSYM    DATA     BIT       SFRB_RI
       000000F8H   SFRSYM    DATA     BYTE      SFR_EIP
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 22
-
-
       000000D0H.7 SFRSYM    DATA     BIT       SFRB_CY
       000000B0H.2 SFRSYM    DATA     BIT       SFRB_INT0
       000000B0H.3 SFRSYM    DATA     BIT       SFRB_INT1
@@ -1473,6 +1495,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000F8H.5 SFRSYM    DATA     BIT       SFRR_PWDI
       000000A8H.4 SFRSYM    DATA     BIT       SFRB_ES0
       000000A8H.6 SFRSYM    DATA     BIT       SFRB_ES1
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 23
+
+
       000000A8H.1 SFRSYM    DATA     BIT       SFRB_ET0
       000000A8H.3 SFRSYM    DATA     BIT       SFRB_ET1
       00000088H.5 SFRSYM    DATA     BIT       SFRB_TF0
@@ -1495,9 +1520,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000D0H   SFRSYM    DATA     BIT       SFRB_P
       00000084H   SFRSYM    DATA     BYTE      SFR_DPL1
       00000098H.7 SFRSYM    DATA     BIT       SFRB_SM0
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 23
-
-
       0000009EH   SFRSYM    DATA     BYTE      SFR_UART0FIFO
       00000098H.6 SFRSYM    DATA     BIT       SFRB_SM1
       000000FEH   SFRSYM    DATA     BYTE      SFR_E2IT
@@ -1537,103 +1559,103 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000B0H   SFRSYM    DATA     BIT       SFRB_RXD
       00000099H   SFRSYM    DATA     BYTE      SFR_SBUF
       00000087H   SFRSYM    DATA     BYTE      SFR_PCON
-      01000995H   SYMBOL    ECODE    ---       _Sspllinit
-      01000B30H   SYMBOL    ECODE    ---       SpiClkRecover27MSource
+      01000A97H   SYMBOL    ECODE    ---       _Sspllinit
+      01000C32H   SYMBOL    ECODE    ---       SpiClkRecover27MSource
 
-      01000B6BH   BLOCK     ECODE    ---       LVL=0
+      01000C6DH   BLOCK     ECODE    ---       LVL=0
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 24
+
+
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000B30H   BLOCK     ECODE    ---       LVL=0
-      01000B30H   BLOCK     ECODE    NEAR LAB  LVL=1
+      01000C32H   BLOCK     ECODE    ---       LVL=0
+      01000C32H   BLOCK     ECODE    NEAR LAB  LVL=1
       00000007H   SYMBOL    DATA     BYTE      temp
       ---         BLOCKEND  ---      ---       LVL=1
-      01000B30H   LINE      ECODE    ---       #51
-      01000B30H   LINE      ECODE    ---       #52
-      01000B30H   LINE      ECODE    ---       #56
-      01000B35H   LINE      ECODE    ---       #57
-      01000B39H   LINE      ECODE    ---       #58
-      01000B39H   LINE      ECODE    ---       #59
-      01000B42H   LINE      ECODE    ---       #60
-      01000B42H   LINE      ECODE    ---       #61
-      01000B4EH   LINE      ECODE    ---       #62
-      01000B52H   LINE      ECODE    ---       #63
-      01000B52H   LINE      ECODE    ---       #64
-      01000B62H   LINE      ECODE    ---       #65
-      01000B62H   LINE      ECODE    ---       #66
+      01000C32H   LINE      ECODE    ---       #51
+      01000C32H   LINE      ECODE    ---       #52
+      01000C32H   LINE      ECODE    ---       #56
+      01000C37H   LINE      ECODE    ---       #57
+      01000C3BH   LINE      ECODE    ---       #58
+      01000C3BH   LINE      ECODE    ---       #59
+      01000C44H   LINE      ECODE    ---       #60
+      01000C44H   LINE      ECODE    ---       #61
+      01000C50H   LINE      ECODE    ---       #62
+      01000C54H   LINE      ECODE    ---       #63
+      01000C54H   LINE      ECODE    ---       #64
+      01000C64H   LINE      ECODE    ---       #65
+      01000C64H   LINE      ECODE    ---       #66
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000995H   BLOCK     ECODE    ---       LVL=0
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 24
-
-
+      01000A97H   BLOCK     ECODE    ---       LVL=0
       00000007H   SYMBOL    DATA     BYTE      num
       02000003H   SYMBOL    XDATA    WORD      nKhz
-      01000995H   LINE      ECODE    ---       #68
-      0100099EH   LINE      ECODE    ---       #69
-      0100099EH   LINE      ECODE    ---       #70
-      010009A3H   LINE      ECODE    ---       #71
-      010009A3H   LINE      ECODE    ---       #72
-      010009AFH   LINE      ECODE    ---       #73
-      010009B9H   LINE      ECODE    ---       #74
-      010009C1H   LINE      ECODE    ---       #75
-      010009C9H   LINE      ECODE    ---       #76
-      010009CEH   LINE      ECODE    ---       #77
-      010009D0H   LINE      ECODE    ---       #78
-      010009D5H   LINE      ECODE    ---       #79
-      010009D5H   LINE      ECODE    ---       #80
-      010009E1H   LINE      ECODE    ---       #81
-      010009EBH   LINE      ECODE    ---       #82
-      010009F3H   LINE      ECODE    ---       #83
-      010009FBH   LINE      ECODE    ---       #84
-      01000A07H   LINE      ECODE    ---       #85
-      01000A07H   LINE      ECODE    ---       #86
+      01000A97H   LINE      ECODE    ---       #68
+      01000AA0H   LINE      ECODE    ---       #69
+      01000AA0H   LINE      ECODE    ---       #70
+      01000AA5H   LINE      ECODE    ---       #71
+      01000AA5H   LINE      ECODE    ---       #72
+      01000AB1H   LINE      ECODE    ---       #73
+      01000ABBH   LINE      ECODE    ---       #74
+      01000AC3H   LINE      ECODE    ---       #75
+      01000ACBH   LINE      ECODE    ---       #76
+      01000AD0H   LINE      ECODE    ---       #77
+      01000AD2H   LINE      ECODE    ---       #78
+      01000AD7H   LINE      ECODE    ---       #79
+      01000AD7H   LINE      ECODE    ---       #80
+      01000AE3H   LINE      ECODE    ---       #81
+      01000AEDH   LINE      ECODE    ---       #82
+      01000AF5H   LINE      ECODE    ---       #83
+      01000AFDH   LINE      ECODE    ---       #84
+      01000B09H   LINE      ECODE    ---       #85
+      01000B09H   LINE      ECODE    ---       #86
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000B98H   BLOCK     ECODE    ---       LVL=0
+      01000C9AH   BLOCK     ECODE    ---       LVL=0
       00000007H   SYMBOL    DATA     BYTE      num
       02000003H   SYMBOL    XDATA    BYTE      div
-      01000B98H   LINE      ECODE    ---       #87
-      01000B9EH   LINE      ECODE    ---       #88
-      01000B9EH   LINE      ECODE    ---       #89
-      01000BA2H   LINE      ECODE    ---       #90
-      01000BA2H   LINE      ECODE    ---       #91
-      01000BA9H   LINE      ECODE    ---       #92
-      01000BABH   LINE      ECODE    ---       #93
-      01000BAFH   LINE      ECODE    ---       #94
-      01000BAFH   LINE      ECODE    ---       #95
-      01000BB6H   LINE      ECODE    ---       #96
-      01000BB6H   LINE      ECODE    ---       #97
-      01000BC2H   LINE      ECODE    ---       #98
+      01000C9AH   LINE      ECODE    ---       #87
+      01000CA0H   LINE      ECODE    ---       #88
+      01000CA0H   LINE      ECODE    ---       #89
+      01000CA4H   LINE      ECODE    ---       #90
+      01000CA4H   LINE      ECODE    ---       #91
+      01000CABH   LINE      ECODE    ---       #92
+      01000CADH   LINE      ECODE    ---       #93
+      01000CB1H   LINE      ECODE    ---       #94
+      01000CB1H   LINE      ECODE    ---       #95
+      01000CB8H   LINE      ECODE    ---       #96
+      01000CB8H   LINE      ECODE    ---       #97
+      01000CC4H   LINE      ECODE    ---       #98
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000C3CH   BLOCK     ECODE    ---       LVL=0
-      01000C3CH   BLOCK     ECODE    NEAR LAB  LVL=1
+      01000D3EH   BLOCK     ECODE    ---       LVL=0
+      01000D3EH   BLOCK     ECODE    NEAR LAB  LVL=1
       02000002H   SYMBOL    XDATA    BYTE      temp
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 25
+
+
       00000007H   SYMBOL    DATA     BYTE      pll
       ---         BLOCKEND  ---      ---       LVL=1
-      01000C3CH   LINE      ECODE    ---       #99
-      01000C3CH   LINE      ECODE    ---       #100
-      01000C3CH   LINE      ECODE    ---       #101
-      01000C42H   LINE      ECODE    ---       #103
-      01000C45H   LINE      ECODE    ---       #104
-      01000C47H   LINE      ECODE    ---       #105
-      01000C4EH   LINE      ECODE    ---       #106
-      01000C4FH   LINE      ECODE    ---       #107
-      01000C52H   LINE      ECODE    ---       #108
-      01000C52H   LINE      ECODE    ---       #109
-      01000C57H   LINE      ECODE    ---       #110
-      01000C60H   LINE      ECODE    ---       #111
-      01000C62H   LINE      ECODE    ---       #112
+      01000D3EH   LINE      ECODE    ---       #99
+      01000D3EH   LINE      ECODE    ---       #100
+      01000D3EH   LINE      ECODE    ---       #101
+      01000D44H   LINE      ECODE    ---       #103
+      01000D47H   LINE      ECODE    ---       #104
+      01000D49H   LINE      ECODE    ---       #105
+      01000D50H   LINE      ECODE    ---       #106
+      01000D51H   LINE      ECODE    ---       #107
+      01000D54H   LINE      ECODE    ---       #108
+      01000D54H   LINE      ECODE    ---       #109
+      01000D59H   LINE      ECODE    ---       #110
+      01000D62H   LINE      ECODE    ---       #111
+      01000D64H   LINE      ECODE    ---       #112
       ---         BLOCKEND  ---      ---       LVL=0
 
       ---         MODULE    ---      ---       HWTIME
-      01000D13H   PUBLIC    ECODE    ---       _TIM_Start
-      01000D09H   PUBLIC    ECODE    ---       _DETIM_Init
-      01000A6DH   PUBLIC    ECODE    ---       _TIM_Init
+      01000E48H   PUBLIC    ECODE    ---       _TIM_Start
+      01000E3EH   PUBLIC    ECODE    ---       _DETIM_Init
+      01000B6FH   PUBLIC    ECODE    ---       _TIM_Init
       000000D8H.1 SFRSYM    DATA     BIT       SFRB_EWT
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 25
-
-
       000000B0H.1 SFRSYM    DATA     BIT       SFRB_TXD
       000000CAH   SFRSYM    DATA     BYTE      SFR_RCRL
       00000098H   SFRSYM    DATA     BYTE      SFR_SCON
@@ -1677,6 +1699,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000090H   SFRSYM    DATA     BIT       SFRB_T2
       00000090H.4 SFRSYM    DATA     BIT       P1_4
       00000080H.5 SFRSYM    DATA     BIT       P0_5
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 26
+
+
       000000B0H.3 SFRSYM    DATA     BIT       P3_3
       000000A0H.4 SFRSYM    DATA     BIT       P2_4
       0000009CH   SFRSYM    DATA     BYTE      SFR_CACHE_EN
@@ -1699,9 +1724,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       0000008BH   SFRSYM    DATA     BYTE      SFR_TL1
       000000CCH   SFRSYM    DATA     BYTE      SFR_TL2
       000000E8H   SFRSYM    DATA     BYTE      SFR_EIE
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 26
-
-
       00000092H   SFRSYM    DATA     BYTE      SFR_WTST
       00000091H   SFRSYM    DATA     BYTE      SFR_EIF
       000000B0H.7 SFRSYM    DATA     BIT       SFRB_RD
@@ -1745,6 +1767,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000088H.3 SFRSYM    DATA     BIT       SFRB_IE1
       000000B0H   SFRSYM    DATA     BYTE      SFR_P3
       000000C2H   SFRSYM    DATA     BYTE      SFR_CCL1
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 27
+
+
       000000C4H   SFRSYM    DATA     BYTE      SFR_CCL2
       000000FBH   SFRSYM    DATA     BYTE      SFR_E2IE
       000000C6H   SFRSYM    DATA     BYTE      SFR_CCL3
@@ -1767,9 +1792,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000A8H   SFRSYM    DATA     BIT       SFRB_EX0
       00000088H   SFRSYM    DATA     BIT       SFRB_IT0
       000000FCH   SFRSYM    DATA     BYTE      SFR_E2IP
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 27
-
-
       000000C0H.1 SFRSYM    DATA     BIT       SFRB_TI1
       000000A8H.2 SFRSYM    DATA     BIT       SFRB_EX1
       00000098H.3 SFRSYM    DATA     BIT       SFRB_TB8
@@ -1813,66 +1835,66 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000CBH   SFRSYM    DATA     BYTE      SFR_RLDH
       00000091H   SFRSYM    DATA     BYTE      SFR_EXIF
       000000CAH   SFRSYM    DATA     BYTE      SFR_RLDL
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 28
+
+
       000000CBH   SFRSYM    DATA     BYTE      SFR_RCRH
       000000B0H   SFRSYM    DATA     BIT       SFRB_RXD
       00000099H   SFRSYM    DATA     BYTE      SFR_SBUF
       00000087H   SFRSYM    DATA     BYTE      SFR_PCON
 
-      010003E9H   BLOCK     ECODE    ---       LVL=0
+      01000DDDH   BLOCK     ECODE    ---       LVL=0
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000A6DH   BLOCK     ECODE    ---       LVL=0
-      020000A6H   SYMBOL    XDATA    ---       TimBody
-      01000A6DH   LINE      ECODE    ---       #6
-      01000A74H   LINE      ECODE    ---       #7
-      01000A74H   LINE      ECODE    ---       #8
-      01000A85H   LINE      ECODE    ---       #9
-      01000A85H   LINE      ECODE    ---       #10
-      01000A85H   LINE      ECODE    ---       #11
-      01000A85H   LINE      ECODE    ---       #12
-      01000A88H   LINE      ECODE    ---       #13
-      01000A89H   LINE      ECODE    ---       #14
-      01000A89H   LINE      ECODE    ---       #15
-      01000A89H   LINE      ECODE    ---       #16
-      01000A8BH   LINE      ECODE    ---       #17
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 28
-
-
-      01000A8BH   LINE      ECODE    ---       #18
-      01000A8BH   LINE      ECODE    ---       #19
-      01000A8EH   LINE      ECODE    ---       #20
-      01000A9CH   LINE      ECODE    ---       #21
-      01000AAAH   LINE      ECODE    ---       #22
-      01000AAAH   LINE      ECODE    ---       #23
-      01000AACH   LINE      ECODE    ---       #24
-      01000AACH   LINE      ECODE    ---       #25
-      01000AACH   LINE      ECODE    ---       #27
-      01000AACH   LINE      ECODE    ---       #28
-      01000AACH   LINE      ECODE    ---       #29
-      01000AACH   LINE      ECODE    ---       #30
-      01000AAFH   LINE      ECODE    ---       #31
-      01000AAFH   LINE      ECODE    ---       #33
-      01000AB1H   LINE      ECODE    ---       #34
+      01000B6FH   BLOCK     ECODE    ---       LVL=0
+      020000B5H   SYMBOL    XDATA    ---       TimBody
+      01000B6FH   LINE      ECODE    ---       #6
+      01000B76H   LINE      ECODE    ---       #7
+      01000B76H   LINE      ECODE    ---       #8
+      01000B87H   LINE      ECODE    ---       #9
+      01000B87H   LINE      ECODE    ---       #10
+      01000B87H   LINE      ECODE    ---       #11
+      01000B87H   LINE      ECODE    ---       #12
+      01000B8AH   LINE      ECODE    ---       #13
+      01000B8BH   LINE      ECODE    ---       #14
+      01000B8BH   LINE      ECODE    ---       #15
+      01000B8BH   LINE      ECODE    ---       #16
+      01000B8DH   LINE      ECODE    ---       #17
+      01000B8DH   LINE      ECODE    ---       #18
+      01000B8DH   LINE      ECODE    ---       #19
+      01000B90H   LINE      ECODE    ---       #20
+      01000B9EH   LINE      ECODE    ---       #21
+      01000BACH   LINE      ECODE    ---       #22
+      01000BACH   LINE      ECODE    ---       #23
+      01000BAEH   LINE      ECODE    ---       #24
+      01000BAEH   LINE      ECODE    ---       #25
+      01000BAEH   LINE      ECODE    ---       #27
+      01000BAEH   LINE      ECODE    ---       #28
+      01000BAEH   LINE      ECODE    ---       #29
+      01000BAEH   LINE      ECODE    ---       #30
+      01000BB1H   LINE      ECODE    ---       #31
+      01000BB1H   LINE      ECODE    ---       #33
+      01000BB3H   LINE      ECODE    ---       #34
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000D09H   BLOCK     ECODE    ---       LVL=0
-      020000A9H   SYMBOL    XDATA    ---       TimBody
-      01000D09H   LINE      ECODE    ---       #36
-      01000D10H   LINE      ECODE    ---       #37
-      01000D10H   LINE      ECODE    ---       #38
-      01000D12H   LINE      ECODE    ---       #39
+      01000E3EH   BLOCK     ECODE    ---       LVL=0
+      020000B8H   SYMBOL    XDATA    ---       TimBody
+      01000E3EH   LINE      ECODE    ---       #36
+      01000E45H   LINE      ECODE    ---       #37
+      01000E45H   LINE      ECODE    ---       #38
+      01000E47H   LINE      ECODE    ---       #39
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000D13H   BLOCK     ECODE    ---       LVL=0
-      020000ACH   SYMBOL    XDATA    ---       TimBody
-      01000D13H   LINE      ECODE    ---       #41
-      01000D1AH   LINE      ECODE    ---       #42
-      01000D1AH   LINE      ECODE    ---       #43
-      01000D1CH   LINE      ECODE    ---       #44
+      01000E48H   BLOCK     ECODE    ---       LVL=0
+      020000BBH   SYMBOL    XDATA    ---       TimBody
+      01000E48H   LINE      ECODE    ---       #41
+      01000E4FH   LINE      ECODE    ---       #42
+      01000E4FH   LINE      ECODE    ---       #43
+      01000E51H   LINE      ECODE    ---       #44
       ---         BLOCKEND  ---      ---       LVL=0
 
       ---         MODULE    ---      ---       HWPANEL
-      010007E4H   PUBLIC    ECODE    ---       OutputPlantInit
+      01000853H   PUBLIC    ECODE    ---       OutputPlantInit
       000000D8H.1 SFRSYM    DATA     BIT       SFRB_EWT
       000000B0H.1 SFRSYM    DATA     BIT       SFRB_TXD
       000000CAH   SFRSYM    DATA     BYTE      SFR_RCRL
@@ -1881,6 +1903,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000088H   SFRSYM    DATA     BYTE      SFR_TCON
       000000D0H.5 SFRSYM    DATA     BIT       SFRB_F0
       000000EAH   SFRSYM    DATA     BYTE      SFR_MXAX
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 29
+
+
       000000D8H   SFRSYM    DATA     BIT       SFRB_RWT
       000000C0H.2 SFRSYM    DATA     BIT       SFRB_RB18
       000000F8H   SFRSYM    DATA     BIT       SFRR_PINT2
@@ -1903,9 +1928,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000B0H.4 SFRSYM    DATA     BIT       SFRB_T0
       000000B0H   SFRSYM    DATA     BIT       P3_0
       000000A0H.1 SFRSYM    DATA     BIT       P2_1
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 29
-
-
       00000090H.2 SFRSYM    DATA     BIT       P1_2
       00000080H.3 SFRSYM    DATA     BIT       P0_3
       000000E0H   SFRSYM    DATA     BYTE      SFR_ACC
@@ -1949,6 +1971,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000A8H.4 SFRSYM    DATA     BIT       SFRB_ES
       00000083H   SFRSYM    DATA     BYTE      SFR_DPH
       00000098H   SFRSYM    DATA     BIT       SFRB_RI
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 30
+
+
       000000F8H   SFRSYM    DATA     BYTE      SFR_EIP
       000000D0H.7 SFRSYM    DATA     BIT       SFRB_CY
       000000B0H.2 SFRSYM    DATA     BIT       SFRB_INT0
@@ -1971,9 +1996,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000093H   SFRSYM    DATA     BYTE      SFR_DPX
       000000D8H.3 SFRSYM    DATA     BIT       SFRB_WDIF
       0000008EH   SFRSYM    DATA     BYTE      SFR_CKCON
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 30
-
-
       000000D0H   SFRSYM    DATA     BYTE      SFR_PSW
       0000009AH   SFRSYM    DATA     BYTE      TWBASE
       000000D8H   SFRSYM    DATA     BYTE      SFR_WDCON
@@ -2017,6 +2039,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000082H   SFRSYM    DATA     BYTE      SFR_DPL0
       000000D0H   SFRSYM    DATA     BIT       SFRB_P
       00000084H   SFRSYM    DATA     BYTE      SFR_DPL1
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 31
+
+
       00000098H.7 SFRSYM    DATA     BIT       SFRB_SM0
       0000009EH   SFRSYM    DATA     BYTE      SFR_UART0FIFO
       00000098H.6 SFRSYM    DATA     BIT       SFRB_SM1
@@ -2039,9 +2064,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000088H.6 SFRSYM    DATA     BIT       SFRB_TR1
       000000B8H   SFRSYM    DATA     BIT       SFRB_PX0
       000000B8H.2 SFRSYM    DATA     BIT       SFRB_PX1
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 31
-
-
       00000093H   SFRSYM    DATA     BYTE      SFR_DPX0
       00000095H   SFRSYM    DATA     BYTE      SFR_DPX1
       00000093H   SFRSYM    DATA     BYTE      DPX
@@ -2061,43 +2083,46 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000099H   SFRSYM    DATA     BYTE      SFR_SBUF
       00000087H   SFRSYM    DATA     BYTE      SFR_PCON
 
-      01000C14H   BLOCK     ECODE    ---       LVL=0
+      01000D16H   BLOCK     ECODE    ---       LVL=0
       ---         BLOCKEND  ---      ---       LVL=0
 
-      010007E4H   BLOCK     ECODE    ---       LVL=0
-      010007E4H   BLOCK     ECODE    NEAR LAB  LVL=1
+      01000853H   BLOCK     ECODE    ---       LVL=0
+      01000853H   BLOCK     ECODE    NEAR LAB  LVL=1
       00000007H   SYMBOL    DATA     BYTE      temp
-      020000B1H   SYMBOL    XDATA    BYTE      num
+      020000C3H   SYMBOL    XDATA    BYTE      num
       ---         BLOCKEND  ---      ---       LVL=1
-      010007E4H   LINE      ECODE    ---       #47
-      010007E4H   LINE      ECODE    ---       #48
-      010007E4H   LINE      ECODE    ---       #50
-      010007EBH   LINE      ECODE    ---       #51
-      010007F7H   LINE      ECODE    ---       #52
-      01000801H   LINE      ECODE    ---       #54
-      0100080CH   LINE      ECODE    ---       #55
-      01000817H   LINE      ECODE    ---       #56
-      01000829H   LINE      ECODE    ---       #58
-      01000834H   LINE      ECODE    ---       #59
-      0100083FH   LINE      ECODE    ---       #61
-      01000849H   LINE      ECODE    ---       #62
-      01000853H   LINE      ECODE    ---       #63
-      01000859H   LINE      ECODE    ---       #64
-      01000860H   LINE      ECODE    ---       #66
-      01000865H   LINE      ECODE    ---       #67
-      0100086AH   LINE      ECODE    ---       #68
-      0100087EH   LINE      ECODE    ---       #70
-      01000880H   LINE      ECODE    ---       #71
+      01000853H   LINE      ECODE    ---       #47
+      01000853H   LINE      ECODE    ---       #48
+      01000853H   LINE      ECODE    ---       #50
+      0100085AH   LINE      ECODE    ---       #51
+      01000866H   LINE      ECODE    ---       #52
+      01000870H   LINE      ECODE    ---       #54
+      0100087BH   LINE      ECODE    ---       #55
+      01000886H   LINE      ECODE    ---       #56
+      01000898H   LINE      ECODE    ---       #58
+      010008A3H   LINE      ECODE    ---       #59
+      010008AEH   LINE      ECODE    ---       #61
+      010008B8H   LINE      ECODE    ---       #62
+      010008C2H   LINE      ECODE    ---       #63
+      010008C8H   LINE      ECODE    ---       #64
+      010008CFH   LINE      ECODE    ---       #66
+      010008D4H   LINE      ECODE    ---       #67
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 32
+
+
+      010008D9H   LINE      ECODE    ---       #68
+      010008EDH   LINE      ECODE    ---       #70
+      010008EFH   LINE      ECODE    ---       #71
       ---         BLOCKEND  ---      ---       LVL=0
 
       ---         MODULE    ---      ---       PRINTF
       02000045H   PUBLIC    XDATA    ---       FOsdMsgBuff
-      010003C7H   PUBLIC    CONST    ---       Hex
-      01000C84H   PUBLIC    ECODE    ---       _Puts
+      01000480H   PUBLIC    CONST    ---       Hex
+      01000D86H   PUBLIC    ECODE    ---       _Puts
       02000002H   PUBLIC    XDATA    BYTE      ?_Printf?BYTE
-      01000AF1H   PUBLIC    ECODE    ---       _Printf
+      01000BF3H   PUBLIC    ECODE    ---       _Printf
       02000030H   PUBLIC    XDATA    BYTE      ?_DoPrint?BYTE
-      01000444H   PUBLIC    ECODE    ---       _DoPrint
+      010004B3H   PUBLIC    ECODE    ---       _DoPrint
       000000D8H.1 SFRSYM    DATA     BIT       SFRB_EWT
       000000B0H.1 SFRSYM    DATA     BIT       SFRB_TXD
       000000CAH   SFRSYM    DATA     BYTE      SFR_RCRL
@@ -2107,9 +2132,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000D0H.5 SFRSYM    DATA     BIT       SFRB_F0
       000000EAH   SFRSYM    DATA     BYTE      SFR_MXAX
       000000D8H   SFRSYM    DATA     BIT       SFRB_RWT
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 32
-
-
       000000C0H.2 SFRSYM    DATA     BIT       SFRB_RB18
       000000F8H   SFRSYM    DATA     BIT       SFRR_PINT2
       000000F0H   SFRSYM    DATA     BYTE      SFR_B
@@ -2153,6 +2175,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000B0H.4 SFRSYM    DATA     BIT       P3_4
       000000A0H.5 SFRSYM    DATA     BIT       P2_5
       00000090H.6 SFRSYM    DATA     BIT       P1_6
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 33
+
+
       00000080H.7 SFRSYM    DATA     BIT       P0_7
       000000B0H.5 SFRSYM    DATA     BIT       P3_5
       000000A0H.6 SFRSYM    DATA     BIT       P2_6
@@ -2175,9 +2200,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000083H   SFRSYM    DATA     BYTE      SFR_DPH
       00000098H   SFRSYM    DATA     BIT       SFRB_RI
       000000F8H   SFRSYM    DATA     BYTE      SFR_EIP
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 33
-
-
       000000D0H.7 SFRSYM    DATA     BIT       SFRB_CY
       000000B0H.2 SFRSYM    DATA     BIT       SFRB_INT0
       000000B0H.3 SFRSYM    DATA     BIT       SFRB_INT1
@@ -2221,6 +2243,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000F8H.5 SFRSYM    DATA     BIT       SFRR_PWDI
       000000A8H.4 SFRSYM    DATA     BIT       SFRB_ES0
       000000A8H.6 SFRSYM    DATA     BIT       SFRB_ES1
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 34
+
+
       000000A8H.1 SFRSYM    DATA     BIT       SFRB_ET0
       000000A8H.3 SFRSYM    DATA     BIT       SFRB_ET1
       00000088H.5 SFRSYM    DATA     BIT       SFRB_TF0
@@ -2243,9 +2268,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000D0H   SFRSYM    DATA     BIT       SFRB_P
       00000084H   SFRSYM    DATA     BYTE      SFR_DPL1
       00000098H.7 SFRSYM    DATA     BIT       SFRB_SM0
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 34
-
-
       0000009EH   SFRSYM    DATA     BYTE      SFR_UART0FIFO
       00000098H.6 SFRSYM    DATA     BIT       SFRB_SM1
       000000FEH   SFRSYM    DATA     BYTE      SFR_E2IT
@@ -2286,13 +2308,16 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000099H   SFRSYM    DATA     BYTE      SFR_SBUF
       00000087H   SFRSYM    DATA     BYTE      SFR_PCON
 
-      01000881H   BLOCK     ECODE    ---       LVL=0
+      01000983H   BLOCK     ECODE    ---       LVL=0
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000444H   BLOCK     ECODE    ---       LVL=0
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 35
+
+
+      010004B3H   BLOCK     ECODE    ---       LVL=0
       02000030H   SYMBOL    XDATA    ---       fmt
       02000033H   SYMBOL    XDATA    ---       ap
-      0100044BH   BLOCK     ECODE    NEAR LAB  LVL=1
+      010004BAH   BLOCK     ECODE    NEAR LAB  LVL=1
       02000036H   SYMBOL    XDATA    CHAR      ch
       02000037H   SYMBOL    XDATA    CHAR      i
       02000038H   SYMBOL    XDATA    LONG      value
@@ -2303,140 +2328,173 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       0200003EH   SYMBOL    XDATA    DWORD     mask
       02000042H   SYMBOL    XDATA    ---       ptr
       ---         BLOCKEND  ---      ---       LVL=1
-      01000444H   LINE      ECODE    ---       #31
-      0100044BH   LINE      ECODE    ---       #32
-      0100044BH   LINE      ECODE    ---       #40
-      01000458H   LINE      ECODE    ---       #44
-      01000458H   LINE      ECODE    ---       #48
-      01000467H   LINE      ECODE    ---       #49
-      01000467H   LINE      ECODE    ---       #50
-      01000471H   LINE      ECODE    ---       #51
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 35
+      010004B3H   LINE      ECODE    ---       #31
+      010004BAH   LINE      ECODE    ---       #32
+      010004BAH   LINE      ECODE    ---       #40
+      010004C7H   LINE      ECODE    ---       #44
+      010004C7H   LINE      ECODE    ---       #48
+      010004D6H   LINE      ECODE    ---       #49
+      010004D6H   LINE      ECODE    ---       #50
+      010004E0H   LINE      ECODE    ---       #51
+      010004EBH   LINE      ECODE    ---       #52
+      010004F7H   LINE      ECODE    ---       #53
+      010004F7H   LINE      ECODE    ---       #54
+      010004F7H   LINE      ECODE    ---       #58
+      010004F9H   LINE      ECODE    ---       #59
+      010004FBH   LINE      ECODE    ---       #60
+      010004FCH   LINE      ECODE    ---       #62
+      01000502H   LINE      ECODE    ---       #64
+      01000507H   LINE      ECODE    ---       #65
+      01000509H   LINE      ECODE    ---       #66
+      0100050FH   LINE      ECODE    ---       #67
+      01000511H   LINE      ECODE    ---       #68
+      01000511H   LINE      ECODE    ---       #69
+      01000513H   LINE      ECODE    ---       #70
+      01000528H   LINE      ECODE    ---       #71
+      0100052CH   LINE      ECODE    ---       #72
+      01000532H   LINE      ECODE    ---       #73
+      01000532H   LINE      ECODE    ---       #77
+      01000539H   LINE      ECODE    ---       #79
+      0100054EH   LINE      ECODE    ---       #80
+      0100054EH   LINE      ECODE    ---       #81
+      0100055DH   LINE      ECODE    ---       #82
+      0100055DH   LINE      ECODE    ---       #83
+      0100056AH   LINE      ECODE    ---       #84
+      0100056AH   LINE      ECODE    ---       #88
+      01000597H   LINE      ECODE    ---       #90
+      01000597H   LINE      ECODE    ---       #91
+      01000597H   LINE      ECODE    ---       #93
+      010005A8H   LINE      ECODE    ---       #94
+      010005A8H   LINE      ECODE    ---       #95
+      010005B8H   LINE      ECODE    ---       #96
+      010005C3H   LINE      ECODE    ---       #97
+      010005C5H   LINE      ECODE    ---       #99
+      010005C5H   LINE      ECODE    ---       #100
+      010005E7H   LINE      ECODE    ---       #101
+      010005F4H   LINE      ECODE    ---       #102
+      010005F6H   LINE      ECODE    ---       #104
+      010005F6H   LINE      ECODE    ---       #105
+      010005FBH   LINE      ECODE    ---       #106
+      0100060AH   LINE      ECODE    ---       #107
+      0100060AH   LINE      ECODE    ---       #108
+      0100060AH   LINE      ECODE    ---       #110
+      01000614H   LINE      ECODE    ---       #111
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 36
 
 
-      0100047CH   LINE      ECODE    ---       #52
-      01000488H   LINE      ECODE    ---       #53
-      01000488H   LINE      ECODE    ---       #54
-      01000488H   LINE      ECODE    ---       #58
-      0100048AH   LINE      ECODE    ---       #59
-      0100048CH   LINE      ECODE    ---       #60
-      0100048DH   LINE      ECODE    ---       #62
-      01000493H   LINE      ECODE    ---       #64
-      01000498H   LINE      ECODE    ---       #65
-      0100049AH   LINE      ECODE    ---       #66
-      010004A0H   LINE      ECODE    ---       #67
-      010004A2H   LINE      ECODE    ---       #68
-      010004A2H   LINE      ECODE    ---       #69
-      010004A4H   LINE      ECODE    ---       #70
-      010004B9H   LINE      ECODE    ---       #71
-      010004BDH   LINE      ECODE    ---       #72
-      010004C3H   LINE      ECODE    ---       #73
-      010004C3H   LINE      ECODE    ---       #77
-      010004CAH   LINE      ECODE    ---       #79
-      010004DFH   LINE      ECODE    ---       #80
-      010004DFH   LINE      ECODE    ---       #81
-      010004EEH   LINE      ECODE    ---       #82
-      010004EEH   LINE      ECODE    ---       #83
-      010004FBH   LINE      ECODE    ---       #84
-      010004FBH   LINE      ECODE    ---       #88
-      01000528H   LINE      ECODE    ---       #90
-      01000528H   LINE      ECODE    ---       #91
-      01000528H   LINE      ECODE    ---       #93
-      01000539H   LINE      ECODE    ---       #94
-      01000539H   LINE      ECODE    ---       #95
-      01000549H   LINE      ECODE    ---       #96
-      01000554H   LINE      ECODE    ---       #97
-      01000556H   LINE      ECODE    ---       #99
-      01000556H   LINE      ECODE    ---       #100
-      01000578H   LINE      ECODE    ---       #101
-      01000585H   LINE      ECODE    ---       #102
-      01000587H   LINE      ECODE    ---       #104
-      01000587H   LINE      ECODE    ---       #105
-      0100058CH   LINE      ECODE    ---       #106
-      0100059BH   LINE      ECODE    ---       #107
-      0100059BH   LINE      ECODE    ---       #108
-      0100059BH   LINE      ECODE    ---       #110
-      010005A5H   LINE      ECODE    ---       #111
-      010005B1H   LINE      ECODE    ---       #112
-      010005C0H   LINE      ECODE    ---       #113
-      010005C0H   LINE      ECODE    ---       #115
-      010005C7H   LINE      ECODE    ---       #116
-      010005DBH   LINE      ECODE    ---       #118
-      010005EAH   LINE      ECODE    ---       #119
-      010005FFH   LINE      ECODE    ---       #120
-      01000609H   LINE      ECODE    ---       #121
-      01000614H   LINE      ECODE    ---       #122
-      01000614H   LINE      ECODE    ---       #124
-      0100064FH   LINE      ECODE    ---       #126
-      0100064FH   LINE      ECODE    ---       #127
-      01000662H   LINE      ECODE    ---       #128
-      0100067EH   LINE      ECODE    ---       #129
-      01000680H   LINE      ECODE    ---       #130
-      0100068DH   LINE      ECODE    ---       #132
-      010006A2H   LINE      ECODE    ---       #133
-      010006B5H   LINE      ECODE    ---       #135
-      010006C1H   LINE      ECODE    ---       #136
-      010006C4H   LINE      ECODE    ---       #138
-      010006C4H   LINE      ECODE    ---       #140
-      010006C4H   LINE      ECODE    ---       #141
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 36
-
-
-      010006C4H   LINE      ECODE    ---       #143
-      010006D5H   LINE      ECODE    ---       #144
-      010006E6H   LINE      ECODE    ---       #145
-      010006F4H   LINE      ECODE    ---       #146
-      01000703H   LINE      ECODE    ---       #147
-      01000703H   LINE      ECODE    ---       #149
-      01000713H   LINE      ECODE    ---       #151
-      01000736H   LINE      ECODE    ---       #152
-      0100076EH   LINE      ECODE    ---       #153
-      01000777H   LINE      ECODE    ---       #154
-      01000777H   LINE      ECODE    ---       #156
-      01000777H   LINE      ECODE    ---       #158
-      0100078AH   LINE      ECODE    ---       #159
-      01000796H   LINE      ECODE    ---       #160
-      010007AAH   LINE      ECODE    ---       #161
-      010007AAH   LINE      ECODE    ---       #163
-      010007AAH   LINE      ECODE    ---       #164
-      010007B7H   LINE      ECODE    ---       #165
-      010007CDH   LINE      ECODE    ---       #166
-      010007CDH   LINE      ECODE    ---       #168
-      010007CDH   LINE      ECODE    ---       #169
-      010007E0H   LINE      ECODE    ---       #170
-      010007E3H   LINE      ECODE    ---       #171
-      010007E3H   LINE      ECODE    ---       #172
-      010007E3H   LINE      ECODE    ---       #173
+      01000620H   LINE      ECODE    ---       #112
+      0100062FH   LINE      ECODE    ---       #113
+      0100062FH   LINE      ECODE    ---       #115
+      01000636H   LINE      ECODE    ---       #116
+      0100064AH   LINE      ECODE    ---       #118
+      01000659H   LINE      ECODE    ---       #119
+      0100066EH   LINE      ECODE    ---       #120
+      01000678H   LINE      ECODE    ---       #121
+      01000683H   LINE      ECODE    ---       #122
+      01000683H   LINE      ECODE    ---       #124
+      010006BEH   LINE      ECODE    ---       #126
+      010006BEH   LINE      ECODE    ---       #127
+      010006D1H   LINE      ECODE    ---       #128
+      010006EDH   LINE      ECODE    ---       #129
+      010006EFH   LINE      ECODE    ---       #130
+      010006FCH   LINE      ECODE    ---       #132
+      01000711H   LINE      ECODE    ---       #133
+      01000724H   LINE      ECODE    ---       #135
+      01000730H   LINE      ECODE    ---       #136
+      01000733H   LINE      ECODE    ---       #138
+      01000733H   LINE      ECODE    ---       #140
+      01000733H   LINE      ECODE    ---       #141
+      01000733H   LINE      ECODE    ---       #143
+      01000744H   LINE      ECODE    ---       #144
+      01000755H   LINE      ECODE    ---       #145
+      01000763H   LINE      ECODE    ---       #146
+      01000772H   LINE      ECODE    ---       #147
+      01000772H   LINE      ECODE    ---       #149
+      01000782H   LINE      ECODE    ---       #151
+      010007A5H   LINE      ECODE    ---       #152
+      010007DDH   LINE      ECODE    ---       #153
+      010007E6H   LINE      ECODE    ---       #154
+      010007E6H   LINE      ECODE    ---       #156
+      010007E6H   LINE      ECODE    ---       #158
+      010007F9H   LINE      ECODE    ---       #159
+      01000805H   LINE      ECODE    ---       #160
+      01000819H   LINE      ECODE    ---       #161
+      01000819H   LINE      ECODE    ---       #163
+      01000819H   LINE      ECODE    ---       #164
+      01000826H   LINE      ECODE    ---       #165
+      0100083CH   LINE      ECODE    ---       #166
+      0100083CH   LINE      ECODE    ---       #168
+      0100083CH   LINE      ECODE    ---       #169
+      0100084FH   LINE      ECODE    ---       #170
+      01000852H   LINE      ECODE    ---       #171
+      01000852H   LINE      ECODE    ---       #172
+      01000852H   LINE      ECODE    ---       #173
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000AF1H   BLOCK     ECODE    ---       LVL=0
+      01000BF3H   BLOCK     ECODE    ---       LVL=0
       02000002H   SYMBOL    XDATA    ---       fmt
-      01000AF8H   BLOCK     ECODE    NEAR LAB  LVL=1
+      01000BFAH   BLOCK     ECODE    NEAR LAB  LVL=1
       02000005H   SYMBOL    XDATA    ---       ellipsis_40
       0200002DH   SYMBOL    XDATA    ---       ap
       ---         BLOCKEND  ---      ---       LVL=1
-      01000AF1H   LINE      ECODE    ---       #330
-      01000AF8H   LINE      ECODE    ---       #331
-      01000AF8H   LINE      ECODE    ---       #334
-      01000B07H   LINE      ECODE    ---       #335
-      01000B25H   LINE      ECODE    ---       #336
-      01000B2FH   LINE      ECODE    ---       #337
+      01000BF3H   LINE      ECODE    ---       #330
+      01000BFAH   LINE      ECODE    ---       #331
+      01000BFAH   LINE      ECODE    ---       #334
+      01000C09H   LINE      ECODE    ---       #335
+      01000C27H   LINE      ECODE    ---       #336
+      01000C31H   LINE      ECODE    ---       #337
       ---         BLOCKEND  ---      ---       LVL=0
 
-      01000C84H   BLOCK     ECODE    ---       LVL=0
+      01000D86H   BLOCK     ECODE    ---       LVL=0
       02000003H   SYMBOL    XDATA    ---       ptr
-      01000C84H   LINE      ECODE    ---       #341
-      01000C8BH   LINE      ECODE    ---       #342
-      01000C8BH   LINE      ECODE    ---       #343
-      01000C94H   LINE      ECODE    ---       #344
-      01000CA4H   LINE      ECODE    ---       #345
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 37
+
+
+      01000D86H   LINE      ECODE    ---       #341
+      01000D8DH   LINE      ECODE    ---       #342
+      01000D8DH   LINE      ECODE    ---       #343
+      01000D96H   LINE      ECODE    ---       #344
+      01000DA6H   LINE      ECODE    ---       #345
       ---         BLOCKEND  ---      ---       LVL=0
 
       ---         MODULE    ---      ---       HMSHELL
+      0200009DH   PUBLIC    XDATA    BYTE      ?_SHELL_Init?BYTE
+      010008F0H   PUBLIC    ECODE    ---       _SHELL_Init
+      01000E04H   PUBLIC    ECODE    ---       _SHELL_RegisterCommand
+
+      01000E28H   BLOCK     ECODE    ---       LVL=0
+      ---         BLOCKEND  ---      ---       LVL=0
+
+      01000E04H   BLOCK     ECODE    ---       LVL=0
+      020000BEH   SYMBOL    XDATA    ---       command_context
+      01000E10H   BLOCK     ECODE    NEAR LAB  LVL=1
+      00000004H   SYMBOL    DATA     LONG      result
+      ---         BLOCKEND  ---      ---       LVL=1
+      01000E04H   LINE      ECODE    ---       #4
+      01000E10H   LINE      ECODE    ---       #5
+      01000E10H   LINE      ECODE    ---       #6
+      01000E15H   LINE      ECODE    ---       #8
+      01000E15H   LINE      ECODE    ---       #9
+      ---         BLOCKEND  ---      ---       LVL=0
+
+      010008F0H   BLOCK     ECODE    ---       LVL=0
+      0200009DH   SYMBOL    XDATA    ---       context
+      020000A0H   SYMBOL    XDATA    ---       sendfun
+      020000A3H   SYMBOL    XDATA    ---       recvfun
+      020000A6H   SYMBOL    XDATA    ---       shellprintf
+      020000A9H   SYMBOL    XDATA    ---       prompt
+      010008F0H   LINE      ECODE    ---       #11
+      010008FCH   LINE      ECODE    ---       #12
+      010008FCH   LINE      ECODE    ---       #13
+      01000913H   LINE      ECODE    ---       #14
+      0100092DH   LINE      ECODE    ---       #15
+      01000947H   LINE      ECODE    ---       #16
+      0100095CH   LINE      ECODE    ---       #19
+      ---         BLOCKEND  ---      ---       LVL=0
 
       ---         MODULE    ---      ---       CHANGE_CONST_TEXT
       02000077H   PUBLIC    XDATA    ---       TEXT
-      01000CEDH   PUBLIC    ECODE    ---       ChangeText
+      01000E16H   PUBLIC    ECODE    ---       ChangeText
       000000D8H.1 SFRSYM    DATA     BIT       SFRB_EWT
       000000B0H.1 SFRSYM    DATA     BIT       SFRB_TXD
       000000CAH   SFRSYM    DATA     BYTE      SFR_RCRL
@@ -2447,9 +2505,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000EAH   SFRSYM    DATA     BYTE      SFR_MXAX
       000000D8H   SFRSYM    DATA     BIT       SFRB_RWT
       000000C0H.2 SFRSYM    DATA     BIT       SFRB_RB18
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 37
-
-
       000000F8H   SFRSYM    DATA     BIT       SFRR_PINT2
       000000F0H   SFRSYM    DATA     BYTE      SFR_B
       000000F8H.1 SFRSYM    DATA     BIT       SFRR_PINT3
@@ -2460,6 +2515,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000C0H.7 SFRSYM    DATA     BIT       SFRB_SM10
       00000090H   SFRSYM    DATA     BIT       P1_0
       00000080H.1 SFRSYM    DATA     BIT       P0_1
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 38
+
+
       000000F8H.4 SFRSYM    DATA     BIT       SFRR_PINT6
       000000C0H.6 SFRSYM    DATA     BIT       SFRB_SM11
       000000A0H   SFRSYM    DATA     BIT       P2_0
@@ -2515,9 +2573,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000098H   SFRSYM    DATA     BIT       SFRB_RI
       000000F8H   SFRSYM    DATA     BYTE      SFR_EIP
       000000D0H.7 SFRSYM    DATA     BIT       SFRB_CY
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 38
-
-
       000000B0H.2 SFRSYM    DATA     BIT       SFRB_INT0
       000000B0H.3 SFRSYM    DATA     BIT       SFRB_INT1
       00000098H.1 SFRSYM    DATA     BIT       SFRB_TI
@@ -2528,6 +2583,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000093H   SFRSYM    DATA     BYTE      SFR_DPP
       000000C0H   SFRSYM    DATA     BYTE      SFR_SCON1
       000000B8H.4 SFRSYM    DATA     BIT       SFRB_PS
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 39
+
+
       000000E9H   SFRSYM    DATA     BYTE      SFR_STATUS
       00000090H.1 SFRSYM    DATA     BIT       SFRB_T2EX
       000000D0H.2 SFRSYM    DATA     BIT       SFRB_OV
@@ -2583,9 +2641,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000084H   SFRSYM    DATA     BYTE      SFR_DPL1
       00000098H.7 SFRSYM    DATA     BIT       SFRB_SM0
       0000009EH   SFRSYM    DATA     BYTE      SFR_UART0FIFO
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 39
-
-
       00000098H.6 SFRSYM    DATA     BIT       SFRB_SM1
       000000FEH   SFRSYM    DATA     BYTE      SFR_E2IT
       000000EBH   SFRSYM    DATA     BYTE      SFR_TA
@@ -2596,6 +2651,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       000000B8H.4 SFRSYM    DATA     BIT       SFRB_PS0
       000000B8H.6 SFRSYM    DATA     BIT       SFRB_PS1
       000000B8H.1 SFRSYM    DATA     BIT       SFRB_PT0
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 40
+
+
       000000D0H.3 SFRSYM    DATA     BIT       SFRB_RS0
       000000B8H.3 SFRSYM    DATA     BIT       SFRB_PT1
       000000D0H.4 SFRSYM    DATA     BIT       SFRB_RS1
@@ -2625,11 +2683,11 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       00000099H   SFRSYM    DATA     BYTE      SFR_SBUF
       00000087H   SFRSYM    DATA     BYTE      SFR_PCON
 
-      01000CEDH   BLOCK     ECODE    ---       LVL=0
-      01000CEDH   LINE      ECODE    ---       #8
-      01000CEDH   LINE      ECODE    ---       #9
-      01000CEDH   LINE      ECODE    ---       #10
-      01000CF6H   LINE      ECODE    ---       #11
+      01000E16H   BLOCK     ECODE    ---       LVL=0
+      01000E16H   LINE      ECODE    ---       #8
+      01000E16H   LINE      ECODE    ---       #9
+      01000E16H   LINE      ECODE    ---       #10
+      01000E1FH   LINE      ECODE    ---       #11
       ---         BLOCKEND  ---      ---       LVL=0
 
       ---         MODULE    ---      ---       ?C_STARTUP
@@ -2651,9 +2709,6 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       0100008CH   PUBLIC    CODE     NEAR LAB  ?C?LMUL
 
       ---         MODULE    ---      ---       ?C?ULDIV
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 40
-
-
       01000117H   PUBLIC    CODE     NEAR LAB  ?C?ULDIV
 
       ---         MODULE    ---      ---       ?C?ULCMP
@@ -2664,6 +2719,9 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
 
       ---         MODULE    ---      ---       ?C?LLDPTR
       010001CEH   PUBLIC    CODE     NEAR LAB  ?C?LLDPTR
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 41
+
+
 
       ---         MODULE    ---      ---       ?C?LSTXDATA
       010001EBH   PUBLIC    CODE     NEAR LAB  ?C?LSTXDATA
@@ -2671,57 +2729,71 @@ SYMBOL TABLE OF MODULE:  .\Output\TW8836B_EVB11 (?BANK?SWITCHING)
       ---         MODULE    ---      ---       ?C?PLDPTR
       010001F7H   PUBLIC    CODE     NEAR LAB  ?C?PLDPTR
 
+      ---         MODULE    ---      ---       ?C?PSTPTR
+      01000214H   PUBLIC    CODE     NEAR LAB  ?C?PSTPTR
+
+      ---         MODULE    ---      ---       ?C?ICALL390
+      01000268H   PUBLIC    CODE     NEAR LAB  ?C?ICALL390
+      0100026EH   PUBLIC    CODE     NEAR LAB  ?C?ICALLX2
+
       ---         MODULE    ---      ---       ?C_INIT
-      010002B7H   PUBLIC    CODE     NEAR LAB  ?C_START
+      0100032AH   PUBLIC    CODE     NEAR LAB  ?C_START
 
       ---         MODULE    ---      ---       ?C?LLDIDATA
-      01000214H   PUBLIC    CODE     NEAR LAB  ?C?LLDIDATA
+      01000275H   PUBLIC    CODE     NEAR LAB  ?C?LLDIDATA
 
       ---         MODULE    ---      ---       ?C?LLDXDATA
-      01000220H   PUBLIC    CODE     NEAR LAB  ?C?LLDXDATA
+      01000281H   PUBLIC    CODE     NEAR LAB  ?C?LLDXDATA
 
       ---         MODULE    ---      ---       ?C?LLDCODE
-      0100022CH   PUBLIC    CODE     NEAR LAB  ?C?LLDCODE
+      0100028DH   PUBLIC    CODE     NEAR LAB  ?C?LLDCODE
 
       ---         MODULE    ---      ---       ?C?PLDIDATA
-      0100023CH   PUBLIC    CODE     NEAR LAB  ?C?PLDIDATA
+      0100029DH   PUBLIC    CODE     NEAR LAB  ?C?PLDIDATA
+
+      ---         MODULE    ---      ---       ?C?PSTIDATA
+      010002A6H   PUBLIC    CODE     NEAR LAB  ?C?PSTIDATA
 
       ---         MODULE    ---      ---       ?C?PLDXDATA
-      01000245H   PUBLIC    CODE     NEAR LAB  ?C?PLDXDATA
+      010002AFH   PUBLIC    CODE     NEAR LAB  ?C?PLDXDATA
+
+      ---         MODULE    ---      ---       ?C?PSTXDATA
+      010002B8H   PUBLIC    CODE     NEAR LAB  ?C?PSTXDATA
 
       ---         MODULE    ---      ---       ?C?PLDCODE
-      0100024EH   PUBLIC    CODE     NEAR LAB  ?C?PLDCODE
+      010002C1H   PUBLIC    CODE     NEAR LAB  ?C?PLDCODE
 
       ---         MODULE    ---      ---       ?C?CSTPTR
-      0100025AH   PUBLIC    CODE     NEAR LAB  ?C?CSTPTR
+      010002CDH   PUBLIC    CODE     NEAR LAB  ?C?CSTPTR
 
 
 
 FUNCTION REGISTER MASKS
 
 
-FUNCTION . . . . . . . . REG MASK
-==================================
+FUNCTION . . . . . . . . . REG MASK
+====================================
 
-_delay1ms. . . . . . . . @0x1e000800
-_DETIM_Init. . . . . . . @0x0e000880
-_Pclkinit. . . . . . . . @0x1e000800
-_Puts. . . . . . . . . . @0x1e000c8f
-_RS_tx . . . . . . . . . @0x80000000
-_TIM_Init. . . . . . . . @0x1e00088e
-_TIM_Start . . . . . . . @0x0e000880
-ChangeText . . . . . . . @0x1e000c8f
-InitCpu. . . . . . . . . @0x1e000880
-OutputPlantInit. . . . . @0x1e000880
-RS_ready . . . . . . . . @0x18000880
-RS_rx. . . . . . . . . . @0x18000881
-SysclkInit . . . . . . . @0x1e000cff
-timer0_int . . . . . . . @0x0e000800
-timer1_int . . . . . . . @0x0e000800
-uart0_int. . . . . . . . @0x180008c1
-LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  14:47:27  PAGE 41
+_delay1ms. . . . . . . . . @0x1e000800
+_DETIM_Init. . . . . . . . @0x0e000880
+_Pclkinit. . . . . . . . . @0x1e000800
+_Puts. . . . . . . . . . . @0x1e000c8f
+_RS_tx . . . . . . . . . . @0x80000000
+_SHELL_RegisterCommand . . @0x0e0008f0
+_TIM_Init. . . . . . . . . @0x1e00088e
+_TIM_Start . . . . . . . . @0x0e000880
+ChangeText . . . . . . . . @0x1e000c8f
+InitCpu. . . . . . . . . . @0x1e000880
+OutputPlantInit. . . . . . @0x1e000880
+RS_ready . . . . . . . . . @0x18000880
+RS_rx. . . . . . . . . . . @0x18000881
+LX51 LINKER/LOCATER V4.66.66.0                                                        08/31/2018  16:30:40  PAGE 42
 
 
+SysclkInit . . . . . . . . @0x1e000cff
+timer0_int . . . . . . . . @0x0e000800
+timer1_int . . . . . . . . @0x0e000800
+uart0_int. . . . . . . . . @0x180008c1
 
 
 
@@ -2747,7 +2819,13 @@ uart0_int. . . . . . . . @0x180008c1
     NAME:    OUTPUTPLANTINIT/HWPANEL
 
 *** WARNING L57: UNCALLED FUNCTION, IGNORED FOR OVERLAY PROCESS
+    NAME:    _SHELL_REGISTERCOMMAND/HMSHELL
+
+*** WARNING L57: UNCALLED FUNCTION, IGNORED FOR OVERLAY PROCESS
+    NAME:    _SHELL_INIT/HMSHELL
+
+*** WARNING L57: UNCALLED FUNCTION, IGNORED FOR OVERLAY PROCESS
     NAME:    CHANGETEXT/CHANGE_CONST_TEXT
 
-Program Size: data=56.3 xdata=178 const=79 code=3268
-LX51 RUN COMPLETE.  8 WARNING(S),  0 ERROR(S)
+Program Size: data=56.3 xdata=196 const=96 code=3560
+LX51 RUN COMPLETE.  10 WARNING(S),  0 ERROR(S)

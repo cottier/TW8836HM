@@ -1,4 +1,4 @@
-C51 COMPILER V9.56.0.0   HWTIME                                                            08/31/2018 14:41:52 PAGE 1   
+C51 COMPILER V9.56.0.0   HWTIME                                                            08/31/2018 16:22:08 PAGE 1   
 
 
 C51 COMPILER V9.56.0.0, COMPILATION OF MODULE HWTIME
@@ -55,7 +55,7 @@ line level    source
   43   1        return HAL_OK;
   44   1      }
 *** WARNING C280 IN LINE 41 OF source\HW\HWtime.c: 'TimBody': unreferenced local variable
-C51 COMPILER V9.56.0.0   HWTIME                                                            08/31/2018 14:41:52 PAGE 2   
+C51 COMPILER V9.56.0.0   HWTIME                                                            08/31/2018 16:22:08 PAGE 2   
 
 ASSEMBLY LISTING OF GENERATED OBJECT CODE
 
@@ -119,7 +119,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 001E 438960            ORL     SFR_TMOD,#060H
                                            ; SOURCE LINE # 20
 0021 110000      R     ACALL   L?0011
-C51 COMPILER V9.56.0.0   HWTIME                                                            08/31/2018 14:41:52 PAGE 3   
+C51 COMPILER V9.56.0.0   HWTIME                                                            08/31/2018 16:22:08 PAGE 3   
 
 0024         ?C0009:
 0024 2408              ADD     A,#08H
@@ -183,7 +183,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 0009 22                RET     
              ; FUNCTION _TIM_Start (END)
 
-C51 COMPILER V9.56.0.0   HWTIME                                                            08/31/2018 14:41:52 PAGE 4   
+C51 COMPILER V9.56.0.0   HWTIME                                                            08/31/2018 16:22:08 PAGE 4   
 
 
 

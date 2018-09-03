@@ -1,4 +1,4 @@
-C51 COMPILER V9.56.0.0   HWPANEL                                                           08/31/2018 14:41:53 PAGE 1   
+C51 COMPILER V9.56.0.0   HWPANEL                                                           08/31/2018 16:22:08 PAGE 1   
 
 
 C51 COMPILER V9.56.0.0, COMPILATION OF MODULE HWPANEL
@@ -62,7 +62,7 @@ line level    source
   51   1        WriteTW88(REG007,0x02); //panel FP_LSB
   52   1        WriteTW88(REG008,0xC6); //!!!!is very !!!!
   53   1        
-C51 COMPILER V9.56.0.0   HWPANEL                                                           08/31/2018 14:41:53 PAGE 2   
+C51 COMPILER V9.56.0.0   HWPANEL                                                           08/31/2018 16:22:08 PAGE 2   
 
   54   1        WriteTW88(REG084,ReadTW88(REG084)|0x01);   //GPIO4:41 output LOW
   55   1        WriteTW88(REG08C,ReadTW88(REG08C)|0x01);
@@ -87,7 +87,7 @@ line level    source
   74            * END OF FILE                                                               *
   75            *****************************************************************************
   76            */
-C51 COMPILER V9.56.0.0   HWPANEL                                                           08/31/2018 14:41:53 PAGE 3   
+C51 COMPILER V9.56.0.0   HWPANEL                                                           08/31/2018 16:22:08 PAGE 3   
 
 ASSEMBLY LISTING OF GENERATED OBJECT CODE
 
@@ -151,7 +151,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 002D 110000      R     ACALL   L?0005
 0030 E0                MOVX    A,@DPTR
 0031 4401              ORL     A,#01H
-C51 COMPILER V9.56.0.0   HWPANEL                                                           08/31/2018 14:41:53 PAGE 4   
+C51 COMPILER V9.56.0.0   HWPANEL                                                           08/31/2018 16:22:08 PAGE 4   
 
                                            ; SOURCE LINE # 56
 0033 110000      R     ACALL   L?0003
@@ -215,7 +215,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
                                            ; SOURCE LINE # 70
 009A 7F00              MOV     R7,#00H
                                            ; SOURCE LINE # 71
-C51 COMPILER V9.56.0.0   HWPANEL                                                           08/31/2018 14:41:53 PAGE 5   
+C51 COMPILER V9.56.0.0   HWPANEL                                                           08/31/2018 16:22:08 PAGE 5   
 
 009C         ?C0001:
 009C 22                RET     

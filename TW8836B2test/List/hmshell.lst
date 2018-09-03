@@ -1,4 +1,4 @@
-C51 COMPILER V9.56.0.0   HMSHELL                                                           08/31/2018 14:47:27 PAGE 1   
+C51 COMPILER V9.56.0.0   HMSHELL                                                           08/31/2018 16:30:35 PAGE 1   
 
 
 C51 COMPILER V9.56.0.0, COMPILATION OF MODULE HMSHELL
@@ -12,17 +12,167 @@ line level    source
    1          #include "typedefs.h"
    2          #include "hmshell.h"
    3          
-C51 COMPILER V9.56.0.0   HMSHELL                                                           08/31/2018 14:47:27 PAGE 2   
+   4          long SHELL_RegisterCommand(const shell_command_context_t* command_context)
+   5          {
+   6   1          long result = 0;
+   7   1      
+   8   1          return result;
+   9   1      }
+*** WARNING C280 IN LINE 4 OF source\utils\hmshell.c: 'command_context': unreferenced local variable
+  10          
+  11          void SHELL_Init(p_shell_context_t context,send_data_cb_t sendfun,recv_data_cb_t recvfun,printf_data_cb_t s
+             -hellprintf,char* prompt)
+  12          {
+  13   1        context->send_data_func = sendfun;
+  14   1        context->recv_data_func = recvfun;
+  15   1        context->printf_data_func = shellprintf;
+  16   1        context->prompt = prompt;
+  17   1      //  SHELL_RegisterCommand(&xHelpCommand);
+  18   1      //  SHELL_RegisterCommand(&xExitCommand);
+  19   1        context->printf_data_func("shell init is ok");
+  20   1      }
+C51 COMPILER V9.56.0.0   HMSHELL                                                           08/31/2018 16:30:35 PAGE 2   
 
 ASSEMBLY LISTING OF GENERATED OBJECT CODE
 
 
+             ; FUNCTION Com0003 (BEGIN)
+0000         L?0004:
+0000         L?0005:
+0000 90000000    R     MOV     DPTR,#context
+0004         L?0006:
+0004 E0                MOVX    A,@DPTR
+0005 FB                MOV     R3,A
+0006 A3                INC     DPTR
+0007 E0                MOVX    A,@DPTR
+0008 FA                MOV     R2,A
+0009 A3                INC     DPTR
+000A E0                MOVX    A,@DPTR
+000B 22                RET     
+             ; FUNCTION Com0003 (END)
+
+             ; FUNCTION _SHELL_RegisterCommand (BEGIN)
+                                           ; SOURCE LINE # 4
+0000 90000000    R     MOV     DPTR,#command_context
+0004 EB                MOV     A,R3
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 EA                MOV     A,R2
+0008 F0                MOVX    @DPTR,A
+0009 A3                INC     DPTR
+000A E9                MOV     A,R1
+000B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 5
+                                           ; SOURCE LINE # 6
+000C E4                CLR     A
+000D FF                MOV     R7,A
+000E FE                MOV     R6,A
+000F FD                MOV     R5,A
+0010 FC                MOV     R4,A
+;---- Variable 'result' assigned to Register 'R4/R5/R6/R7' ----
+                                           ; SOURCE LINE # 8
+                                           ; SOURCE LINE # 9
+0011         ?C0001:
+0011 22                RET     
+             ; FUNCTION _SHELL_RegisterCommand (END)
+
+             ; FUNCTION _SHELL_Init (BEGIN)
+                                           ; SOURCE LINE # 11
+0000 90000000    R     MOV     DPTR,#context
+0004 EB                MOV     A,R3
+0005 F0                MOVX    @DPTR,A
+0006 A3                INC     DPTR
+0007 EA                MOV     A,R2
+0008 F0                MOVX    @DPTR,A
+0009 A3                INC     DPTR
+000A E9                MOV     A,R1
+000B F0                MOVX    @DPTR,A
+                                           ; SOURCE LINE # 12
+                                           ; SOURCE LINE # 13
+000C A3                INC     DPTR
+000D 110000      R     ACALL   L?0006
+0010 F9                MOV     R1,A
+0011 C003              PUSH    AR3
+0013 C002              PUSH    AR2
+0015 C001              PUSH    AR1
+C51 COMPILER V9.56.0.0   HMSHELL                                                           08/31/2018 16:30:35 PAGE 3   
+
+0017 110000      R     ACALL   L?0004
+001A 2447              ADD     A,#047H
+001C F9                MOV     R1,A
+001D E4                CLR     A
+001E 3A                ADDC    A,R2
+001F FA                MOV     R2,A
+0020 110000      E     ACALL   ?C?PSTPTR
+                                           ; SOURCE LINE # 14
+0023 90000000    R     MOV     DPTR,#recvfun
+0027 110000      R     ACALL   L?0006
+002A F9                MOV     R1,A
+002B C003              PUSH    AR3
+002D C002              PUSH    AR2
+002F C001              PUSH    AR1
+0031 110000      R     ACALL   L?0004
+0034 244A              ADD     A,#04AH
+0036 F9                MOV     R1,A
+0037 E4                CLR     A
+0038 3A                ADDC    A,R2
+0039 FA                MOV     R2,A
+003A 110000      E     ACALL   ?C?PSTPTR
+                                           ; SOURCE LINE # 15
+003D 90000000    R     MOV     DPTR,#shellprintf
+0041 110000      R     ACALL   L?0006
+0044 F9                MOV     R1,A
+0045 C003              PUSH    AR3
+0047 C002              PUSH    AR2
+0049 C001              PUSH    AR1
+004B 110000      R     ACALL   L?0005
+004E 244D              ADD     A,#04DH
+0050 F9                MOV     R1,A
+0051 E4                CLR     A
+0052 3A                ADDC    A,R2
+0053 FA                MOV     R2,A
+0054 110000      E     ACALL   ?C?PSTPTR
+                                           ; SOURCE LINE # 16
+0057 90000000    R     MOV     DPTR,#prompt
+005B 110000      R     ACALL   L?0006
+005E F9                MOV     R1,A
+005F C003              PUSH    AR3
+0061 C002              PUSH    AR2
+0063 C001              PUSH    AR1
+0065 110000      R     ACALL   L?0005
+0068 F9                MOV     R1,A
+0069 110000      E     ACALL   ?C?PSTPTR
+                                           ; SOURCE LINE # 19
+006C 7B00        R     MOV     R3,#MBYTE ?SC_0
+006E 7A00        R     MOV     R2,#HIGH ?SC_0
+0070 7900        R     MOV     R1,#LOW ?SC_0
+0072 C003              PUSH    AR3
+0074 C002              PUSH    AR2
+0076 C001              PUSH    AR1
+0078 110000      R     ACALL   L?0005
+007B 244D              ADD     A,#04DH
+007D F9                MOV     R1,A
+007E E4                CLR     A
+007F 3A                ADDC    A,R2
+0080 FA                MOV     R2,A
+0081 110000      E     ACALL   ?C?PLDPTR
+0084 8982              MOV     DPL,R1
+0086 8A83              MOV     DPH,R2
+0088 8B93              MOV     DPX,R3
+C51 COMPILER V9.56.0.0   HMSHELL                                                           08/31/2018 16:30:35 PAGE 4   
+
+008A D001              POP     AR1
+008C D002              POP     AR2
+008E D003              POP     AR3
+0090 010000      E     AJMP    ?C?ICALLX2
+             ; FUNCTION _SHELL_Init (END)
+
 
 
 MODULE INFORMATION:   STATIC OVERLAYABLE
-   CODE SIZE        =   ----    ----
-   CONSTANT SIZE    =   ----    ----
-   XDATA SIZE       =   ----    ----
+   CODE SIZE        =    177    ----
+   CONSTANT SIZE    =     17    ----
+   XDATA SIZE       =   ----      18
    PDATA SIZE       =   ----    ----
    DATA SIZE        =   ----    ----
    IDATA SIZE       =   ----    ----
@@ -34,4 +184,4 @@ MODULE INFORMATION:   STATIC OVERLAYABLE
 END OF MODULE INFORMATION.
 
 
-C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
+C51 COMPILATION COMPLETE.  1 WARNING(S),  0 ERROR(S)

@@ -1,4 +1,4 @@
-C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 1   
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 16:22:08 PAGE 1   
 
 
 C51 COMPILER V9.56.0.0, COMPILATION OF MODULE INIT
@@ -62,7 +62,7 @@ line level    source
   51          E0:ACC   ..... CAMC  ..... ..... ..... ..... ..... 
   52          E8:EIE   STAT  _MXAX TA    ..... ..... ..... ..... 
   53          F0:B     ..... ..... ..... ..... ..... ..... ..... 
-C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 2   
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 16:22:08 PAGE 2   
 
   54          F8:EIP   ..... E2IF  E2IE  E2IP  E2IM  E2IT  .....
   55          
@@ -126,7 +126,7 @@ line level    source
  113          DATA  BYTE  RS_in=0;
  114          DATA  BYTE  RS_out=0;
  115          bit   RS_Xbusy=0;
-C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 3   
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 16:22:08 PAGE 3   
 
  116          
  117          
@@ -190,7 +190,7 @@ line level    source
  175   1        if( RS_in == RS_out ) return 0;
  176   1        else return 1;
  177   1      }
-C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 4   
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 16:22:08 PAGE 4   
 
  178          /**
  179          * send Tx
@@ -254,7 +254,7 @@ line level    source
  237   1                              // |||| ||||   << Timer 0 >>
  238   1                              // |||| |||+-- M0 \  00= 8bit timer,counter /32  01= 16bit timer,counter
  239   1                              // |||| ||+--- M1 /  10= 8bit auto reload        11= 8bit timer,counter
-C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 5   
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 16:22:08 PAGE 5   
 
  240   1                              // |||| |+---- CT:   0=Timer Mode,    1=Counter Mode
  241   1                              // |||| +----- GATE: 0=GATE not used, 1=GATE used
@@ -318,7 +318,7 @@ line level    source
  299   1                            // |||| ||+- ET0    : Timer0    System Tic
  300   1                            // |||| |+-- EX1    : DE End
  301   1                            // |||| +--- ET1    : timer1 - touch
-C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 6   
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 16:22:08 PAGE 6   
 
  302   1                            // |||+----- ES     : UART0
  303   1                            // ||+------ ET2    : timer2 - remocon
@@ -331,7 +331,7 @@ line level    source
  310   1      //  InitCore();
  311   1        return OK;
  312   1      }
-C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 7   
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 16:22:08 PAGE 7   
 
 ASSEMBLY LISTING OF GENERATED OBJECT CODE
 
@@ -395,7 +395,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 0023 E0                MOVX    A,@DPTR
 0024 9E                SUBB    A,R6
 0025 40E2              JC      ?C0003
-C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 8   
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 16:22:08 PAGE 8   
 
                                            ; SOURCE LINE # 142
 0027 22                RET     
@@ -459,7 +459,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 0003 C2AC              CLR     SFRB_ES
                                            ; SOURCE LINE # 185
 0005 8F99              MOV     SFR_SBUF,R7
-C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 9   
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 16:22:08 PAGE 9   
 
                                            ; SOURCE LINE # 186
 0007 D200        R     SETB    RS_Xbusy
@@ -523,7 +523,7 @@ ASSEMBLY LISTING OF GENERATED OBJECT CODE
 005A E0                MOVX    A,@DPTR
 005B 4402              ORL     A,#02H
 005D F0                MOVX    @DPTR,A
-C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 14:41:52 PAGE 10  
+C51 COMPILER V9.56.0.0   INIT                                                              08/31/2018 16:22:08 PAGE 10  
 
                                            ; SOURCE LINE # 225
 005E E4                CLR     A

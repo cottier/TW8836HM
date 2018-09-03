@@ -32,6 +32,9 @@ void main()
 		
 	McuInit();
 	Puts("init is ok!\n");
+	//
+	shell_context_struct user_context;
+	SHELL_Init(&user_context,RS_Tx,RS_Rx,Printf,"SHELL>>");
 	while(1)
 	{
 		if( Count1MS > 1000 )
@@ -39,6 +42,10 @@ void main()
 			Count1MS = 1;
 			WriteTW88(REG094, ((~ReadTW88(REG094))&0x02));   //LED·­×ª
       Printf("test:  %d\n",temp++); 
+		}
+		if(RS_ready())
+		{
+			SHELL_Main(&user_context);
 		}
 	}
 }
